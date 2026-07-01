@@ -19,9 +19,9 @@
   --bad-bg: rgba(239, 68, 68, 0.15);
   --rel: #a5b4fc;
   --rel-bg: rgba(99, 102, 241, 0.16);
-  --light-sq: #f0f4f8;
-  --dark-sq: #7da2d7;
-  --hi: rgba(255, 213, 74, 0.55);
+  --light-sq: #f1f3f7;
+  --dark-sq: #6b95e0;
+  --hi: rgba(255, 221, 66, 0.62);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
