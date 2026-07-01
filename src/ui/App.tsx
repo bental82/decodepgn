@@ -5,6 +5,7 @@ import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import Board from './Board'
 import MoveAnalysis from './MoveAnalysis'
+import PieceSprite from './PieceSprite'
 import PgnInput from './PgnInput'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
@@ -227,6 +228,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <PieceSprite />
       <header className="topbar">
         <div className="brand">
           <span className="logo">♟</span>

@@ -5,11 +5,9 @@ interface SquareCell {
   piece: { type: string; white: boolean } | null
 }
 
-// The pieces are the classic cburnett SVG set, served as a static sprite; each
-// piece is a `<g id="wk">` / `<g id="bq">` … in a shared 40×40 viewBox that we
-// reference per square with <use>. This gives crisp vector pieces at any size.
-const PIECE_SRC = `${import.meta.env.BASE_URL}pieces.svg`
-
+// Pieces are the classic cburnett SVG set. The sprite is inlined once by
+// <PieceSprite>; here we reference each piece by its same-document id
+// (#wk, #bq, …) via <use>, which gives crisp vector pieces at any size.
 export default function Board({ fen, orientation, lastMove, caption }: BoardProps) {
   const files = 'abcdefgh'
   const placement = fen.split(' ')[0]
@@ -58,7 +56,7 @@ export default function Board({ fen, orientation, lastMove, caption }: BoardProp
               {showFile && <span className="coord file">{fileCh}</span>}
               {piece && (
                 <svg className="piece" viewBox="0 0 40 40" aria-hidden="true">
-                  <use href={`${PIECE_SRC}#${piece.white ? 'w' : 'b'}${piece.type}`} />
+                  <use href={`#${piece.white ? 'w' : 'b'}${piece.type}`} />
                 </svg>
               )}
             </div>

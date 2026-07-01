@@ -97,13 +97,13 @@ Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys
 
 ```
 api/analyze.ts        Vercel serverless function (POST /api/analyze)
-public/pieces.svg     SVG chess-piece sprite (referenced per square with <use>)
 src/
   server/analyze.ts   core: builds the prompt, calls Claude, returns structured JSON (server-only)
   shared/             rules.ts (the 40 rules) + request/response types (browser + server)
   game.ts             PGN -> moves + FENs (chess.js)
   lib/api.ts          client fetch wrapper
   ui/                 App (state) + Board, MoveAnalysis, RelevanceMap, RulesReference, Settings, PgnInput
+  ui/pieces.svg       cburnett SVG piece sprite, inlined once (PieceSprite) and referenced with <use>
 vite.config.ts        React plugin + dev-only /api/analyze middleware
 ```
 
@@ -112,4 +112,4 @@ vite.config.ts        React plugin + dev-only /api/analyze middleware
 The board uses the classic **cburnett** SVG chess pieces by
 [Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett) (via Wikimedia
 Commons), licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
-The sprite in [`public/pieces.svg`](public/pieces.svg) retains that license notice.
+The sprite in [`src/ui/pieces.svg`](src/ui/pieces.svg) retains that license notice.
