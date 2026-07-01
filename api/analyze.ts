@@ -35,7 +35,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // failure surfaces here as a catchable, readable error instead of crashing
     // the whole function at load time (which shows up as an opaque platform 500).
     const engine = await import('../src/server/analyze.js')
-    const result = await engine.runAnalyze(body)
+    const mode = body && body.mode
+    const result =
+      mode === 'quiz'
+        ? await engine.runQuiz(body)
+        : mode === 'ask'
+          ? await engine.runAsk(body)
+          : await engine.runAnalyze(body)
     res.status(200).json(result)
   } catch (e) {
     const err = e as { name?: string; status?: number; message?: string }

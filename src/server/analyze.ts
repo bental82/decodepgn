@@ -6,12 +6,18 @@
 // This module is server-only (it imports the Anthropic SDK and reads the API
 // key). It must never be imported by browser code.
 
-import { rulesForPrompt, RULE_COUNT } from '../shared/rules.js'
+import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
+  AskRequest,
+  AskResponse,
+  GameMove,
   MoveAlternative,
   MoveResult,
+  QuizQuestion,
+  QuizResponse,
+  QuizRequest,
   RuleHit,
   Soundness,
 } from '../shared/types'
@@ -39,6 +45,116 @@ function friendlyAnthropicMessage(status: number, raw: string): string {
   if (status === 400) return `Anthropic rejected the request: ${raw}`
   if (status === 529 || status === 503) return 'Anthropic is temporarily overloaded. Please try again shortly.'
   return raw || 'The Claude request failed.'
+}
+
+const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
+const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as number) : d)
+
+/** Resolve the API key from the request or the environment, or throw 401. */
+function resolveKey(input: { apiKey?: string }): string {
+  const apiKey = (input.apiKey && input.apiKey.trim()) || process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new AnalyzeError(
+      'No Anthropic API key available. Set ANTHROPIC_API_KEY on the server, or add your own key in Settings.',
+      401,
+    )
+  }
+  return apiKey
+}
+
+function sanitizeGame(game: unknown): GameMove[] {
+  if (!Array.isArray(game)) return []
+  return game.slice(0, MAX_GAME_PLIES).map((m) => ({
+    ply: intOr(m?.ply, 0),
+    moveNumber: intOr(m?.moveNumber, 0),
+    color: m?.color === 'b' ? ('b' as const) : ('w' as const),
+    san: clip(m?.san, 12),
+  }))
+}
+
+function moveTextOf(game: GameMove[]): string {
+  return game
+    .map((m) => (m.color === 'w' ? `${m.moveNumber}. ${m.san}` : `${m.moveNumber}... ${m.san}`))
+    .join('  ')
+}
+
+// The rule reference is identical on every request and every mode, so it is the
+// cached prompt prefix — repeat calls (analyse / quiz / ask) all reuse it cheaply.
+const RULES_REFERENCE = `You are a sharp, practical chess coach for club players (beginner to intermediate). You reason using ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames).
+
+The ${RULE_COUNT} rules:
+${rulesForPrompt()}`
+
+function systemWith(task: string) {
+  return [
+    { type: 'text', text: RULES_REFERENCE, cache_control: { type: 'ephemeral' as const } },
+    { type: 'text', text: task },
+  ]
+}
+
+interface ClaudeOpts {
+  maxTokens: number
+  tool?: unknown
+  toolName?: string
+}
+
+/** Single place that calls the Anthropic Messages API over HTTP and maps errors. */
+async function callClaude(
+  apiKey: string,
+  system: unknown,
+  user: string,
+  opts: ClaudeOpts,
+): Promise<unknown> {
+  let resp: Response
+  try {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: opts.maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+        ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'tool', name: opts.toolName } } : {}),
+      }),
+      signal: AbortSignal.timeout(55_000),
+    })
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    throw new AnalyzeError(
+      timedOut
+        ? 'The Anthropic request timed out. Try again in a moment.'
+        : 'Could not reach the Anthropic API. Please try again shortly.',
+      timedOut ? 504 : 502,
+    )
+  }
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      const j = (await resp.json()) as { error?: { message?: string } }
+      detail = j?.error?.message || JSON.stringify(j)
+    } catch {
+      detail = await resp.text().catch(() => '')
+    }
+    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
+    throw new AnalyzeError(friendlyAnthropicMessage(status, detail), status)
+  }
+  const message = (await resp.json()) as {
+    content?: Array<{ type: string; input?: unknown; text?: string }>
+  }
+  if (opts.tool) {
+    const toolUse = message.content?.find((b) => b.type === 'tool_use')
+    if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
+      throw new AnalyzeError('Claude did not return structured output.', 502)
+    }
+    return toolUse.input
+  }
+  const textBlock = message.content?.find((b) => b.type === 'text')
+  return typeof textBlock?.text === 'string' ? textBlock.text : ''
 }
 
 const OUTPUT_TOOL = {
@@ -110,23 +226,14 @@ const OUTPUT_TOOL = {
 }
 
 export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse> {
-  const apiKey = (input.apiKey && input.apiKey.trim()) || process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new AnalyzeError(
-      'No Anthropic API key available. Set ANTHROPIC_API_KEY on the server, or add your own key in Settings.',
-      401,
-    )
-  }
+  const apiKey = resolveKey(input)
   if (input.focus !== 'w' && input.focus !== 'b') {
     throw new AnalyzeError('focus must be "w" or "b".')
   }
   if (!Array.isArray(input.game) || !Array.isArray(input.targets)) {
     throw new AnalyzeError('Malformed request: game and targets are required.')
   }
-  // de-duplicate targets by ply, cap the count, and clamp per-field string sizes
-  // so a client can't inflate the prompt with megabytes of text.
-  const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
-  const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as number) : d)
+  // de-duplicate targets by ply, cap the count, and clamp per-field string sizes.
   const seen = new Set<number>()
   const targets = input.targets
     .filter((t) => {
@@ -140,18 +247,10 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     throw new AnalyzeError(`Too many moves in one request (max ${MAX_TARGETS}).`)
   }
   const requestedPlies = new Set(targets.map((t) => t.ply))
-  const game = input.game.slice(0, MAX_GAME_PLIES).map((m) => ({
-    ply: intOr(m?.ply, 0),
-    moveNumber: intOr(m?.moveNumber, 0),
-    color: m?.color === 'b' ? ('b' as const) : ('w' as const),
-    san: clip(m?.san, 12),
-  }))
+  const game = sanitizeGame(input.game)
 
   const sideName = input.focus === 'w' ? 'White' : 'Black'
-
-  const moveText = game
-    .map((m) => (m.color === 'w' ? `${m.moveNumber}. ${m.san}` : `${m.moveNumber}... ${m.san}`))
-    .join('  ')
+  const moveText = moveTextOf(game)
 
   const byPly = new Map(game.map((m) => [m.ply, m]))
   const targetLines = targets
@@ -162,93 +261,27 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     })
     .join('\n')
 
-  // The big, invariant part of the prompt (role + the full rule set) is a stable
-  // prefix — mark it for prompt caching so every request reuses it cheaply.
-  // The tiny perspective line comes after the cache breakpoint.
-  const rulesBlock = `You are a sharp, practical chess coach for club players (beginner to intermediate).
+  const system = systemWith(`Analyse the requested ${sideName} move(s) strictly from ${sideName}'s perspective and report using the report_relevance tool.
 
-You are given a list of ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames). For a requested move by the side under study, decide which of these rules are genuinely relevant at that moment, and pick the rules that fit THIS move and phase of the game (opening/development rules early, middlegame rules in the middlegame, endgame rules once queens or most pieces are gone). Usually 1 to 4 rules per move — do not force irrelevant ones. Refer to rules by their NUMBER (1-${RULE_COUNT}).
-
-For each relevant rule set its status honestly:
-- "follows": the move clearly upholds the rule.
-- "partially": the move partly upholds it, with a trade-off.
-- "violates": the move goes AGAINST the rule. Use this whenever the move breaks the principle — do NOT soft-label a violation as "relevant".
-- "relevant": the rule is in play here but the move is genuinely neutral toward it (neither clearly following nor breaking it).
-Give one clear, concrete sentence per rule explaining the relevance.
-
-Also judge the MOVE ITSELF with a heuristic "soundness": "sound" (principled, low-risk — a normal strong move), "speculative" (ambitious/double-edged, e.g. an attacking sacrifice that may not be fully correct), or "dubious" (objectively risky or likely inferior). This is your positional judgment, not an engine score — do not pretend a risky sacrifice is simply "sound".
-
-When the move breaks or only partly follows a key principle, add one "alternative": a concrete move in SAN for the same side that would follow that principle more cleanly, with a one-line reason. If the move is already good, omit the alternative.
-
-Give one decisive "lesson" for the move (1-2 sentences). Be direct and concrete — a global disclaimer already tells users this is heuristic coaching, so you do not need to hedge every sentence.
-
-The ${RULE_COUNT} rules:
-${rulesForPrompt()}`
-
-  const system = [
-    { type: 'text', text: rulesBlock, cache_control: { type: 'ephemeral' as const } },
-    { type: 'text', text: `Analyse strictly from ${sideName}'s perspective.` },
-  ]
+For each move, decide which rules are genuinely relevant (usually 1-4; do not force irrelevant ones) and pick rules that fit this move and phase of the game (opening/development rules early, endgame rules once queens or most pieces are gone).
+Set each rule's status honestly:
+- "follows": clearly upholds the rule.
+- "partially": partly upholds it, with a trade-off.
+- "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
+- "relevant": the rule is in play but the move is genuinely neutral toward it.
+Give one clear sentence per rule. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.`)
 
   const user = `Full game in SAN:
 ${moveText}
 
-Analyse the following ${sideName} move(s) and report using the report_relevance tool. Return exactly one result object per ply listed:
+Analyse the following ${sideName} move(s); return exactly one result object per ply listed:
 ${targetLines}`
 
-  // Call the Anthropic Messages API directly over HTTP. Using fetch (built into
-  // the Node 18+ runtime) means the serverless function has NO third-party
-  // dependency to bundle, which removes a whole class of Vercel load failures.
-  let resp: Response
-  try {
-    resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 8000,
-        system,
-        tools: [OUTPUT_TOOL],
-        tool_choice: { type: 'tool', name: 'report_relevance' },
-        messages: [{ role: 'user', content: user }],
-      }),
-      signal: AbortSignal.timeout(55_000),
-    })
-  } catch (e) {
-    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
-    throw new AnalyzeError(
-      timedOut
-        ? 'The Anthropic request timed out. Try again, or analyse fewer moves at once.'
-        : 'Could not reach the Anthropic API. Please try again shortly.',
-      timedOut ? 504 : 502,
-    )
-  }
-
-  if (!resp.ok) {
-    // Preserve the real HTTP status (401 bad key, 404 unknown model, 429 rate
-    // limit, 529 overloaded) and surface a short, actionable message.
-    let detail = ''
-    try {
-      const errJson = (await resp.json()) as { error?: { message?: string } }
-      detail = errJson?.error?.message || JSON.stringify(errJson)
-    } catch {
-      detail = await resp.text().catch(() => '')
-    }
-    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
-    throw new AnalyzeError(friendlyAnthropicMessage(status, detail), status)
-  }
-
-  const message = (await resp.json()) as { content?: Array<{ type: string; input?: unknown }> }
-  const toolUse = message.content?.find((b) => b.type === 'tool_use')
-  if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
-    throw new AnalyzeError('Claude did not return structured output.', 502)
-  }
-
-  const data = toolUse.input as AnalyzeResponse
+  const data = (await callClaude(apiKey, system, user, {
+    maxTokens: 8000,
+    tool: OUTPUT_TOOL,
+    toolName: 'report_relevance',
+  })) as AnalyzeResponse
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
   const seenPly = new Set<number>()
@@ -278,4 +311,131 @@ ${targetLines}`
       return out
     })
   return { results }
+}
+
+// ---- Quiz mode ----
+
+const QUIZ_TOOL = {
+  name: 'make_quiz',
+  description: 'Return short multiple-choice quiz questions about the rules of thumb.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      questions: {
+        type: 'array',
+        description: 'The quiz questions.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            prompt: { type: 'string', description: 'The question text.' },
+            options: {
+              type: 'array',
+              description: '3 to 4 answer options; exactly one has correct=true.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  text: { type: 'string', description: 'A short answer option.' },
+                  correct: { type: 'boolean', description: 'True for the single correct option.' },
+                },
+                required: ['text', 'correct'],
+              },
+            },
+            explanation: { type: 'string', description: 'One line explaining the correct answer.' },
+            ruleId: { type: 'integer', description: `Main rule number involved (1-${RULE_COUNT}), if any.` },
+            ply: { type: 'integer', description: 'The game ply referenced, if any.' },
+          },
+          required: ['prompt', 'options', 'explanation'],
+        },
+      },
+    },
+    required: ['questions'],
+  },
+}
+
+export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
+  const apiKey = resolveKey(input)
+  const focus = input.focus === 'b' ? 'b' : 'w'
+  const sideName = focus === 'w' ? 'White' : 'Black'
+  const game = sanitizeGame(input.game)
+  if (game.length === 0) throw new AnalyzeError('A game is required to build a quiz.')
+  const count = Math.min(10, Math.max(1, intOr(input.count, 6)))
+  const moveText = moveTextOf(game)
+
+  const system = systemWith(`Create a short multiple-choice quiz that teaches a ${sideName} player the rules of thumb, based on the game below. Use the make_quiz tool.
+
+Each question must have a clear "prompt", 3-4 "options" with EXACTLY ONE having correct=true, and a one-line "explanation" of the correct answer. Make the wrong options plausible but clearly worse. Vary the questions across these kinds:
+- "Which rule does <move> most FOLLOW / BREAK here?" (options are rule titles).
+- "Which of these ${sideName} moves best follows rule #NN (<title>)?" (options are moves that appear in the game).
+- A concept check about what a specific rule means.
+Only reference moves that actually appear in the game, citing them by move number and SAN. Set "ruleId" to the main rule number (1-${RULE_COUNT}) and "ply" to the referenced game ply when applicable. Keep prompts and options concise.`)
+
+  const user = `The player being quizzed is ${sideName}. Base the quiz on this game.
+Game (SAN):
+${moveText}
+
+Create ${count} questions.`
+
+  const data = (await callClaude(apiKey, system, user, {
+    maxTokens: 4000,
+    tool: QUIZ_TOOL,
+    toolName: 'make_quiz',
+  })) as { questions?: unknown }
+
+  const rawQuestions = Array.isArray(data.questions) ? data.questions : []
+  const questions: QuizQuestion[] = []
+  for (const q of rawQuestions) {
+    if (!q || typeof q.prompt !== 'string' || !q.prompt.trim()) continue
+    const rawOpts = Array.isArray(q.options) ? q.options : []
+    const options = rawOpts
+      .filter((o: { text?: unknown }) => o && typeof o.text === 'string' && o.text.trim())
+      .slice(0, 5)
+      .map((o: { text: string; correct?: unknown }) => ({ text: clip(o.text, 160), correct: o.correct === true }))
+    if (options.length < 2) continue
+    if (!options.some((o: { correct: boolean }) => o.correct)) continue // need a right answer
+    const out: QuizQuestion = {
+      prompt: clip(q.prompt, 400),
+      options,
+      explanation: typeof q.explanation === 'string' ? clip(q.explanation, 300) : '',
+    }
+    if (Number.isInteger(q.ruleId) && q.ruleId >= 1 && q.ruleId <= RULE_COUNT) out.ruleId = q.ruleId
+    if (Number.isInteger(q.ply) && q.ply >= 0) out.ply = q.ply
+    questions.push(out)
+    if (questions.length >= 10) break
+  }
+  if (questions.length === 0) throw new AnalyzeError('Could not generate quiz questions. Try again.', 502)
+  return { questions }
+}
+
+// ---- Ask mode (free-form question) ----
+
+export async function runAsk(input: AskRequest): Promise<AskResponse> {
+  const apiKey = resolveKey(input)
+  const question = clip(input.question, 500).trim()
+  if (!question) throw new AnalyzeError('Please enter a question.')
+
+  const contextLines: string[] = []
+  if (Array.isArray(input.game) && input.game.length) {
+    contextLines.push(`Game so far (SAN): ${moveTextOf(sanitizeGame(input.game))}`)
+  }
+  const parts: string[] = []
+  if (input.san) parts.push(`move ${clip(input.san, 12)}`)
+  if (input.fen) parts.push(`position FEN ${clip(input.fen, 100)}`)
+  if (parts.length) contextLines.push(`The move/position under discussion: ${parts.join(', ')}.`)
+  const rid = input.ruleId
+  if (Number.isInteger(rid) && (rid as number) >= 1 && (rid as number) <= RULE_COUNT) {
+    const rule = RULES_BY_ID[rid as number]
+    if (rule) contextLines.push(`Asked in the context of rule #${rule.id} "${rule.title}" — ${rule.detail}`)
+  }
+  const context = contextLines.length ? `Context:\n${contextLines.join('\n')}\n\n` : ''
+
+  const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences), grounded in the ${RULE_COUNT} rules of thumb above. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.`)
+
+  const user = `${context}User question: ${question}`
+
+  const text = (await callClaude(apiKey, system, user, { maxTokens: 700 })) as string
+  const answer = clip(text, 1500).trim()
+  return { answer: answer || 'No answer was returned. Please try rephrasing.' }
 }

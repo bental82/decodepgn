@@ -1,7 +1,7 @@
 // The contract between App and the presentational components: prop shapes plus
 // small display helpers. Components import their props from here.
 
-import type { Focus, MoveResult, ParsedMove, RuleStatus, Soundness } from '../shared/types'
+import type { Focus, GameMove, MoveResult, ParsedMove, RuleStatus, Soundness } from '../shared/types'
 
 export type Orientation = 'w' | 'b'
 
@@ -34,6 +34,33 @@ export interface RulesReferenceProps {
   highlightId?: number
   usage: Record<number, number> // rule id -> how many analysed moves cite it
   onPickRule: (id: number) => void
+  apiKey: string
+  onNeedKey: () => void
+}
+
+export interface QuizProps {
+  moves: ParsedMove[]
+  focus: Focus
+  apiKey: string
+  onNeedKey: () => void
+  onOpenRule: (id: number) => void
+}
+
+export interface AskContext {
+  focus?: Focus
+  game?: GameMove[]
+  ply?: number
+  san?: string
+  fen?: string
+  ruleId?: number
+}
+
+export interface AskBoxProps {
+  context: AskContext
+  apiKey: string
+  onNeedKey: () => void
+  placeholder?: string
+  label?: string
 }
 
 export interface RelevanceMapProps {

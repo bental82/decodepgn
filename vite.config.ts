@@ -46,7 +46,12 @@ function devApi(): import('vite').Plugin {
           }
           const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
           const mod = await server.ssrLoadModule('/src/server/analyze.ts')
-          const result = await mod.runAnalyze(body)
+          const result =
+            body?.mode === 'quiz'
+              ? await mod.runQuiz(body)
+              : body?.mode === 'ask'
+                ? await mod.runAsk(body)
+                : await mod.runAnalyze(body)
           res.setHeader('content-type', 'application/json')
           res.end(JSON.stringify(result))
         } catch (e: any) {

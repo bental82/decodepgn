@@ -4,18 +4,20 @@ import { analyze } from '../lib/api'
 import { RULE_COUNT } from '../shared/rules'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
+import AskBox from './AskBox'
 import Board from './Board'
 import GameSummary from './GameSummary'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
 import PgnInput from './PgnInput'
+import Quiz from './Quiz'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
 import Settings from './Settings'
 import StatusLegend from './StatusLegend'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
-type Tab = 'move' | 'map' | 'rules'
+type Tab = 'move' | 'quiz' | 'map' | 'rules'
 
 export default function App() {
   const [phase, setPhase] = useState<'input' | 'game'>('input')
@@ -302,11 +304,15 @@ export default function App() {
             <button className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
               Study
             </button>
+            <button className={tab === 'quiz' ? 'active' : ''} onClick={() => setTab('quiz')}>
+              Quiz
+            </button>
             <button className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}>
               By rule
             </button>
             <button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
-              The {RULE_COUNT} rules
+              <span className="tab-long">The {RULE_COUNT} rules</span>
+              <span className="tab-short">Rules</span>
             </button>
           </div>
 
@@ -430,9 +436,32 @@ export default function App() {
                     moves and see which rules of thumb apply.
                   </p>
                 )}
+                <AskBox
+                  context={{
+                    focus,
+                    game: toGameMoves(moves),
+                    ply: selectedPly,
+                    san: move.san,
+                    fen: move.fenAfter,
+                  }}
+                  apiKey={apiKey}
+                  onNeedKey={() => setShowSettings(true)}
+                  label="Ask about this move"
+                  placeholder="e.g. why is this move risky here?"
+                />
               </div>
               </div>
             </>
+          )}
+
+          {tab === 'quiz' && (
+            <Quiz
+              moves={moves}
+              focus={focus}
+              apiKey={apiKey}
+              onNeedKey={() => setShowSettings(true)}
+              onOpenRule={openRule}
+            />
           )}
 
           {tab === 'map' && (
@@ -452,7 +481,13 @@ export default function App() {
           )}
 
           {tab === 'rules' && (
-            <RulesReference highlightId={highlightRule} usage={usage} onPickRule={setHighlightRule} />
+            <RulesReference
+              highlightId={highlightRule}
+              usage={usage}
+              onPickRule={setHighlightRule}
+              apiKey={apiKey}
+              onNeedKey={() => setShowSettings(true)}
+            />
           )}
         </div>
       )}

@@ -1,25 +1,32 @@
-// Thin client for the /api/analyze serverless function.
+// Thin client for the /api/analyze serverless function (analyse / quiz / ask).
 
-import type { AnalyzeRequest, AnalyzeResponse } from '../shared/types'
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  AskRequest,
+  AskResponse,
+  QuizRequest,
+  QuizResponse,
+} from '../shared/types'
 
 // Below the serverless function's maxDuration (60s) so the client aborts first
 // with a clear message rather than surfacing an opaque platform timeout.
 const TIMEOUT_MS = 55_000
 
-export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
+async function postAnalyze<T>(body: object, timeoutMs = TIMEOUT_MS): Promise<T> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   let res: Response
   try {
     res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(req),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     })
   } catch (e) {
-    if (ctrl.signal.aborted) throw new Error('The request timed out. Try again, or analyse fewer moves at once.')
-    throw new Error('Could not reach the analysis service. Check your connection and try again.')
+    if (ctrl.signal.aborted) throw new Error('The request timed out. Try again in a moment.')
+    throw new Error('Could not reach the service. Check your connection and try again.')
   } finally {
     clearTimeout(timer)
   }
@@ -33,5 +40,17 @@ export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
     }
     throw new Error(message)
   }
-  return (await res.json()) as AnalyzeResponse
+  return (await res.json()) as T
+}
+
+export function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
+  return postAnalyze<AnalyzeResponse>(req)
+}
+
+export function quiz(req: QuizRequest): Promise<QuizResponse> {
+  return postAnalyze<QuizResponse>(req)
+}
+
+export function ask(req: AskRequest): Promise<AskResponse> {
+  return postAnalyze<AskResponse>(req, 45_000)
 }

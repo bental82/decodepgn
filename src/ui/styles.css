@@ -239,6 +239,44 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .summary-sound { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .summary-sound-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
 
+/* responsive tab labels (short label shown on phones) */
+.tab-short { display: none; }
+
+/* ask-a-question box */
+.askbox { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ask-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.ask-row { display: flex; gap: 8px; }
+.ask-input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; font-size: 14px; }
+.ask-input:focus { outline: none; border-color: var(--accent); }
+.ask-answer { margin-top: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.ask-answer p { margin: 0; font-size: 14px; }
+.ask-note { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.error.small { font-size: 13px; padding: 8px 10px; margin: 8px 0 0; }
+.rule-ask { margin: -4px 0 10px; padding: 0 2px; }
+.rule-ask .askbox { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* quiz */
+.quiz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; max-width: 720px; margin: 0 auto; }
+.quiz-intro { text-align: center; }
+.quiz-intro h2 { font-size: 20px; }
+.quiz-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.quiz-score { color: var(--accent-ink); }
+.quiz-board { max-width: 320px; margin: 0 auto 14px; }
+.quiz-prompt { font-size: 17px; font-weight: 600; margin: 6px 0 14px; }
+.quiz-options { display: flex; flex-direction: column; gap: 8px; }
+.quiz-option { display: flex; align-items: center; gap: 10px; text-align: left; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 10px; padding: 12px 14px; font-size: 15px; cursor: pointer; font: inherit; }
+.quiz-option:hover:not(:disabled) { border-color: var(--accent); }
+.quiz-option:disabled { cursor: default; }
+.quiz-option.correct { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+.quiz-option.wrong { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.quiz-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--bg); font-size: 13px; font-weight: 700; flex: none; }
+.quiz-option.correct .quiz-mark, .quiz-option.wrong .quiz-mark { background: transparent; }
+.quiz-feedback { margin-top: 12px; border-radius: 10px; padding: 12px 14px; font-size: 14px; border-left: 4px solid var(--line-2); background: var(--panel-2); }
+.quiz-feedback.ok { border-left-color: var(--good); }
+.quiz-feedback.no { border-left-color: var(--bad); }
+.quiz-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.quiz-final { margin-top: 14px; text-align: center; font-size: 16px; }
+
 /* footer */
 .foot { margin-top: auto; text-align: center; color: var(--muted); font-size: 12.5px; padding: 20px; border-top: 1px solid var(--line); background: var(--panel); }
 
@@ -265,14 +303,14 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .workspace { padding: 12px 14px; }
   .study { grid-template-columns: 1fr; gap: 12px; }
 
-  /* board + nav stay pinned at the top; the explanation scrolls beneath, so
-     the board is capped by viewport height to leave room to read. */
+  /* board breaks out to the FULL viewport width (edge-to-edge); the nav/progress
+     controls keep a comfortable inset. */
   .board-panel {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
-    padding: 8px 0 10px; margin: -8px 0 0;
+    width: 100vw; margin-left: calc(50% - 50vw); padding: 8px 0 10px;
   }
-  /* maximise the board on mobile — fill the full width */
-  .board, .board-nav { width: 100%; max-width: 100%; margin-left: auto; margin-right: auto; }
+  .board { width: 100%; max-width: 100%; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
+  .board-nav, .analysis-progress { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; }
   .board-nav { margin-top: 10px; }
   .navbtn { padding: 9px 14px; }
 
@@ -287,4 +325,15 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   /* stack the summary columns */
   .summary { padding: 16px; }
   .summary-cols { grid-template-columns: 1fr; }
+
+  /* 4 tabs: shrink and use the short "Rules" label so they fit one row */
+  .tabs { gap: 5px; }
+  .tabs button { font-size: 13px; padding: 9px 5px; }
+  .tab-long { display: none; }
+  .tab-short { display: inline; }
+
+  /* quiz on phones */
+  .quiz { padding: 16px; }
+  .quiz-prompt { font-size: 16px; }
+  .quiz-board { max-width: 300px; }
 }

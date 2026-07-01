@@ -29,6 +29,7 @@ export interface AnalyzeTarget {
 }
 
 export interface AnalyzeRequest {
+  mode?: 'analyze'
   focus: Focus
   game: GameMove[]
   targets: AnalyzeTarget[]
@@ -63,6 +64,51 @@ export interface MoveResult {
 
 export interface AnalyzeResponse {
   results: MoveResult[]
+}
+
+// ---- Quiz mode ----
+
+export interface QuizOption {
+  text: string
+  correct: boolean
+}
+
+export interface QuizQuestion {
+  prompt: string
+  options: QuizOption[]
+  explanation: string
+  ruleId?: number // main rule the question is about (1..RULE_COUNT)
+  ply?: number // game ply the question references, if any
+}
+
+export interface QuizRequest {
+  mode: 'quiz'
+  focus: Focus
+  game: GameMove[]
+  count?: number
+  apiKey?: string
+}
+
+export interface QuizResponse {
+  questions: QuizQuestion[]
+}
+
+// ---- Ask mode (free-form question) ----
+
+export interface AskRequest {
+  mode: 'ask'
+  question: string
+  focus?: Focus
+  game?: GameMove[]
+  ply?: number
+  san?: string
+  fen?: string
+  ruleId?: number
+  apiKey?: string
+}
+
+export interface AskResponse {
+  answer: string
 }
 
 export interface ApiError {
