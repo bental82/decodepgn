@@ -5,12 +5,14 @@ import { RULE_COUNT } from '../shared/rules'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import Board from './Board'
+import GameSummary from './GameSummary'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
 import PgnInput from './PgnInput'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
 import Settings from './Settings'
+import StatusLegend from './StatusLegend'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
 type Tab = 'move' | 'map' | 'rules'
@@ -31,6 +33,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
+  // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
+  const [queuedPlies, setQueuedPlies] = useState<Set<number>>(new Set())
   // Bumped whenever we load a new game; late responses from an old game are dropped.
   const genRef = useRef(0)
 
@@ -108,6 +112,7 @@ export default function App() {
       setResults({})
       setErrorByPly({})
       setLoadingPlies(new Set())
+      setQueuedPlies(new Set())
       setParseError(null)
       setHighlightRule(undefined)
       const first = g.moves.find((m) => m.color === f)?.ply ?? 0
@@ -140,12 +145,18 @@ export default function App() {
     const CONCURRENCY = 3
     const batches: number[][] = []
     for (let i = 0; i < plies.length; i += BATCH) batches.push(plies.slice(i, i + BATCH))
+    setQueuedPlies(new Set(plies))
     setAllProgress({ done: 0, total: plies.length })
     let done = 0
     let next = 0
     const worker = async () => {
       while (next < batches.length && genRef.current === gen) {
         const chunk = batches[next++]
+        setQueuedPlies((prev) => {
+          const c = new Set(prev)
+          chunk.forEach((p) => c.delete(p)) // no longer queued — now in flight
+          return c
+        })
         await analyzePlies(moves, focus, chunk)
         done += chunk.length
         if (genRef.current === gen) setAllProgress({ done: Math.min(plies.length, done), total: plies.length })
@@ -154,6 +165,7 @@ export default function App() {
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
     if (genRef.current === gen) {
       setAllProgress(null)
+      setQueuedPlies(new Set())
       setTab('map')
     }
   }
@@ -175,6 +187,7 @@ export default function App() {
     setErrorByPly({})
     setLoadingPlies(new Set())
     setAllProgress(null)
+    setQueuedPlies(new Set())
     setParseError(null)
   }
 
@@ -207,6 +220,7 @@ export default function App() {
     () => moves.filter((m) => m.color === focus).map((m) => m.ply),
     [moves, focus],
   )
+  const analyzedFocus = studiedPlies.length - focusMovesRemaining
 
   const stepStudied = (dir: 1 | -1) => {
     if (!studiedPlies.length) return
@@ -244,12 +258,18 @@ export default function App() {
               <strong>{headers.White ?? 'White'}</strong> vs <strong>{headers.Black ?? 'Black'}</strong>
               <span className="studying"> · studying {colorName(focus)}</span>
             </div>
-            <button className="btn" onClick={handleAnalyzeAll} disabled={!!allProgress}>
+            <button
+              className="btn"
+              onClick={handleAnalyzeAll}
+              disabled={!!allProgress || focusMovesRemaining === 0}
+            >
               {allProgress
                 ? `Analysing… ${allProgress.done}/${allProgress.total}`
-                : focusMovesRemaining
-                  ? `Analyse all ${colorName(focus)} moves`
-                  : 'All moves analysed'}
+                : focusMovesRemaining === 0
+                  ? 'All analysed ✓'
+                  : analyzedFocus > 0
+                    ? `Analyse remaining (${focusMovesRemaining})`
+                    : `Analyse all ${studiedPlies.length} ${colorName(focus)} moves`}
             </button>
             <button
               className="btn ghost"
@@ -291,7 +311,9 @@ export default function App() {
           </div>
 
           {tab === 'move' && move && (
-            <div className="study">
+            <>
+              <StatusLegend />
+              <div className="study">
               <div className="board-panel">
                 <Board
                   fen={move.fenAfter}
@@ -338,6 +360,47 @@ export default function App() {
                     ⏭
                   </button>
                 </div>
+                {studiedPlies.length > 0 && (
+                  <div className="analysis-progress">
+                    <div className="movedots" aria-label="Your moves — analysis progress">
+                      {studiedPlies.map((p) => {
+                        const st = results[p]
+                          ? 'done'
+                          : loadingPlies.has(p)
+                            ? 'loading'
+                            : queuedPlies.has(p)
+                              ? 'queued'
+                              : 'pending'
+                        const mm = moves[p]
+                        const stLabel =
+                          st === 'done'
+                            ? 'analysed'
+                            : st === 'loading'
+                              ? 'analysing…'
+                              : st === 'queued'
+                                ? 'queued'
+                                : 'not analysed'
+                        return (
+                          <button
+                            key={p}
+                            className={'movedot ' + st + (p === selectedPly ? ' active' : '')}
+                            title={`${mm.moveNumber}${mm.color === 'w' ? '.' : '…'} ${mm.san} — ${stLabel}`}
+                            aria-label={`Move ${mm.moveNumber} ${mm.san}, ${stLabel}`}
+                            onClick={() => setSelectedPly(p)}
+                          />
+                        )
+                      })}
+                    </div>
+                    <div className="progress-caption">
+                      {analyzedFocus} of {studiedPlies.length} of your moves analysed
+                      {focusMovesRemaining > 0 && !allProgress ? (
+                        <button className="linkbtn" onClick={handleAnalyzeAll}>
+                          Analyse remaining
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="explain-panel">
                 <div className="explain-head">
@@ -368,20 +431,24 @@ export default function App() {
                   </p>
                 )}
               </div>
-            </div>
+              </div>
+            </>
           )}
 
           {tab === 'map' && (
-            <RelevanceMap
-              moves={moves}
-              focus={focus}
-              results={results}
-              onJump={(ply) => {
-                setSelectedPly(ply)
-                setTab('move')
-              }}
-              onPickRule={openRule}
-            />
+            <div className="map-tab">
+              <GameSummary moves={moves} focus={focus} results={results} onPickRule={openRule} />
+              <RelevanceMap
+                moves={moves}
+                focus={focus}
+                results={results}
+                onJump={(ply) => {
+                  setSelectedPly(ply)
+                  setTab('move')
+                }}
+                onPickRule={openRule}
+              />
+            </div>
           )}
 
           {tab === 'rules' && (

@@ -46,10 +46,16 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
               <div className="relmoves">
                 {chips.map(({ ply, status }) => {
                   const m: ParsedMove | undefined = moves[ply]
+                  const meta = statusMeta(status)
+                  const label = m ? m.moveNumber + (m.color === 'w' ? '. ' : '… ') + m.san : 'ply ' + ply
                   return (
-                    <button className="chip" key={ply} onClick={() => onJump(ply)}>
-                      <span className={'cdot ' + statusMeta(status).cls} />{' '}
-                      {m ? m.moveNumber + (m.color === 'w' ? '. ' : '… ') + m.san : 'ply ' + ply}
+                    <button
+                      className="chip"
+                      key={ply}
+                      onClick={() => onJump(ply)}
+                      title={`${label} — ${meta.label}. Open on the board`}
+                    >
+                      <span className={'cdot ' + meta.cls} /> {label} <span className="chip-go">↗</span>
                     </button>
                   )
                 })}

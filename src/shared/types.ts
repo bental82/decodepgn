@@ -38,9 +38,18 @@ export interface AnalyzeRequest {
 
 export type RuleStatus = 'follows' | 'partially' | 'violates' | 'relevant'
 
+/** Heuristic judgment of the move itself, independent of which rules apply. */
+export type Soundness = 'sound' | 'speculative' | 'dubious'
+
 export interface RuleHit {
   id: number // rule number (1..RULE_COUNT)
   status: RuleStatus
+  why: string
+}
+
+/** A cleaner alternative move, suggested when the played move breaks a principle. */
+export interface MoveAlternative {
+  move: string // SAN, e.g. "Nf3"
   why: string
 }
 
@@ -48,6 +57,8 @@ export interface MoveResult {
   ply: number
   rules: RuleHit[]
   lesson: string
+  soundness?: Soundness
+  alternative?: MoveAlternative | null
 }
 
 export interface AnalyzeResponse {

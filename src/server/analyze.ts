@@ -7,7 +7,14 @@
 // key). It must never be imported by browser code.
 
 import { rulesForPrompt, RULE_COUNT } from '../shared/rules.js'
-import type { AnalyzeRequest, AnalyzeResponse, MoveResult, RuleHit } from '../shared/types'
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  MoveAlternative,
+  MoveResult,
+  RuleHit,
+  Soundness,
+} from '../shared/types'
 
 export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
@@ -61,7 +68,7 @@ const OUTPUT_TOOL = {
                     type: 'string',
                     enum: ['follows', 'partially', 'violates', 'relevant'],
                     description:
-                      'Whether the move follows, partially follows, or violates the rule; or is just relevant/unclear.',
+                      'How the move relates to the rule. Use "follows" when it clearly upholds it, "partially" when it partly does, and "violates" whenever the move goes AGAINST the rule — do NOT soft-label a violation as "relevant". Reserve "relevant" for when the rule is genuinely in play but the move is neutral toward it (neither clearly following nor breaking it).',
                   },
                   why: {
                     type: 'string',
@@ -71,9 +78,30 @@ const OUTPUT_TOOL = {
                 required: ['id', 'status', 'why'],
               },
             },
-            lesson: { type: 'string', description: 'One short practical lesson for this move.' },
+            lesson: {
+              type: 'string',
+              description:
+                'One decisive practical lesson for this move (1-2 sentences). Be direct and concrete.',
+            },
+            soundness: {
+              type: 'string',
+              enum: ['sound', 'speculative', 'dubious'],
+              description:
+                'Heuristic judgment of the move itself (not an engine score): "sound" = principled and low-risk; "speculative" = ambitious/double-edged (e.g. an attacking sacrifice that may or may not be fully correct); "dubious" = looks objectively risky or likely inferior.',
+            },
+            alternative: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                move: { type: 'string', description: 'A concrete alternative move in SAN, e.g. "Nf3".' },
+                why: { type: 'string', description: 'One short line on why it follows the principle more cleanly.' },
+              },
+              required: ['move', 'why'],
+              description:
+                'ONLY when the played move breaks or only partly follows a key principle: one cleaner alternative move for the same side. Omit entirely if the move is already good.',
+            },
           },
-          required: ['ply', 'rules', 'lesson'],
+          required: ['ply', 'rules', 'lesson', 'soundness'],
         },
       },
     },
@@ -137,11 +165,22 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
   // The big, invariant part of the prompt (role + the full rule set) is a stable
   // prefix — mark it for prompt caching so every request reuses it cheaply.
   // The tiny perspective line comes after the cache breakpoint.
-  const rulesBlock = `You are a friendly, practical chess coach for club players (beginner to intermediate).
+  const rulesBlock = `You are a sharp, practical chess coach for club players (beginner to intermediate).
 
-You are given a list of ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames). For a requested move by the side under study, decide which of these rules are genuinely RELEVANT at that moment, and for each relevant rule state whether the move "follows", "partially" follows, "violates" it, or is just "relevant" (matters here but neutral/unclear).
+You are given a list of ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames). For a requested move by the side under study, decide which of these rules are genuinely relevant at that moment, and pick the rules that fit THIS move and phase of the game (opening/development rules early, middlegame rules in the middlegame, endgame rules once queens or most pieces are gone). Usually 1 to 4 rules per move — do not force irrelevant ones. Refer to rules by their NUMBER (1-${RULE_COUNT}).
 
-Pick the rules that fit THIS move and phase of the game: opening/development rules early, middlegame rules (trades, pawn breaks, weaknesses, king safety, attacks) in the middlegame, and endgame rules once queens or most pieces are gone. Give one plain-language sentence per relevant rule that a club player can understand, using honest, hedged language ("appears", "may", "likely"). Only list rules that truly apply — usually 1 to 4 per move. Do not force irrelevant rules. Also give one short practical "lesson" sentence for the move. Refer to rules by their NUMBER (1-${RULE_COUNT}) exactly.
+For each relevant rule set its status honestly:
+- "follows": the move clearly upholds the rule.
+- "partially": the move partly upholds it, with a trade-off.
+- "violates": the move goes AGAINST the rule. Use this whenever the move breaks the principle — do NOT soft-label a violation as "relevant".
+- "relevant": the rule is in play here but the move is genuinely neutral toward it (neither clearly following nor breaking it).
+Give one clear, concrete sentence per rule explaining the relevance.
+
+Also judge the MOVE ITSELF with a heuristic "soundness": "sound" (principled, low-risk — a normal strong move), "speculative" (ambitious/double-edged, e.g. an attacking sacrifice that may not be fully correct), or "dubious" (objectively risky or likely inferior). This is your positional judgment, not an engine score — do not pretend a risky sacrifice is simply "sound".
+
+When the move breaks or only partly follows a key principle, add one "alternative": a concrete move in SAN for the same side that would follow that principle more cleanly, with a one-line reason. If the move is already good, omit the alternative.
+
+Give one decisive "lesson" for the move (1-2 sentences). Be direct and concrete — a global disclaimer already tells users this is heuristic coaching, so you do not need to hedge every sentence.
 
 The ${RULE_COUNT} rules:
 ${rulesForPrompt()}`
@@ -211,21 +250,32 @@ ${targetLines}`
 
   const data = toolUse.input as AnalyzeResponse
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
+  const validSoundness = new Set(['sound', 'speculative', 'dubious'])
   const seenPly = new Set<number>()
   const results: MoveResult[] = (data.results || [])
     // only keep results for plies we actually asked about, without duplicates
     .filter((r) => requestedPlies.has(r.ply) && !seenPly.has(r.ply) && (seenPly.add(r.ply), true))
-    .map((r) => ({
-      ply: r.ply,
-      lesson: typeof r.lesson === 'string' ? r.lesson : '',
-      rules: (r.rules || []).filter(
-        (h: RuleHit) =>
-          Number.isInteger(h.id) &&
-          h.id >= 1 &&
-          h.id <= RULE_COUNT &&
-          typeof h.why === 'string' &&
-          validStatuses.has(h.status),
-      ),
-    }))
+    .map((r) => {
+      const out: MoveResult = {
+        ply: r.ply,
+        lesson: typeof r.lesson === 'string' ? r.lesson : '',
+        rules: (r.rules || []).filter(
+          (h: RuleHit) =>
+            Number.isInteger(h.id) &&
+            h.id >= 1 &&
+            h.id <= RULE_COUNT &&
+            typeof h.why === 'string' &&
+            validStatuses.has(h.status),
+        ),
+      }
+      if (typeof r.soundness === 'string' && validSoundness.has(r.soundness)) {
+        out.soundness = r.soundness as Soundness
+      }
+      const alt = r.alternative as MoveAlternative | undefined
+      if (alt && typeof alt.move === 'string' && alt.move.trim() && typeof alt.why === 'string') {
+        out.alternative = { move: clip(alt.move, 16), why: clip(alt.why, 240) }
+      }
+      return out
+    })
   return { results }
 }

@@ -163,7 +163,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .relmoves { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .chip:hover { border-color: var(--accent); }
+.chip:hover .chip-go { color: var(--accent); }
 .chip .cdot { width: 8px; height: 8px; border-radius: 50%; }
+.chip-go { color: var(--muted); font-size: 11px; }
 
 /* rules reference */
 .rules-ref { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
@@ -185,8 +187,69 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .modal input { width: 100%; border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; font-size: 14px; font-family: ui-monospace, monospace; margin: 8px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 
+/* soundness badge colours (reuse .badge sizing) */
+.snd-sound { background: var(--good-bg); color: var(--good); }
+.snd-spec { background: var(--warn-bg); color: var(--warn); }
+.snd-dubious { background: var(--bad-bg); color: var(--bad); }
+
+/* soundness banner on the move card */
+.soundness { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.snd-badge { font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; }
+.soundness.snd-sound .snd-badge { background: var(--good-bg); color: var(--good); }
+.soundness.snd-spec .snd-badge { background: var(--warn-bg); color: var(--warn); }
+.soundness.snd-dubious .snd-badge { background: var(--bad-bg); color: var(--bad); }
+.snd-hint { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* better-alternative line */
+.alt { border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 14px; margin: 2px 0 14px; background: var(--panel-2); }
+.alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
+.alt p { margin: 3px 0 0; font-size: 14px; }
+
+/* label legend */
+.legend { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; }
+.legend-row { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
+.legend-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; min-width: 96px; }
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.legend-desc { font-size: 12px; color: var(--muted); }
+
+/* per-move analysis progress + dots */
+.analysis-progress { margin-top: 12px; }
+.movedots { display: flex; flex-wrap: wrap; gap: 5px; }
+.movedot { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--panel-2); cursor: pointer; padding: 0; }
+.movedot.done { background: var(--good); border-color: var(--good); }
+.movedot.loading { background: var(--accent); border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.movedot.queued { background: var(--warn); border-color: var(--warn); opacity: 0.7; }
+.movedot.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.movedot:hover { border-color: var(--accent); }
+.progress-caption { margin-top: 8px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; text-decoration: underline; }
+.linkbtn:hover { color: var(--accent-ink); }
+
+/* game summary */
+.map-tab { display: flex; flex-direction: column; gap: 16px; }
+.summary { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+.summary h2 { font-size: 18px; }
+.summary-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+.summary-h { font-weight: 700; font-size: 12.5px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.03em; }
+.summary-h.broke { color: var(--bad); }
+.summary-h.followed { color: var(--good); }
+.summary-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 7px; }
+.summary-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.summary-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.summary-sound { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.summary-sound-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+
 /* footer */
 .foot { margin-top: auto; text-align: center; color: var(--muted); font-size: 12.5px; padding: 20px; border-top: 1px solid var(--line); background: var(--panel); }
+
+/* intermediate widths: stack the study view so the board and explanation
+   never clip or overlap; the board centres with a sensible cap. */
+@media (max-width: 1024px) {
+  .study { grid-template-columns: 1fr; gap: 16px; }
+  .board-panel { position: static; }
+  .board, .board-nav { max-width: min(72vh, 560px); margin-left: auto; margin-right: auto; }
+  .summary-cols { gap: 14px; }
+}
 
 @media (max-width: 820px) {
   .landing { grid-template-columns: 1fr; }
@@ -216,4 +279,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .explain-panel { padding: 14px 16px; min-height: 0; }
   .explain-head { padding-bottom: 10px; margin-bottom: 10px; }
   .explain-move { font-size: 18px; }
+
+  /* compact legend on phones (labels are self-explanatory; hide descriptions) */
+  .legend { padding: 10px 12px; gap: 7px; }
+  .legend-desc { display: none; }
+  .legend-title { min-width: auto; }
+  /* stack the summary columns */
+  .summary { padding: 16px; }
+  .summary-cols { grid-template-columns: 1fr; }
 }
