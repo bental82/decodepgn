@@ -24,6 +24,7 @@ export const CATEGORIES = [
   'Tactics and safety checks',
   'Pawn play',
   'Defense and practical play',
+  'Piece placement and coordination',
 ] as const
 
 export const RULES: Rule[] = [
@@ -576,6 +577,50 @@ export const RULES: Rule[] = [
     title: 'When clearly winning, simplify and kill counterplay.',
     detail:
       'With a decisive advantage, trade pieces, keep your king safe, and deny the opponent activity — no new adventures. The cleanest wins are boring; most blown wins come from allowing counterplay.',
+  },
+
+  // Piece placement and coordination
+  {
+    id: 76,
+    category: 'Piece placement and coordination',
+    title: 'Connect your rooks.',
+    detail:
+      'Castle, develop the minor pieces, and move the queen off the back rank so the rooks see and defend each other. Connected rooks can double on any file, cover the back rank, and mark the end of development.',
+  },
+  {
+    id: 77,
+    category: 'Piece placement and coordination',
+    title: 'A knight on the rim is dim.',
+    detail:
+      'On the edge of the board a knight controls only 3-4 squares instead of 8 and is far from the action. Edge knights need a concrete purpose (a bishop trade, a route to an outpost); otherwise keep knights toward the center.',
+  },
+  {
+    id: 78,
+    category: 'Piece placement and coordination',
+    title: 'When doubling on a file, the rook usually belongs in front of the queen.',
+    detail:
+      'With a queen+rook battery, leading with the rook means the cheap piece absorbs the confrontation and the queen supports from behind. Leading with the queen exposes your strongest piece to harassment and trades.',
+  },
+  {
+    id: 79,
+    category: 'Piece placement and coordination',
+    title: 'Do not give up your fianchetto bishop lightly.',
+    detail:
+      'A fianchettoed bishop is both a long-diagonal attacker and the roof of your king’s shelter. Trading it — or letting it be traded — leaves lasting dark- or light-square holes around your king.',
+  },
+  {
+    id: 80,
+    category: 'Piece placement and coordination',
+    title: 'Use a rook lift to join the attack.',
+    detail:
+      'Rooks need open files — or a lift: Ra3-g3, Re3-h3 and friends swing the rook in front of its own pawns to attack the king. When the position is closed, a lift is often the only way to include the rooks.',
+  },
+  {
+    id: 81,
+    category: 'Piece placement and coordination',
+    title: 'Put your pawns on the opposite color of your bishop.',
+    detail:
+      'With one bishop, pawns fixed on its color block it and weaken the squares it cannot cover. Pawns on the opposite color let the bishop breathe and let pawns and bishop control both colors together.',
   },
 ]
 
