@@ -11,7 +11,13 @@ function devApi(): import('vite').Plugin {
     name: 'dev-api-analyze',
     apply: 'serve',
     configureServer(server) {
+      const MAX_BODY_BYTES = 512 * 1024
       const handler: Connect.NextHandleFunction = async (req, res) => {
+        if (req.method === 'GET') {
+          res.setHeader('content-type', 'application/json')
+          res.end(JSON.stringify({ hasServerKey: !!process.env.ANTHROPIC_API_KEY }))
+          return
+        }
         if (req.method !== 'POST') {
           res.statusCode = 405
           res.end('Method not allowed')
@@ -19,7 +25,17 @@ function devApi(): import('vite').Plugin {
         }
         try {
           const chunks: Buffer[] = []
-          for await (const c of req) chunks.push(c as Buffer)
+          let size = 0
+          for await (const c of req) {
+            size += (c as Buffer).length
+            if (size > MAX_BODY_BYTES) {
+              res.statusCode = 413
+              res.setHeader('content-type', 'application/json')
+              res.end(JSON.stringify({ error: 'Request too large.' }))
+              return
+            }
+            chunks.push(c as Buffer)
+          }
           const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
           const mod = await server.ssrLoadModule('/src/server/analyze.ts')
           const result = await mod.runAnalyze(body)

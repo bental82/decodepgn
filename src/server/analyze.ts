@@ -84,18 +84,29 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
   if (!Array.isArray(input.game) || !Array.isArray(input.targets)) {
     throw new AnalyzeError('Malformed request: game and targets are required.')
   }
-  // de-duplicate targets by ply and cap the count
+  // de-duplicate targets by ply, cap the count, and clamp per-field string sizes
+  // so a client can't inflate the prompt with megabytes of text.
+  const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
+  const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as number) : d)
   const seen = new Set<number>()
-  const targets = input.targets.filter((t) => {
-    if (!t || typeof t.ply !== 'number' || seen.has(t.ply)) return false
-    seen.add(t.ply)
-    return true
-  })
+  const targets = input.targets
+    .filter((t) => {
+      if (!t || typeof t.ply !== 'number' || seen.has(t.ply)) return false
+      seen.add(t.ply)
+      return true
+    })
+    .map((t) => ({ ply: intOr(t.ply, 0), fenAfter: clip(t.fenAfter, 100) }))
   if (targets.length === 0) return { results: [] }
   if (targets.length > MAX_TARGETS) {
     throw new AnalyzeError(`Too many moves in one request (max ${MAX_TARGETS}).`)
   }
-  const game = input.game.slice(0, MAX_GAME_PLIES)
+  const requestedPlies = new Set(targets.map((t) => t.ply))
+  const game = input.game.slice(0, MAX_GAME_PLIES).map((m) => ({
+    ply: intOr(m?.ply, 0),
+    moveNumber: intOr(m?.moveNumber, 0),
+    color: m?.color === 'b' ? ('b' as const) : ('w' as const),
+    san: clip(m?.san, 12),
+  }))
 
   const client = new Anthropic({ apiKey })
   const sideName = input.focus === 'w' ? 'White' : 'Black'
@@ -159,12 +170,22 @@ ${targetLines}`
   if (!toolUse) throw new AnalyzeError('Claude did not return structured output.', 502)
 
   const data = toolUse.input as AnalyzeResponse
-  const results: MoveResult[] = (data.results || []).map((r) => ({
-    ply: r.ply,
-    lesson: typeof r.lesson === 'string' ? r.lesson : '',
-    rules: (r.rules || []).filter(
-      (h: RuleHit) => Number.isInteger(h.id) && h.id >= 1 && h.id <= 40 && typeof h.why === 'string',
-    ),
-  }))
+  const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
+  const seenPly = new Set<number>()
+  const results: MoveResult[] = (data.results || [])
+    // only keep results for plies we actually asked about, without duplicates
+    .filter((r) => requestedPlies.has(r.ply) && !seenPly.has(r.ply) && (seenPly.add(r.ply), true))
+    .map((r) => ({
+      ply: r.ply,
+      lesson: typeof r.lesson === 'string' ? r.lesson : '',
+      rules: (r.rules || []).filter(
+        (h: RuleHit) =>
+          Number.isInteger(h.id) &&
+          h.id >= 1 &&
+          h.id <= 40 &&
+          typeof h.why === 'string' &&
+          validStatuses.has(h.status),
+      ),
+    }))
   return { results }
 }

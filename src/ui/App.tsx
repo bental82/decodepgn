@@ -4,8 +4,7 @@ import { analyze } from '../lib/api'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import Board from './Board'
-import MoveList from './MoveList'
-import MoveAnalysis from './MoveAnalysis'
+import MoveReader from './MoveReader'
 import PgnInput from './PgnInput'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
@@ -28,9 +27,25 @@ export default function App() {
   const [highlightRule, setHighlightRule] = useState<number | undefined>()
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(KEY_STORAGE) || '')
   const [showSettings, setShowSettings] = useState(false)
+  const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Bumped whenever we load a new game; late responses from an old game are dropped.
   const genRef = useRef(0)
+
+  // Learn whether the deployment has its own key, so we can be honest about
+  // whether the user needs to bring one.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/analyze', { method: 'GET' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const analyzePlies = useCallback(
     async (mvs: ParsedMove[], f: Focus, plies: number[]) => {
@@ -145,6 +160,8 @@ export default function App() {
     setApiKey(k)
     if (k.trim()) localStorage.setItem(KEY_STORAGE, k.trim())
     else localStorage.removeItem(KEY_STORAGE)
+    // clear stuck errors so the auto-analyse effect retries with the new key
+    setErrorByPly({})
     setShowSettings(false)
   }
 
@@ -182,9 +199,31 @@ export default function App() {
     return u
   }, [results])
 
-  const analyzed = useMemo(() => new Set(Object.keys(results).map(Number)), [results])
   const move = moves[selectedPly]
   const focusMovesRemaining = moves.filter((m) => m.color === focus && !results[m.ply]).length
+  const studiedPlies = useMemo(
+    () => moves.filter((m) => m.color === focus).map((m) => m.ply),
+    [moves, focus],
+  )
+
+  const stepStudied = (dir: 1 | -1) => {
+    if (!studiedPlies.length) return
+    const idx = studiedPlies.indexOf(selectedPly)
+    if (idx === -1) {
+      // currently on an opponent move — jump to the nearest studied move in that direction
+      const target =
+        dir > 0
+          ? studiedPlies.find((p) => p > selectedPly)
+          : [...studiedPlies].reverse().find((p) => p < selectedPly)
+      setSelectedPly(target ?? studiedPlies[dir > 0 ? 0 : studiedPlies.length - 1])
+      return
+    }
+    const ni = Math.min(studiedPlies.length - 1, Math.max(0, idx + dir))
+    setSelectedPly(studiedPlies[ni])
+  }
+  const atFirstStudied = studiedPlies.length > 0 && selectedPly <= studiedPlies[0]
+  const atLastStudied =
+    studiedPlies.length > 0 && selectedPly >= studiedPlies[studiedPlies.length - 1]
 
   return (
     <div className="app">
@@ -209,7 +248,12 @@ export default function App() {
                   ? `Analyse all ${colorName(focus)} moves`
                   : 'All moves analysed'}
             </button>
-            <button className="btn ghost" onClick={() => setShowSettings(true)} title="API key">
+            <button
+              className="btn ghost"
+              onClick={() => setShowSettings(true)}
+              title="API key"
+              aria-label="API key settings"
+            >
               ⚙
             </button>
             <button className="btn ghost" onClick={reset}>
@@ -225,102 +269,110 @@ export default function App() {
             onSubmit={handleSubmit}
             onOpenSettings={() => setShowSettings(true)}
             error={parseError}
-            hasServerKey={true}
+            hasServerKey={hasServerKey}
           />
           <IntroCard />
         </div>
       ) : (
         <div className="workspace">
-          <aside className="left">
-            <MoveList
-              moves={moves}
-              focus={focus}
-              selectedPly={selectedPly}
-              analyzed={analyzed}
-              loading={loadingPlies}
-              onSelect={setSelectedPly}
-            />
-          </aside>
+          <div className="tabs">
+            <button className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
+              Study
+            </button>
+            <button className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}>
+              By rule
+            </button>
+            <button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
+              The 40 rules
+            </button>
+          </div>
 
-          <main className="right">
-            <div className="tabs">
-              <button className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
-                This move
-              </button>
-              <button className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}>
-                By rule
-              </button>
-              <button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
-                The 40 rules
-              </button>
-            </div>
-
-            {tab === 'move' && move && (
-              <div className="move-pane">
-                <div className="move-head">
-                  <h2>
+          {tab === 'move' && move && (
+            <div className="study">
+              <div className="board-panel">
+                <Board
+                  fen={move.fenAfter}
+                  orientation={focus}
+                  lastMove={{ from: move.from, to: move.to }}
+                />
+                <div className="board-nav">
+                  <button
+                    className="navbtn"
+                    onClick={() => studiedPlies.length && setSelectedPly(studiedPlies[0])}
+                    disabled={atFirstStudied}
+                    aria-label="First of your moves"
+                  >
+                    ⏮
+                  </button>
+                  <button
+                    className="navbtn"
+                    onClick={() => stepStudied(-1)}
+                    disabled={atFirstStudied}
+                    aria-label="Previous of your moves"
+                  >
+                    ◀
+                  </button>
+                  <span className="navlabel">
                     {move.moveNumber}
-                    {move.color === 'w' ? '.' : '…'} {move.san}{' '}
-                    <span className="by">{colorName(move.color)}</span>
-                  </h2>
+                    {move.color === 'w' ? '.' : '…'} {move.san}
+                  </span>
+                  <button
+                    className="navbtn"
+                    onClick={() => stepStudied(1)}
+                    disabled={atLastStudied}
+                    aria-label="Next of your moves"
+                  >
+                    ▶
+                  </button>
+                  <button
+                    className="navbtn"
+                    onClick={() =>
+                      studiedPlies.length && setSelectedPly(studiedPlies[studiedPlies.length - 1])
+                    }
+                    disabled={atLastStudied}
+                    aria-label="Last of your moves"
+                  >
+                    ⏭
+                  </button>
                 </div>
-                <div className="boards">
-                  <Board
-                    fen={move.fenBefore}
-                    orientation={focus}
-                    lastMove={{ from: move.from, to: move.to }}
-                    caption="Before"
-                  />
-                  <Board
-                    fen={move.fenAfter}
-                    orientation={focus}
-                    lastMove={{ from: move.from, to: move.to }}
-                    caption="After"
-                  />
-                </div>
-                {move.color === focus ? (
-                  <MoveAnalysis
-                    move={move}
-                    focus={focus}
-                    result={results[selectedPly]}
-                    loading={loadingPlies.has(selectedPly)}
-                    error={errorByPly[selectedPly]}
-                    onReanalyze={() => analyzePlies(moves, focus, [selectedPly])}
-                    onOpenRule={openRule}
-                  />
-                ) : (
-                  <p className="note">
-                    This is {colorName(move.color)}’s move. You’re studying {colorName(focus)}, so pick one of
-                    your own moves (highlighted in the list) to see which rules apply.
-                  </p>
-                )}
               </div>
-            )}
-
-            {tab === 'map' && (
-              <RelevanceMap
+              <MoveReader
                 moves={moves}
                 focus={focus}
+                selectedPly={selectedPly}
                 results={results}
-                onJump={(ply) => {
-                  setSelectedPly(ply)
-                  setTab('move')
-                }}
-                onPickRule={openRule}
+                loading={loadingPlies}
+                errors={errorByPly}
+                onSelect={setSelectedPly}
+                onReanalyze={(ply) => analyzePlies(moves, focus, [ply])}
+                onOpenRule={openRule}
               />
-            )}
+            </div>
+          )}
 
-            {tab === 'rules' && (
-              <RulesReference highlightId={highlightRule} usage={usage} onPickRule={setHighlightRule} />
-            )}
-          </main>
+          {tab === 'map' && (
+            <RelevanceMap
+              moves={moves}
+              focus={focus}
+              results={results}
+              onJump={(ply) => {
+                setSelectedPly(ply)
+                setTab('move')
+              }}
+              onPickRule={openRule}
+            />
+          )}
+
+          {tab === 'rules' && (
+            <RulesReference highlightId={highlightRule} usage={usage} onPickRule={setHighlightRule} />
+          )}
         </div>
       )}
 
       {showSettings && (
         <Settings
           apiKey={apiKey}
-          hasServerKey={true}
+          hasServerKey={hasServerKey}
           onSave={saveKey}
           onClose={() => setShowSettings(false)}
         />

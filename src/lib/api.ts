@@ -2,7 +2,9 @@
 
 import type { AnalyzeRequest, AnalyzeResponse } from '../shared/types'
 
-const TIMEOUT_MS = 80_000
+// Below the serverless function's maxDuration (60s) so the client aborts first
+// with a clear message rather than surfacing an opaque platform timeout.
+const TIMEOUT_MS = 55_000
 
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
   const ctrl = new AbortController()

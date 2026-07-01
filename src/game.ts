@@ -31,16 +31,21 @@ export function parsePgn(pgn: string): ParsedGame {
   }>
   if (!verbose.length) throw new PgnError('No moves found in that PGN.')
 
-  const moves: ParsedMove[] = verbose.map((m, ply) => ({
-    ply,
-    moveNumber: Math.floor(ply / 2) + 1,
-    color: m.color,
-    san: m.san,
-    from: m.from,
-    to: m.to,
-    fenBefore: m.before,
-    fenAfter: m.after,
-  }))
+  const moves: ParsedMove[] = verbose.map((m, ply) => {
+    // Use the real fullmove counter from the FEN so games that start from a
+    // custom position (or with Black to move) still get correct move numbers.
+    const fullmove = parseInt(m.before.split(' ')[5], 10)
+    return {
+      ply,
+      moveNumber: Number.isFinite(fullmove) ? fullmove : Math.floor(ply / 2) + 1,
+      color: m.color,
+      san: m.san,
+      from: m.from,
+      to: m.to,
+      fenBefore: m.before,
+      fenAfter: m.after,
+    }
+  })
   return { headers: chess.getHeaders() as Record<string, string>, moves }
 }
 

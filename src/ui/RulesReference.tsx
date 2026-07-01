@@ -33,6 +33,8 @@ export default function RulesReference({
     <div className="rules-ref">
       <input
         className="rules-search"
+        type="search"
+        aria-label="Search the 40 rules"
         placeholder="Search the 40 rules…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

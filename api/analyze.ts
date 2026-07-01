@@ -7,9 +7,21 @@ import type { AnalyzeRequest } from '../src/shared/types'
 
 export const config = { maxDuration: 60 }
 
+const MAX_BODY_BYTES = 512 * 1024
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method === 'GET') {
+    // health check: tells the client whether a server key is configured
+    res.status(200).json({ hasServerKey: !!process.env.ANTHROPIC_API_KEY })
+    return
+  }
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+  const contentLength = Number(req.headers['content-length'] || 0)
+  if (contentLength > MAX_BODY_BYTES) {
+    res.status(413).json({ error: 'Request too large.' })
     return
   }
   try {

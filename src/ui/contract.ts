@@ -20,13 +20,16 @@ export interface BoardProps {
   caption?: string
 }
 
-export interface MoveListProps {
+export interface MoveReaderProps {
   moves: ParsedMove[]
   focus: Focus
   selectedPly: number
-  analyzed: Set<number> // plies that have a cached result
+  results: Record<number, MoveResult>
   loading: Set<number> // plies currently being analysed
+  errors: Record<number, string>
   onSelect: (ply: number) => void
+  onReanalyze: (ply: number) => void
+  onOpenRule: (id: number) => void
 }
 
 export interface MoveAnalysisProps {

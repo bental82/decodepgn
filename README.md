@@ -9,8 +9,9 @@ a short lesson.
 It’s a study aid for club players: the point isn’t an engine score, it’s learning
 to *recognise which ideas are in the position*.
 
-- **This move** — click any of your moves to see the rules that apply there
-  (with the board before/after and the move highlighted).
+- **Study** — step through the game move by move on a single board, with each of
+  your moves annotated inline (in the style of a lichess/Chessable “move by move”
+  study). Mobile-friendly: the board stays pinned at the top while you read.
 - **By rule** — a map of where in the game each rule came up.
 - **The 40 rules** — the full, searchable reference, always readable.
 
