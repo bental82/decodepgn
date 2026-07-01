@@ -2,6 +2,7 @@
   "name": "decodepgn",
   "private": true,
   "version": "0.2.0",
+  "type": "module",
   "description": "Upload a PGN and let Claude Opus explain which strategic rules of thumb are relevant on each move.",
   "scripts": {
     "dev": "vite",

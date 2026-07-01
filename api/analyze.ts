@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // if you see this JSON the function itself is fine.
       res.status(200).json({
         ok: true,
-        build: 'dyn-import-1', // bump on deploys to confirm the live version
+        build: 'esm-fix-1', // bump on deploys to confirm the live version
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
         runtime: process.version,
@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Import the engine dynamically: if Vercel failed to bundle this module, the
     // failure surfaces here as a catchable, readable error instead of crashing
     // the whole function at load time (which shows up as an opaque platform 500).
-    const engine = await import('../src/server/analyze')
+    const engine = await import('../src/server/analyze.js')
     const result = await engine.runAnalyze(body)
     res.status(200).json(result)
   } catch (e) {

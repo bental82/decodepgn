@@ -6,7 +6,7 @@
 // This module is server-only (it imports the Anthropic SDK and reads the API
 // key). It must never be imported by browser code.
 
-import { rulesForPrompt, RULE_COUNT } from '../shared/rules'
+import { rulesForPrompt, RULE_COUNT } from '../shared/rules.js'
 import type { AnalyzeRequest, AnalyzeResponse, MoveResult, RuleHit } from '../shared/types'
 
 export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
