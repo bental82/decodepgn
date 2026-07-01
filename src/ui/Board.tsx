@@ -1,10 +1,14 @@
 import type { BoardProps } from './contract'
-import { PIECE_GLYPH } from './contract'
 
 interface SquareCell {
   square: string
   piece: { type: string; white: boolean } | null
 }
+
+// The pieces are the classic cburnett SVG set, served as a static sprite; each
+// piece is a `<g id="wk">` / `<g id="bq">` … in a shared 40×40 viewBox that we
+// reference per square with <use>. This gives crisp vector pieces at any size.
+const PIECE_SRC = `${import.meta.env.BASE_URL}pieces.svg`
 
 export default function Board({ fen, orientation, lastMove, caption }: BoardProps) {
   const files = 'abcdefgh'
@@ -19,14 +23,12 @@ export default function Board({ fen, orientation, lastMove, caption }: BoardProp
       if (ch >= '1' && ch <= '9') {
         const n = parseInt(ch, 10)
         for (let i = 0; i < n; i++) {
-          const square = files[fileIdx] + rank
-          cells.push({ square, piece: null })
+          cells.push({ square: files[fileIdx] + rank, piece: null })
           fileIdx++
         }
       } else {
-        const square = files[fileIdx] + rank
         const white = ch === ch.toUpperCase()
-        cells.push({ square, piece: { type: ch.toLowerCase(), white } })
+        cells.push({ square: files[fileIdx] + rank, piece: { type: ch.toLowerCase(), white } })
         fileIdx++
       }
     }
@@ -39,19 +41,25 @@ export default function Board({ fen, orientation, lastMove, caption }: BoardProp
       {caption && <div className="board-caption">{caption}</div>}
       <div className="board" role="img" aria-label={caption ?? 'chess position'}>
         {ordered.map(({ square, piece }) => {
-          const fileIdx = 'abcdefgh'.indexOf(square[0])
-          const rankIdx = parseInt(square[1], 10) - 1
-          const dark = (fileIdx + rankIdx) % 2 === 0
+          const fileCh = square[0]
+          const rankNum = parseInt(square[1], 10)
+          const fileIdx = files.indexOf(fileCh)
+          const dark = (fileIdx + rankNum - 1) % 2 === 0
           const hi = !!lastMove && (square === lastMove.from || square === lastMove.to)
+          // Coordinates only along the two outer edges, respecting orientation.
+          const showRank = orientation === 'w' ? fileCh === 'a' : fileCh === 'h'
+          const showFile = orientation === 'w' ? rankNum === 1 : rankNum === 8
           return (
             <div
               key={square}
               className={'sq ' + (dark ? 'dark' : 'light') + (hi ? ' hi' : '')}
             >
+              {showRank && <span className="coord rank">{rankNum}</span>}
+              {showFile && <span className="coord file">{fileCh}</span>}
               {piece && (
-                <span className={'piece ' + (piece.white ? 'white' : 'black')}>
-                  {PIECE_GLYPH[piece.type]}
-                </span>
+                <svg className="piece" viewBox="0 0 40 40" aria-hidden="true">
+                  <use href={`${PIECE_SRC}#${piece.white ? 'w' : 'b'}${piece.type}`} />
+                </svg>
               )}
             </div>
           )

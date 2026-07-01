@@ -9,9 +9,9 @@ a short lesson.
 It’s a study aid for club players: the point isn’t an engine score, it’s learning
 to *recognise which ideas are in the position*.
 
-- **Study** — step through the game move by move on a single board, with each of
-  your moves annotated inline (in the style of a lichess/Chessable “move by move”
-  study). Mobile-friendly: the board stays pinned at the top while you read.
+- **Study** — step through your moves on a single board; the rules of thumb for
+  the current move are explained right beside it (no redundant move list to scan).
+  Dark, mobile-friendly UI — the board stays pinned at the top while you read.
 - **By rule** — a map of where in the game each rule came up.
 - **The 40 rules** — the full, searchable reference, always readable.
 
@@ -97,11 +97,19 @@ Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys
 
 ```
 api/analyze.ts        Vercel serverless function (POST /api/analyze)
+public/pieces.svg     SVG chess-piece sprite (referenced per square with <use>)
 src/
   server/analyze.ts   core: builds the prompt, calls Claude, returns structured JSON (server-only)
   shared/             rules.ts (the 40 rules) + request/response types (browser + server)
   game.ts             PGN -> moves + FENs (chess.js)
   lib/api.ts          client fetch wrapper
-  ui/                 App (state) + Board, MoveList, MoveAnalysis, RelevanceMap, RulesReference, Settings, PgnInput
+  ui/                 App (state) + Board, MoveAnalysis, RelevanceMap, RulesReference, Settings, PgnInput
 vite.config.ts        React plugin + dev-only /api/analyze middleware
 ```
+
+## Credits
+
+The board uses the classic **cburnett** SVG chess pieces by
+[Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett) (via Wikimedia
+Commons), licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+The sprite in [`public/pieces.svg`](public/pieces.svg) retains that license notice.

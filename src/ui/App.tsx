@@ -4,7 +4,7 @@ import { analyze } from '../lib/api'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import Board from './Board'
-import MoveReader from './MoveReader'
+import MoveAnalysis from './MoveAnalysis'
 import PgnInput from './PgnInput'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
@@ -336,17 +336,35 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <MoveReader
-                moves={moves}
-                focus={focus}
-                selectedPly={selectedPly}
-                results={results}
-                loading={loadingPlies}
-                errors={errorByPly}
-                onSelect={setSelectedPly}
-                onReanalyze={(ply) => analyzePlies(moves, focus, [ply])}
-                onOpenRule={openRule}
-              />
+              <div className="explain-panel">
+                <div className="explain-head">
+                  <span className="explain-move">
+                    {move.moveNumber}
+                    {move.color === 'w' ? '.' : '…'} {move.san}
+                  </span>
+                  <span className="explain-side">
+                    {move.color === focus
+                      ? `${colorName(focus)} — your move`
+                      : `${colorName(move.color)} to move`}
+                  </span>
+                </div>
+                {move.color === focus ? (
+                  <MoveAnalysis
+                    move={move}
+                    focus={focus}
+                    result={results[selectedPly]}
+                    loading={loadingPlies.has(selectedPly)}
+                    error={errorByPly[selectedPly]}
+                    onReanalyze={() => analyzePlies(moves, focus, [selectedPly])}
+                    onOpenRule={openRule}
+                  />
+                ) : (
+                  <p className="note">
+                    This is {colorName(move.color)}’s move. Use ◀ ▶ to step to one of your
+                    moves and see which rules of thumb apply.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
