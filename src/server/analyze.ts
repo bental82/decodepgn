@@ -389,19 +389,27 @@ Create ${count} questions.`
   for (const q of rawQuestions) {
     if (!q || typeof q.prompt !== 'string' || !q.prompt.trim()) continue
     const rawOpts = Array.isArray(q.options) ? q.options : []
-    const options = rawOpts
+    const valid: { text: string; correct: boolean }[] = rawOpts
       .filter((o: { text?: unknown }) => o && typeof o.text === 'string' && o.text.trim())
-      .slice(0, 5)
       .map((o: { text: string; correct?: unknown }) => ({ text: clip(o.text, 160), correct: o.correct === true }))
+    // Find the answer BEFORE trimming (so an over-long list can't drop it), and
+    // enforce exactly one correct option — the schema only "describes" that.
+    const correctIdx = valid.findIndex((o) => o.correct)
+    if (correctIdx === -1) continue
+    valid.forEach((o, i) => (o.correct = i === correctIdx))
+    let options = valid
+    if (valid.length > 5) {
+      options = valid.filter((o, i) => o.correct || i < (correctIdx < 5 ? 5 : 4)).slice(0, 5)
+    }
     if (options.length < 2) continue
-    if (!options.some((o: { correct: boolean }) => o.correct)) continue // need a right answer
     const out: QuizQuestion = {
       prompt: clip(q.prompt, 400),
       options,
       explanation: typeof q.explanation === 'string' ? clip(q.explanation, 300) : '',
     }
     if (Number.isInteger(q.ruleId) && q.ruleId >= 1 && q.ruleId <= RULE_COUNT) out.ruleId = q.ruleId
-    if (Number.isInteger(q.ply) && q.ply >= 0) out.ply = q.ply
+    // Only keep plies that actually exist in the supplied game.
+    if (Number.isInteger(q.ply) && q.ply >= 0 && game.some((m) => m.ply === q.ply)) out.ply = q.ply
     questions.push(out)
     if (questions.length >= 10) break
   }

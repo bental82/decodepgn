@@ -16,6 +16,10 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule }: Qu
   const start = async () => {
     setLoading(true)
     setError(null)
+    // Drop any previous quiz up front: if the request fails we show the error
+    // screen instead of silently re-rendering the stale quiz.
+    setQuestions(null)
+    setAnswers([])
     try {
       const resp = await fetchQuiz({
         mode: 'quiz',

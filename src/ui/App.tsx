@@ -437,6 +437,7 @@ export default function App() {
                   </p>
                 )}
                 <AskBox
+                  key={selectedPly} // remount per move so answers never carry over
                   context={{
                     focus,
                     game: toGameMoves(moves),

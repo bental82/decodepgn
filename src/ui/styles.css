@@ -303,11 +303,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .workspace { padding: 12px 14px; }
   .study { grid-template-columns: 1fr; gap: 12px; }
 
-  /* board breaks out to the FULL viewport width (edge-to-edge); the nav/progress
-     controls keep a comfortable inset. */
+  /* board breaks out edge-to-edge by cancelling the workspace's 14px side
+     padding with negative margins (NOT 100vw, which overflows when a classic
+     scrollbar is present); the nav/progress controls keep a comfortable inset. */
   .board-panel {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
-    width: 100vw; margin-left: calc(50% - 50vw); padding: 8px 0 10px;
+    margin: 0 -14px; padding: 8px 0 10px;
   }
   .board { width: 100%; max-width: 100%; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
   .board-nav, .analysis-progress { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; }
