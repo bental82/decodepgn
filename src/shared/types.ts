@@ -39,7 +39,7 @@ export interface AnalyzeRequest {
 export type RuleStatus = 'follows' | 'partially' | 'violates' | 'relevant'
 
 export interface RuleHit {
-  id: number // rule number 1..40
+  id: number // rule number (1..RULE_COUNT)
   status: RuleStatus
   why: string
 }

@@ -1,6 +1,7 @@
-// The consolidated list of 40 chess "rules of thumb".
+// The consolidated list of chess "rules of thumb".
 // This single source is used both to render the readable reference in the UI and
-// to give Claude the rule set to reason against. Keep ids stable (1..40).
+// to give Claude the rule set to reason against. Ids are stable, contiguous from
+// 1; RULE_COUNT (below) is the single source of truth for the total.
 
 export interface Rule {
   id: number
@@ -17,6 +18,9 @@ export const CATEGORIES = [
   'Weaknesses and planning',
   'King safety and attacking rules',
   'Endgame-transition rules',
+  'Opening and development',
+  'Positional play and weaknesses',
+  'Endgame technique',
 ] as const
 
 export const RULES: Rule[] = [
@@ -313,7 +317,156 @@ export const RULES: Rule[] = [
     detail:
       'If you are worse, trading into opposite-colored bishops may give drawing chances. If you are better, be careful — it may throw away your winning chances.',
   },
+
+  // Opening and development
+  {
+    id: 41,
+    category: 'Opening and development',
+    title: 'Develop a new piece with most opening moves.',
+    detail:
+      'In the opening, getting knights and bishops into play quickly is usually worth more than pawn-grabbing or slow maneuvers. Ask: does this move bring a new piece into the game, or clearly help one come out?',
+  },
+  {
+    id: 42,
+    category: 'Opening and development',
+    title: 'Fight for the center.',
+    detail:
+      'Occupy or control the central squares (d4, e4, d5, e5) with pawns and pieces. Central control gives your own pieces more scope and limits where the opponent’s pieces can go.',
+  },
+  {
+    id: 43,
+    category: 'Opening and development',
+    title: 'Castle early — get the king safe and the rooks connected.',
+    detail:
+      'Tucking the king away and linking the rooks is often more valuable than an extra pawn or a slow plan while the center is still open. Ask: is my king still in the center with lines about to open?',
+  },
+  {
+    id: 44,
+    category: 'Opening and development',
+    title: 'Do not move the same piece twice in the opening without a reason.',
+    detail:
+      'Each repeated move of one piece is a tempo not spent developing another. Good reasons: win material, meet a real threat, reach a clearly better square, or exploit a tactic.',
+  },
+  {
+    id: 45,
+    category: 'Opening and development',
+    title: 'Develop knights toward the center, usually before the bishops.',
+    detail:
+      'Knights have clear early homes (f3/c3, f6/c6) and reach their best squares fast; bishops often need to see the pawn structure first. Developing toward the center maximizes a piece’s influence.',
+  },
+  {
+    id: 46,
+    category: 'Opening and development',
+    title: 'Finish developing before you attack.',
+    detail:
+      'Attacks launched with pieces still on the back rank tend to run out of steam. Bring your force out and castle before committing to an assault, unless there is a concrete forced tactic.',
+  },
+  {
+    id: 47,
+    category: 'Opening and development',
+    title: 'Answer a gambit by developing, not by clutching the pawn.',
+    detail:
+      'If offered a pawn, either return it for a good position or hold it only while you finish developing. Hanging on to material with an undeveloped position invites a strong attack.',
+  },
+  {
+    id: 48,
+    category: 'Opening and development',
+    title: 'A lead in development is a reason to open the position.',
+    detail:
+      'When you are better developed, opening lines with a timely break or trade tends to favor your more active pieces before the opponent can catch up.',
+  },
+
+  // Positional play and weaknesses
+  {
+    id: 49,
+    category: 'Positional play and weaknesses',
+    title: 'The bishop pair is a lasting asset, especially in open positions.',
+    detail:
+      'Two bishops cover squares of both colors and grow stronger as the position opens. Part with one only for something concrete — a strong knight outpost, damage to their structure, or an attack.',
+  },
+  {
+    id: 50,
+    category: 'Positional play and weaknesses',
+    title: 'Avoid creating unnecessary pawn weaknesses.',
+    detail:
+      'Isolated, doubled, and backward pawns become long-term targets and hand the opponent squares. Accept such a weakness only for real compensation: activity, open lines, the bishop pair, or a strong square.',
+  },
+  {
+    id: 51,
+    category: 'Positional play and weaknesses',
+    title: 'Double rooks and seize the seventh rank.',
+    detail:
+      'Rooks multiply their force when doubled on an open file, and a rook (or two) on the seventh/second rank attacks pawns and boxes in the king. Ask: can I load up on the file or invade the seventh?',
+  },
+  {
+    id: 52,
+    category: 'Positional play and weaknesses',
+    title: 'Play prophylaxis — stop the opponent’s plan before pushing your own.',
+    detail:
+      'Before improving your position, ask what your opponent wants and whether a quiet move prevents it. Taking away their break or their best piece’s square is often worth more than a direct threat.',
+  },
+  {
+    id: 53,
+    category: 'Positional play and weaknesses',
+    title: 'Restrict enemy pieces, then attack them.',
+    detail:
+      'Take good squares away from the opponent’s pieces — especially knights — so they run out of useful moves. A permanently bad piece is like being a piece up in the part of the board that matters.',
+  },
+  {
+    id: 54,
+    category: 'Positional play and weaknesses',
+    title: 'Piece activity can be worth more than a pawn.',
+    detail:
+      'A well-placed, coordinated piece often outweighs material. Prefer moves that increase the scope and harmony of your pieces, and think twice before winning a pawn that sidelines a piece.',
+  },
+  {
+    id: 55,
+    category: 'Positional play and weaknesses',
+    title: 'Give the king luft to avoid back-rank problems.',
+    detail:
+      'Once your heavy pieces leave the back rank, a single quiet h/g-pawn move can prevent a back-rank mate. Make luft at the right moment — not so early that it needlessly weakens the king.',
+  },
+
+  // Endgame technique
+  {
+    id: 56,
+    category: 'Endgame technique',
+    title: 'Activate and centralize the king in the endgame.',
+    detail:
+      'With queens off the board the king is a fighting piece; march it toward the center and the action. A passive king is one of the most common causes of lost endgames.',
+  },
+  {
+    id: 57,
+    category: 'Endgame technique',
+    title: 'Put the rook behind the passed pawn.',
+    detail:
+      'Behind your own passer the rook supports each advance; behind the opponent’s it gains power as the pawn moves while their rook grows passive. Ask: which passed pawn matters, and is my rook behind it?',
+  },
+  {
+    id: 58,
+    category: 'Endgame technique',
+    title: 'Use the opposition in king-and-pawn endings.',
+    detail:
+      'When the kings stand a square apart with the opponent to move, the opposition forces their king to give ground — often the difference between promoting and being held, or holding and losing.',
+  },
+  {
+    id: 59,
+    category: 'Endgame technique',
+    title: 'Create an outside passed pawn to decoy the enemy king.',
+    detail:
+      'A passed pawn far from the other pawns drags the defending king away from the main battle, letting your king clean up on the other wing. A distant passer is often worth more than a central one.',
+  },
+  {
+    id: 60,
+    category: 'Endgame technique',
+    title: 'In rook endings, keep the rook active — even for a pawn.',
+    detail:
+      'Passive rook defense usually loses; an active rook that checks, attacks pawns, and cuts off the enemy king often saves or wins. Giving a pawn for genuine rook activity is frequently a good trade.',
+  },
 ]
+
+/** Total number of rules — keep prompt, schema, validation, and UI in sync. */
+export const RULE_COUNT = RULES.length
 
 export const RULES_BY_ID: Record<number, Rule> = Object.fromEntries(RULES.map((r) => [r.id, r]))
 

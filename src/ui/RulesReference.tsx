@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { RULES, CATEGORIES } from '../shared/rules'
+import { RULES, CATEGORIES, RULE_COUNT } from '../shared/rules'
 import type { RulesReferenceProps } from './contract'
 
 export default function RulesReference({
@@ -34,8 +34,8 @@ export default function RulesReference({
       <input
         className="rules-search"
         type="search"
-        aria-label="Search the 40 rules"
-        placeholder="Search the 40 rules…"
+        aria-label={`Search the ${RULE_COUNT} rules`}
+        placeholder={`Search the ${RULE_COUNT} rules…`}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />

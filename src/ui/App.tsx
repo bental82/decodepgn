@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze } from '../lib/api'
+import { RULE_COUNT } from '../shared/rules'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import Board from './Board'
@@ -285,7 +286,7 @@ export default function App() {
               By rule
             </button>
             <button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>
-              The 40 rules
+              The {RULE_COUNT} rules
             </button>
           </div>
 
@@ -412,14 +413,15 @@ function IntroCard() {
       <h2>What this does</h2>
       <p>
         Paste a game and pick a side. For each of your moves, Claude points out which of{' '}
-        <strong>40 classic strategic “rules of thumb”</strong> are relevant right then — trades, pawn
-        breaks, tension, king safety, sacrifices and more — and whether the move follows, partly follows,
-        or goes against each one, with a one-line reason and a short lesson.
+        <strong>{RULE_COUNT} classic strategic “rules of thumb”</strong> are relevant right then —
+        development, trades, pawn breaks, tension, king safety, sacrifices, endgames and more — and
+        whether the move follows, partly follows, or goes against each one, with a one-line reason and a
+        short lesson.
       </p>
       <ul>
         <li>Click any of your moves to see the rules that apply there.</li>
         <li>“By rule” shows where in the game each rule came up.</li>
-        <li>“The 40 rules” is the full reference, always readable.</li>
+        <li>“The {RULE_COUNT} rules” is the full reference, always readable.</li>
       </ul>
       <p className="muted small">
         The analysis runs through Claude. On a deployment with a server key it just works; otherwise add

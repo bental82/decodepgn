@@ -1,5 +1,5 @@
 // Server-side analysis: send the game + target moves to Claude Opus and get back,
-// for each move, which of the 40 rules of thumb are relevant and how the move
+// for each move, which of the rules of thumb are relevant and how the move
 // relates to them. Structured output is obtained via a forced tool call, which
 // works across SDK versions and models.
 //
@@ -7,7 +7,7 @@
 // key). It must never be imported by browser code.
 
 import Anthropic from '@anthropic-ai/sdk'
-import { rulesForPrompt } from '../shared/rules'
+import { rulesForPrompt, RULE_COUNT } from '../shared/rules'
 import type { AnalyzeRequest, AnalyzeResponse, MoveResult, RuleHit } from '../shared/types'
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
@@ -45,7 +45,7 @@ const OUTPUT_TOOL = {
                 type: 'object',
                 additionalProperties: false,
                 properties: {
-                  id: { type: 'integer', description: 'Rule number, 1 to 40.' },
+                  id: { type: 'integer', description: `Rule number, 1 to ${RULE_COUNT}.` },
                   status: {
                     type: 'string',
                     enum: ['follows', 'partially', 'violates', 'relevant'],
@@ -124,16 +124,16 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     })
     .join('\n')
 
-  // The big, invariant part of the prompt (role + the 40 rules) is a stable
+  // The big, invariant part of the prompt (role + the full rule set) is a stable
   // prefix — mark it for prompt caching so every request reuses it cheaply.
   // The tiny perspective line comes after the cache breakpoint.
   const rulesBlock = `You are a friendly, practical chess coach for club players (beginner to intermediate).
 
-You are given a list of 40 strategic "rules of thumb", numbered 1-40. For a requested move by the side under study, decide which of these rules are genuinely RELEVANT at that moment, and for each relevant rule state whether the move "follows", "partially" follows, "violates" it, or is just "relevant" (matters here but neutral/unclear).
+You are given a list of ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames). For a requested move by the side under study, decide which of these rules are genuinely RELEVANT at that moment, and for each relevant rule state whether the move "follows", "partially" follows, "violates" it, or is just "relevant" (matters here but neutral/unclear).
 
-Give one plain-language sentence per relevant rule that a club player can understand, using honest, hedged language ("appears", "may", "likely"). Only list rules that truly apply — usually 1 to 4 per move. Do not force irrelevant rules. Also give one short practical "lesson" sentence for the move. Refer to rules by their NUMBER (1-40) exactly.
+Pick the rules that fit THIS move and phase of the game: opening/development rules early, middlegame rules (trades, pawn breaks, weaknesses, king safety, attacks) in the middlegame, and endgame rules once queens or most pieces are gone. Give one plain-language sentence per relevant rule that a club player can understand, using honest, hedged language ("appears", "may", "likely"). Only list rules that truly apply — usually 1 to 4 per move. Do not force irrelevant rules. Also give one short practical "lesson" sentence for the move. Refer to rules by their NUMBER (1-${RULE_COUNT}) exactly.
 
-The 40 rules:
+The ${RULE_COUNT} rules:
 ${rulesForPrompt()}`
 
   const system: Anthropic.TextBlockParam[] = [
@@ -182,7 +182,7 @@ ${targetLines}`
         (h: RuleHit) =>
           Number.isInteger(h.id) &&
           h.id >= 1 &&
-          h.id <= 40 &&
+          h.id <= RULE_COUNT &&
           typeof h.why === 'string' &&
           validStatuses.has(h.status),
       ),
