@@ -21,6 +21,9 @@ export const CATEGORIES = [
   'Opening and development',
   'Positional play and weaknesses',
   'Endgame technique',
+  'Tactics and safety checks',
+  'Pawn play',
+  'Defense and practical play',
 ] as const
 
 export const RULES: Rule[] = [
@@ -462,6 +465,117 @@ export const RULES: Rule[] = [
     title: 'In rook endings, keep the rook active — even for a pawn.',
     detail:
       'Passive rook defense usually loses; an active rook that checks, attacks pawns, and cuts off the enemy king often saves or wins. Giving a pawn for genuine rook activity is frequently a good trade.',
+  },
+
+  // Tactics and safety checks
+  {
+    id: 61,
+    category: 'Tactics and safety checks',
+    title: 'Loose pieces drop off.',
+    detail:
+      'Undefended (“loose”) pieces are the fuel of tactics — forks, double attacks, and skewers usually work because something was unprotected. Before and after every move ask: which of my pieces is undefended, and can it be attacked with tempo?',
+  },
+  {
+    id: 62,
+    category: 'Tactics and safety checks',
+    title: 'Before moving, scan checks, captures, and threats.',
+    detail:
+      'For both sides: what checks exist, what can be captured, what is threatened next move? Most blunders come from skipping this scan, not from lack of chess knowledge.',
+  },
+  {
+    id: 63,
+    category: 'Tactics and safety checks',
+    title: 'Watch the back rank.',
+    detail:
+      'A castled king behind unmoved pawns is vulnerable to back-rank mates once the heavy pieces leave the first rank. Look twice at any position where rooks or queens can land on your back rank — and exploit the same weakness in your opponent.',
+  },
+  {
+    id: 64,
+    category: 'Tactics and safety checks',
+    title: 'A pinned piece is a bad defender — pile up on it.',
+    detail:
+      'A pinned piece cannot (or should not) move, so attack it again or exploit whatever it was defending. Conversely, do not count a pinned piece of your own as a real defender.',
+  },
+  {
+    id: 65,
+    category: 'Tactics and safety checks',
+    title: 'Mind the fork squares.',
+    detail:
+      'Knights fork pieces standing a knight-move apart (king+queen and king+rook are the classic victims); pawns fork pieces side by side. Notice which of your pieces stand on forkable squares before it happens.',
+  },
+  {
+    id: 66,
+    category: 'Tactics and safety checks',
+    title: 'When you see a good move, look for a better one.',
+    detail:
+      'The first decent idea is often not the strongest in the position. Especially with forcing moves available, spend a moment comparing candidates before committing.',
+  },
+
+  // Pawn play
+  {
+    id: 67,
+    category: 'Pawn play',
+    title: 'Pawns cannot move backwards — push them with care.',
+    detail:
+      'Every pawn move permanently gives up control of squares behind it. Advances that gain space or attack something are great; casual pawn pushes create holes the opponent’s pieces will live on forever.',
+  },
+  {
+    id: 68,
+    category: 'Pawn play',
+    title: 'Capture toward the center as a default.',
+    detail:
+      'When you can recapture with either pawn, taking toward the center usually builds a stronger pawn mass and opens a useful file for the rook. Capture away from the center only for a concrete reason (opening a file you need, avoiding weaknesses).',
+  },
+  {
+    id: 69,
+    category: 'Pawn play',
+    title: 'Blockade enemy passed pawns — the knight is the best blockader.',
+    detail:
+      'A passed pawn grows stronger every rank it advances, so stop it early by planting a piece on the square in front of it. A knight blockades beautifully (it still does work from there); a queen blockades badly.',
+  },
+  {
+    id: 70,
+    category: 'Pawn play',
+    title: 'Connected passed pawns are worth fighting for.',
+    detail:
+      'Two passed pawns on adjacent files protect each other as they advance and often outweigh a piece in the endgame. Creating them — or preventing the opponent’s — can decide the game.',
+  },
+  {
+    id: 71,
+    category: 'Pawn play',
+    title: 'If you must accept doubled pawns, use what they give you.',
+    detail:
+      'Doubled pawns usually come with compensation: an open file, the bishop pair, or central control. Play actively with those assets — doubled pawns hurt most in passive positions and pure endgames.',
+  },
+
+  // Defense and practical play
+  {
+    id: 72,
+    category: 'Defense and practical play',
+    title: 'When attacked, trade off the attackers — especially the queen.',
+    detail:
+      'An attack needs attacking pieces. Exchanging the opponent’s most dangerous attacker, or offering a queen trade, is often the fastest way to take the sting out of an assault on your king.',
+  },
+  {
+    id: 73,
+    category: 'Defense and practical play',
+    title: 'Defend with the move that concedes the least.',
+    detail:
+      'Meet a threat with the least weakening reply: a developing move that also parries beats a pawn push that creates new holes. Panic moves around your own king often do more damage than the threat itself.',
+  },
+  {
+    id: 74,
+    category: 'Defense and practical play',
+    title: 'Passive defense loses — look for counterplay.',
+    detail:
+      'A defender who only reacts slowly runs out of good moves. Even while defending, look for a counter-strike (often in the center) or activity elsewhere; the threat of counterplay restrains the attacker.',
+  },
+  {
+    id: 75,
+    category: 'Defense and practical play',
+    title: 'When clearly winning, simplify and kill counterplay.',
+    detail:
+      'With a decisive advantage, trade pieces, keep your king safe, and deny the opponent activity — no new adventures. The cleanest wins are boring; most blown wins come from allowing counterplay.',
   },
 ]
 

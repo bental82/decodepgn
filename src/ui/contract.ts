@@ -2,6 +2,7 @@
 // small display helpers. Components import their props from here.
 
 import type { Focus, GameMove, MoveResult, ParsedMove, RuleStatus, Soundness } from '../shared/types'
+import type { SavedQuiz } from '../lib/store'
 
 export type Orientation = 'w' | 'b'
 
@@ -44,6 +45,8 @@ export interface QuizProps {
   apiKey: string
   onNeedKey: () => void
   onOpenRule: (id: number) => void
+  saved: SavedQuiz | null // previously generated quiz for this game, if any
+  onSave: (quiz: SavedQuiz) => void
 }
 
 export interface AskContext {

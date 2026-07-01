@@ -2,11 +2,18 @@
 // by the move sequence + studied side, so re-loading the same PGN (or resuming
 // after a reload) restores every analysed move instead of re-asking Claude.
 
-import type { Focus, MoveResult, ParsedMove } from '../shared/types'
+import type { Focus, MoveResult, ParsedMove, QuizQuestion } from '../shared/types'
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
 const MAX_GAMES = 12 // LRU cap so we never crowd localStorage
+
+/** A generated quiz plus the player's progress through it. */
+export interface SavedQuiz {
+  questions: QuizQuestion[]
+  answers: (number | null)[]
+  current: number
+}
 
 export interface SavedGame {
   key: string
@@ -15,6 +22,7 @@ export interface SavedGame {
   headers: Record<string, string>
   savedAt: number
   results: Record<number, MoveResult>
+  quiz?: SavedQuiz
 }
 
 function djb2(s: string): string {

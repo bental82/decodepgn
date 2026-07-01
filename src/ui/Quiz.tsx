@@ -1,17 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toGameMoves } from '../game'
 import { quiz as fetchQuiz } from '../lib/api'
-import { RULES_BY_ID } from '../shared/rules'
+import { RULES_BY_ID, RULE_COUNT } from '../shared/rules'
 import type { QuizQuestion } from '../shared/types'
 import type { QuizProps } from './contract'
 import Board from './Board'
 
-export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule }: QuizProps) {
-  const [questions, setQuestions] = useState<QuizQuestion[] | null>(null)
+export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, saved, onSave }: QuizProps) {
+  // Seed from the saved quiz (if any) so a reload/resume keeps questions,
+  // answers, and position; every change is reported up for persistence.
+  const [questions, setQuestions] = useState<QuizQuestion[] | null>(saved?.questions ?? null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [current, setCurrent] = useState(0)
-  const [answers, setAnswers] = useState<(number | null)[]>([])
+  const [current, setCurrent] = useState(saved?.current ?? 0)
+  const [answers, setAnswers] = useState<(number | null)[]>(saved?.answers ?? [])
+
+  useEffect(() => {
+    if (questions) onSave({ questions, answers, current })
+  }, [questions, answers, current, onSave])
 
   const start = async () => {
     setLoading(true)
@@ -66,8 +72,8 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule }: Qu
       <div className="quiz quiz-intro">
         <h2>Quiz</h2>
         <p className="muted">
-          Test yourself on the 60 rules using this game — multiple-choice questions with instant
-          feedback and a running score. It’s heuristic coaching, not a rating test.
+          Test yourself on the {RULE_COUNT} rules using this game — multiple-choice questions with
+          instant feedback and a running score. It’s heuristic coaching, not a rating test.
         </p>
         <button className="btn primary big" onClick={start}>
           Start quiz

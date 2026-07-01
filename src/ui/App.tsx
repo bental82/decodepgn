@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze } from '../lib/api'
-import { gameKey, latestGame, loadGame, saveGame, type SavedGame } from '../lib/store'
+import { gameKey, latestGame, loadGame, saveGame, type SavedGame, type SavedQuiz } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
@@ -43,6 +43,8 @@ export default function App() {
   // Identity of the current game in local storage, for persisting analysis.
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
   const [resume, setResume] = useState<SavedGame | null>(() => latestGame())
+  // The current game's generated quiz (persisted alongside the analysis).
+  const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
 
   // Learn whether the deployment has its own key, so we can be honest about
   // whether the user needs to bring one.
@@ -120,6 +122,7 @@ export default function App() {
       setMoves(g.moves)
       setFocus(f)
       setResults(saved?.results ?? {})
+      setQuizSaved(saved?.quiz ?? null)
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -134,10 +137,11 @@ export default function App() {
     }
   }
 
-  // Persist the analysis (PGN + per-move results) whenever it grows, so a
-  // reload or revisit of the same game restores every analysed move.
+  // Persist the analysis (PGN + per-move results) and the generated quiz, so a
+  // reload or revisit of the same game restores everything.
   useEffect(() => {
-    if (phase !== 'game' || !storeRef.current || Object.keys(results).length === 0) return
+    if (phase !== 'game' || !storeRef.current) return
+    if (Object.keys(results).length === 0 && !quizSaved) return
     saveGame({
       key: storeRef.current.key,
       pgn: storeRef.current.pgn,
@@ -145,8 +149,9 @@ export default function App() {
       headers,
       savedAt: Date.now(),
       results,
+      quiz: quizSaved ?? undefined,
     })
-  }, [phase, results, focus, headers])
+  }, [phase, results, focus, headers, quizSaved])
 
   // Auto-analyse the selected move when it belongs to the studied colour and
   // hasn't been analysed (or errored) yet.
@@ -213,6 +218,7 @@ export default function App() {
     setAllProgress(null)
     setQueuedPlies(new Set())
     setParseError(null)
+    setQuizSaved(null)
     setResume(latestGame())
   }
 
@@ -486,11 +492,14 @@ export default function App() {
 
           {tab === 'quiz' && (
             <Quiz
+              key={storeRef.current?.key ?? 'quiz'} // remount per game
               moves={moves}
               focus={focus}
               apiKey={apiKey}
               onNeedKey={() => setShowSettings(true)}
               onOpenRule={openRule}
+              saved={quizSaved}
+              onSave={setQuizSaved}
             />
           )}
 

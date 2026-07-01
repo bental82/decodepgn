@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ask as fetchAsk } from '../lib/api'
 import type { AskBoxProps } from './contract'
 
-// A small "ask a free-form question" box. Answers are grounded in the 60 rules
+// A small "ask a free-form question" box. Answers are grounded in the rule set
 // (and any context passed in — the current move/position or a specific rule).
 export default function AskBox({ context, apiKey, onNeedKey, placeholder, label }: AskBoxProps) {
   const [q, setQ] = useState('')
