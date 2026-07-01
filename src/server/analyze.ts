@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { rulesForPrompt, RULE_COUNT } from '../shared/rules'
 import type { AnalyzeRequest, AnalyzeResponse, MoveResult, RuleHit } from '../shared/types'
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
+export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
 const MAX_GAME_PLIES = 800 // bound the context we send
 
@@ -21,6 +21,18 @@ export class AnalyzeError extends Error {
     this.name = 'AnalyzeError'
     this.status = status
   }
+}
+
+/** Turn an Anthropic API error into a short, actionable message for the client. */
+function friendlyAnthropicMessage(status: number, raw: string): string {
+  if (status === 401 || status === 403)
+    return 'Anthropic rejected the API key (invalid or unauthorized). Check the key in Settings.'
+  if (status === 404)
+    return `The Anthropic API did not recognise the configured model. Set ANTHROPIC_MODEL to a model your key can access. (${raw})`
+  if (status === 429) return 'Anthropic rate limit reached. Wait a moment and try again.'
+  if (status === 400) return `Anthropic rejected the request: ${raw}`
+  if (status === 529 || status === 503) return 'Anthropic is temporarily overloaded. Please try again shortly.'
+  return raw || 'The Claude request failed.'
 }
 
 const OUTPUT_TOOL = {
@@ -158,8 +170,13 @@ ${targetLines}`
       messages: [{ role: 'user', content: user }],
     })
   } catch (e) {
+    // Preserve the real HTTP status from the Anthropic API so the client sees a
+    // meaningful error (e.g. 401 bad key, 404 unknown model, 429 rate limit).
+    if (e instanceof Anthropic.APIError) {
+      const status = typeof e.status === 'number' && e.status >= 400 && e.status <= 599 ? e.status : 502
+      throw new AnalyzeError(friendlyAnthropicMessage(status, e.message), status)
+    }
     const msg = e instanceof Error ? e.message : 'Claude request failed.'
-    // surface auth/rate errors as 4xx-ish, otherwise 502
     const status = /api key|authentication|401|invalid/i.test(msg) ? 401 : 502
     throw new AnalyzeError(msg, status)
   }

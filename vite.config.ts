@@ -14,8 +14,16 @@ function devApi(): import('vite').Plugin {
       const MAX_BODY_BYTES = 512 * 1024
       const handler: Connect.NextHandleFunction = async (req, res) => {
         if (req.method === 'GET') {
+          const mod = await server.ssrLoadModule('/src/server/analyze.ts')
           res.setHeader('content-type', 'application/json')
-          res.end(JSON.stringify({ hasServerKey: !!process.env.ANTHROPIC_API_KEY }))
+          res.end(
+            JSON.stringify({
+              ok: true,
+              hasServerKey: !!process.env.ANTHROPIC_API_KEY,
+              model: mod.MODEL,
+              runtime: process.version,
+            }),
+          )
           return
         }
         if (req.method !== 'POST') {
