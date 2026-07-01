@@ -6,7 +6,6 @@
 // This module is server-only (it imports the Anthropic SDK and reads the API
 // key). It must never be imported by browser code.
 
-import Anthropic from '@anthropic-ai/sdk'
 import { rulesForPrompt, RULE_COUNT } from '../shared/rules'
 import type { AnalyzeRequest, AnalyzeResponse, MoveResult, RuleHit } from '../shared/types'
 
@@ -120,7 +119,6 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     san: clip(m?.san, 12),
   }))
 
-  const client = new Anthropic({ apiKey })
   const sideName = input.focus === 'w' ? 'White' : 'Black'
 
   const moveText = game
@@ -148,8 +146,8 @@ Pick the rules that fit THIS move and phase of the game: opening/development rul
 The ${RULE_COUNT} rules:
 ${rulesForPrompt()}`
 
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: rulesBlock, cache_control: { type: 'ephemeral' } },
+  const system = [
+    { type: 'text', text: rulesBlock, cache_control: { type: 'ephemeral' as const } },
     { type: 'text', text: `Analyse strictly from ${sideName}'s perspective.` },
   ]
 
@@ -159,32 +157,57 @@ ${moveText}
 Analyse the following ${sideName} move(s) and report using the report_relevance tool. Return exactly one result object per ply listed:
 ${targetLines}`
 
-  let message: Anthropic.Message
+  // Call the Anthropic Messages API directly over HTTP. Using fetch (built into
+  // the Node 18+ runtime) means the serverless function has NO third-party
+  // dependency to bundle, which removes a whole class of Vercel load failures.
+  let resp: Response
   try {
-    message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 8000,
-      system,
-      tools: [OUTPUT_TOOL as unknown as Anthropic.Tool],
-      tool_choice: { type: 'tool', name: 'report_relevance' },
-      messages: [{ role: 'user', content: user }],
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 8000,
+        system,
+        tools: [OUTPUT_TOOL],
+        tool_choice: { type: 'tool', name: 'report_relevance' },
+        messages: [{ role: 'user', content: user }],
+      }),
+      signal: AbortSignal.timeout(55_000),
     })
   } catch (e) {
-    // Preserve the real HTTP status from the Anthropic API so the client sees a
-    // meaningful error (e.g. 401 bad key, 404 unknown model, 429 rate limit).
-    if (e instanceof Anthropic.APIError) {
-      const status = typeof e.status === 'number' && e.status >= 400 && e.status <= 599 ? e.status : 502
-      throw new AnalyzeError(friendlyAnthropicMessage(status, e.message), status)
-    }
-    const msg = e instanceof Error ? e.message : 'Claude request failed.'
-    const status = /api key|authentication|401|invalid/i.test(msg) ? 401 : 502
-    throw new AnalyzeError(msg, status)
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    throw new AnalyzeError(
+      timedOut
+        ? 'The Anthropic request timed out. Try again, or analyse fewer moves at once.'
+        : 'Could not reach the Anthropic API. Please try again shortly.',
+      timedOut ? 504 : 502,
+    )
   }
 
-  const toolUse = message.content.find((b) => b.type === 'tool_use') as
-    | Anthropic.ToolUseBlock
-    | undefined
-  if (!toolUse) throw new AnalyzeError('Claude did not return structured output.', 502)
+  if (!resp.ok) {
+    // Preserve the real HTTP status (401 bad key, 404 unknown model, 429 rate
+    // limit, 529 overloaded) and surface a short, actionable message.
+    let detail = ''
+    try {
+      const errJson = (await resp.json()) as { error?: { message?: string } }
+      detail = errJson?.error?.message || JSON.stringify(errJson)
+    } catch {
+      detail = await resp.text().catch(() => '')
+    }
+    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
+    throw new AnalyzeError(friendlyAnthropicMessage(status, detail), status)
+  }
+
+  const message = (await resp.json()) as { content?: Array<{ type: string; input?: unknown }> }
+  const toolUse = message.content?.find((b) => b.type === 'tool_use')
+  if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
+    throw new AnalyzeError('Claude did not return structured output.', 502)
+  }
 
   const data = toolUse.input as AnalyzeResponse
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])

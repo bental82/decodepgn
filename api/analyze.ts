@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // the function itself failed to start (a build/runtime problem).
       res.status(200).json({
         ok: true,
+        build: 'http-fetch-1', // bump on deploys to confirm the live version
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: MODEL,
         runtime: process.version,
