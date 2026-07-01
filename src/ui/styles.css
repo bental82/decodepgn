@@ -84,14 +84,15 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .settings-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0; }
 
 /* workspace */
-.workspace { max-width: 1080px; margin: 0 auto; width: 100%; padding: 16px 20px; }
+.workspace { max-width: 1200px; margin: 0 auto; width: 100%; padding: 16px 20px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
 .tabs button { flex: 1; border: 1px solid var(--line); background: var(--panel); padding: 10px; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); }
 .tabs button:hover { color: var(--ink); }
 .tabs button.active { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-weak); }
 
 /* study: board + explanation side by side */
-.study { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 22px; align-items: start; }
+/* Board sized by viewport height so it stays large but always fits on screen. */
+.study { display: grid; grid-template-columns: clamp(360px, 58vh, 620px) 1fr; gap: 24px; align-items: start; }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .navbtn { border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 8px 12px; font-size: 15px; cursor: pointer; color: var(--ink); }
@@ -207,7 +208,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
     position: sticky; top: 0; z-index: 6; background: var(--bg);
     padding: 8px 0 10px; margin: -8px 0 0;
   }
-  .board, .board-nav { width: min(100%, 46vh); max-width: 400px; margin-left: auto; margin-right: auto; }
+  /* maximise the board on mobile — fill the full width */
+  .board, .board-nav { width: 100%; max-width: 100%; margin-left: auto; margin-right: auto; }
   .board-nav { margin-top: 10px; }
   .navbtn { padding: 9px 14px; }
 
