@@ -37,7 +37,11 @@ function; the app itself is a static single-page app.
    model returns strict, validated JSON: for each move, the relevant rule numbers,
    a status (`follows` / `partially` / `violates` / `relevant`), a one-line reason,
    and a short lesson.
-4. Results are cached in the page and pivoted into the per-move and by-rule views.
+4. Results are cached in the page, pivoted into the per-move and by-rule views,
+   and **saved to localStorage per game** (keyed by the move sequence + studied
+   side) — reloading, or re-pasting the same PGN, restores every analysed move
+   instead of re-asking Claude, and the landing page offers to resume your last
+   game.
 
 The 60-rule prompt is identical on every request, so it’s sent as a **cached
 prefix** (`cache_control`) — repeat calls reuse it and cost a fraction of the

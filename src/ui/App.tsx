@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze } from '../lib/api'
+import { gameKey, latestGame, loadGame, saveGame, type SavedGame } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
 import type { Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
@@ -39,6 +40,9 @@ export default function App() {
   const [queuedPlies, setQueuedPlies] = useState<Set<number>>(new Set())
   // Bumped whenever we load a new game; late responses from an old game are dropped.
   const genRef = useRef(0)
+  // Identity of the current game in local storage, for persisting analysis.
+  const storeRef = useRef<{ key: string; pgn: string } | null>(null)
+  const [resume, setResume] = useState<SavedGame | null>(() => latestGame())
 
   // Learn whether the deployment has its own key, so we can be honest about
   // whether the user needs to bring one.
@@ -108,10 +112,14 @@ export default function App() {
     try {
       const g = parsePgn(pgn)
       genRef.current++
+      // Restore any analysis previously saved for this exact game + side.
+      const key = gameKey(g.moves, f)
+      storeRef.current = { key, pgn }
+      const saved = loadGame(key)
       setHeaders(g.headers)
       setMoves(g.moves)
       setFocus(f)
-      setResults({})
+      setResults(saved?.results ?? {})
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -125,6 +133,20 @@ export default function App() {
       setParseError(e instanceof Error ? e.message : 'Could not parse that PGN.')
     }
   }
+
+  // Persist the analysis (PGN + per-move results) whenever it grows, so a
+  // reload or revisit of the same game restores every analysed move.
+  useEffect(() => {
+    if (phase !== 'game' || !storeRef.current || Object.keys(results).length === 0) return
+    saveGame({
+      key: storeRef.current.key,
+      pgn: storeRef.current.pgn,
+      focus,
+      headers,
+      savedAt: Date.now(),
+      results,
+    })
+  }, [phase, results, focus, headers])
 
   // Auto-analyse the selected move when it belongs to the studied colour and
   // hasn't been analysed (or errored) yet.
@@ -191,6 +213,7 @@ export default function App() {
     setAllProgress(null)
     setQueuedPlies(new Set())
     setParseError(null)
+    setResume(latestGame())
   }
 
   const openRule = (id: number) => {
@@ -290,6 +313,17 @@ export default function App() {
 
       {phase === 'input' ? (
         <div className="landing">
+          {resume ? (
+            <button className="resume-card" onClick={() => handleSubmit(resume.pgn, resume.focus)}>
+              <span className="resume-title">
+                ▶ Resume {resume.headers.White ?? 'White'} vs {resume.headers.Black ?? 'Black'}
+              </span>
+              <span className="resume-meta">
+                {Object.keys(resume.results).length} move(s) already analysed as{' '}
+                {colorName(resume.focus)} — picks up where you left off
+              </span>
+            </button>
+          ) : null}
           <PgnInput
             onSubmit={handleSubmit}
             onOpenSettings={() => setShowSettings(true)}
