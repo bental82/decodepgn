@@ -19,9 +19,9 @@
   --bad-bg: rgba(239, 68, 68, 0.15);
   --rel: #a5b4fc;
   --rel-bg: rgba(99, 102, 241, 0.16);
-  --light-sq: #d8ecff;
-  --dark-sq: #2f80ed;
-  --hi: rgba(250, 204, 60, 0.55);
+  --light-sq: #f0f4f8;
+  --dark-sq: #7da2d7;
+  --hi: rgba(255, 213, 74, 0.55);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -123,7 +123,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .sq.light { background: var(--light-sq); }
 .sq.dark { background: var(--dark-sq); }
 .sq.hi::after { content: ''; position: absolute; inset: 0; background: var(--hi); pointer-events: none; }
-.piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); }
+/* no drop-shadow: it smears the vector edges at phone sizes and reads as blur */
+.piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
 .coord { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; z-index: 2; user-select: none; pointer-events: none; }
 .coord.rank { top: 2px; left: 3px; }
 .coord.file { bottom: 2px; right: 3px; }
