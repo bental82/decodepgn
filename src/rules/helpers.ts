@@ -212,7 +212,8 @@ function chessBoardMap(chess: Chess) {
 export function availableChecks(fen: string, color: Color): number {
   const chess = loadWithTurn(fen, color)
   try {
-    return chess.moves({ verbose: true }).filter((m: any) => m.san.includes('+')).length
+    // count checks AND checkmates ('#' has no '+') — mate is the most forcing move
+    return chess.moves({ verbose: true }).filter((m: any) => /[+#]/.test(m.san)).length
   } catch {
     return 0
   }

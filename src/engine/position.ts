@@ -293,7 +293,10 @@ function kingZone(chess: Chess, board: BoardMap, color: Color, files: FileInfo):
   for (let df = -1; df <= 1; df++) {
     if (!onBoard(fi + df, 0)) continue
     const f = FILES[fi + df]
-    if (files.open.includes(f) || (color === 'w' ? files.semiOpenForBlack : files.semiOpenForWhite).includes(f)) {
+    // A file is dangerous near a king when the king's OWN side has no pawn on it.
+    // semiOpenForWhite = files with no White pawn, so the White king uses it.
+    const halfOpenForOwnKing = color === 'w' ? files.semiOpenForWhite : files.semiOpenForBlack
+    if (files.open.includes(f) || halfOpenForOwnKing.includes(f)) {
       openFilesNearKing.push(f)
     }
   }
