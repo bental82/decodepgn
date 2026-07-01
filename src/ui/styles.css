@@ -308,19 +308,32 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .topbar-right { gap: 8px; }
 
   .workspace { padding: 12px 14px; }
-  .study { grid-template-columns: 1fr; gap: 12px; }
+  /* block flow (not grid): a sticky child inside a grid row is bounded by that
+     row's height in Chromium, so it would stop sticking almost immediately.
+     With block flow + display:contents on .board-panel, the sticky board is
+     bounded by the whole study section and holds while the text scrolls. */
+  .study { display: block; }
+  .board-panel { display: contents; }
 
   /* board breaks out edge-to-edge by cancelling the workspace's 14px side
      padding with negative margins (NOT 100vw, which overflows when a classic
-     scrollbar is present); the nav/progress controls keep a comfortable inset. */
-  .board-panel {
+     scrollbar is present); the nav/progress controls keep a comfortable inset.
+     ONLY the board + nav stick; the progress strip scrolls away so the
+     analysis text below keeps most of the screen. */
+  .board-sticky {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
-    margin: 0 -14px; padding: 8px 0 10px;
+    margin: 0 -14px; padding: 8px 0 8px;
   }
   .board { width: 100%; max-width: 100%; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
-  .board-nav, .analysis-progress { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; }
-  .board-nav { margin-top: 10px; }
-  .navbtn { padding: 9px 14px; }
+  /* the nav lives inside the full-bleed sticky block, so it needs its own inset;
+     the progress strip is back in normal (padded) flow. */
+  .board-nav { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; margin-top: 8px; }
+  .navbtn { padding: 7px 12px; font-size: 14px; }
+  /* one horizontally-scrollable row of dots instead of wrapping to many rows */
+  .analysis-progress { margin: 10px 0 12px; }
+  .movedots { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .movedot { flex: none; }
+  .explain-panel { margin-top: 12px; }
 
   .explain-panel { padding: 14px 16px; min-height: 0; }
   .explain-head { padding-bottom: 10px; margin-bottom: 10px; }

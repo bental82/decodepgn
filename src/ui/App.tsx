@@ -346,6 +346,9 @@ export default function App() {
               <StatusLegend />
               <div className="study">
               <div className="board-panel">
+                {/* Only this wrapper is sticky on mobile — the progress strip
+                    below scrolls away so the analysis text keeps real estate. */}
+                <div className="board-sticky">
                 <Board
                   fen={move.fenAfter}
                   orientation={focus}
@@ -388,6 +391,7 @@ export default function App() {
                   >
                     ⏭
                   </button>
+                </div>
                 </div>
                 {studiedPlies.length > 0 && (
                   <div className="analysis-progress">
