@@ -1,11 +1,11 @@
 node_modules
 dist
 dist-ssr
-*.local
-.DS_Store
 .vercel
+*.local
 *.log
 npm-debug.log*
+.DS_Store
 .env
 .env.*
 !.env.example

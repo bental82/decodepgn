@@ -1,65 +1,89 @@
-import type { Color, MoveAnalysis } from '../engine/types'
-import { aggregateStatus, statusMeta } from './format'
+import type { ParsedMove } from '../shared/types'
+import type { MoveListProps } from './contract'
+import { colorName } from './contract'
 
-interface MoveListProps {
-  moves: MoveAnalysis[]
+interface CellProps {
+  move: ParsedMove | undefined
+  focus: MoveListProps['focus']
   selectedPly: number
-  selectedColor: Color
+  analyzed: Set<number>
+  loading: Set<number>
   onSelect: (ply: number) => void
 }
 
-function Cell({
-  move,
-  selectedPly,
-  onSelect,
-}: {
-  move?: MoveAnalysis
-  selectedPly: number
-  onSelect: (ply: number) => void
-}) {
-  if (!move) return <span className="move-cell empty" />
-  const status = move.bySelected ? aggregateStatus(move.findings) : null
-  const meta = status ? statusMeta(status) : null
+function Cell({ move, focus, selectedPly, analyzed, loading, onSelect }: CellProps) {
+  if (!move) {
+    return <span className="move-cell empty" />
+  }
+
+  const isFocus = move.color === focus
+  let cls = 'move-cell'
+  cls += isFocus ? ' own' : ' other'
+  if (move.ply === selectedPly) cls += ' active'
+
+  let dotCls = 'dot'
+  if (loading.has(move.ply)) dotCls += ' loading'
+  else if (analyzed.has(move.ply)) dotCls += ' analyzed'
+
   return (
-    <button
-      className={`move-cell ${move.bySelected ? 'own' : 'other'} ${
-        move.ply === selectedPly ? 'active' : ''
-      }`}
-      onClick={() => onSelect(move.ply)}
-      title={move.bySelected ? 'Click for the strategic breakdown' : 'Opponent move'}
-    >
+    <button className={cls} onClick={() => onSelect(move.ply)} title={move.san}>
       <span className="san">{move.san}</span>
-      {meta && <span className={`dot ${meta.cls}`} aria-hidden />}
+      {isFocus ? <span className={dotCls} /> : null}
     </button>
   )
 }
 
-export default function MoveList({ moves, selectedPly, selectedColor, onSelect }: MoveListProps) {
-  const rows: { n: number; white?: MoveAnalysis; black?: MoveAnalysis }[] = []
-  for (const m of moves) {
-    const n = m.moveNumber
-    let row = rows.find((r) => r.n === n)
+export default function MoveList({
+  moves,
+  focus,
+  selectedPly,
+  analyzed,
+  loading,
+  onSelect,
+}: MoveListProps) {
+  const rows = new Map<number, { white?: ParsedMove; black?: ParsedMove }>()
+  for (const move of moves) {
+    let row = rows.get(move.moveNumber)
     if (!row) {
-      row = { n }
-      rows.push(row)
+      row = {}
+      rows.set(move.moveNumber, row)
     }
-    if (m.color === 'w') row.white = m
-    else row.black = m
+    if (move.color === 'w') row.white = move
+    else row.black = move
   }
+
+  const rowNumbers = Array.from(rows.keys()).sort((a, b) => a - b)
 
   return (
     <div className="movelist">
       <div className="movelist-head">
-        Moves — you are studying <strong>{selectedColor === 'w' ? 'White' : 'Black'}</strong>
+        Moves — studying <strong>{colorName(focus)}</strong>
       </div>
       <div className="movelist-body">
-        {rows.map((row) => (
-          <div className="move-row" key={row.n}>
-            <span className="move-no">{row.n}.</span>
-            <Cell move={row.white} selectedPly={selectedPly} onSelect={onSelect} />
-            <Cell move={row.black} selectedPly={selectedPly} onSelect={onSelect} />
-          </div>
-        ))}
+        {rowNumbers.map((n) => {
+          const row = rows.get(n)!
+          return (
+            <div className="move-row" key={n}>
+              <span className="move-no">{n}.</span>
+              <Cell
+                move={row.white}
+                focus={focus}
+                selectedPly={selectedPly}
+                analyzed={analyzed}
+                loading={loading}
+                onSelect={onSelect}
+              />
+              <Cell
+                move={row.black}
+                focus={focus}
+                selectedPly={selectedPly}
+                analyzed={analyzed}
+                loading={loading}
+                onSelect={onSelect}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
