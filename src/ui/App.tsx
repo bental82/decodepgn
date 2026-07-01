@@ -247,24 +247,15 @@ export default function App() {
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
 
-  const stepStudied = (dir: 1 | -1) => {
-    if (!studiedPlies.length) return
-    const idx = studiedPlies.indexOf(selectedPly)
-    if (idx === -1) {
-      // currently on an opponent move — jump to the nearest studied move in that direction
-      const target =
-        dir > 0
-          ? studiedPlies.find((p) => p > selectedPly)
-          : [...studiedPlies].reverse().find((p) => p < selectedPly)
-      setSelectedPly(target ?? studiedPlies[dir > 0 ? 0 : studiedPlies.length - 1])
-      return
-    }
-    const ni = Math.min(studiedPlies.length - 1, Math.max(0, idx + dir))
-    setSelectedPly(studiedPlies[ni])
+  // Step through EVERY ply (both sides) so the game's sequence is followable;
+  // opponent moves show on the board with a note, studied moves get analysis.
+  const stepPly = (dir: 1 | -1) => {
+    setSelectedPly((p) => Math.min(moves.length - 1, Math.max(0, p + dir)))
   }
-  const atFirstStudied = studiedPlies.length > 0 && selectedPly <= studiedPlies[0]
-  const atLastStudied =
-    studiedPlies.length > 0 && selectedPly >= studiedPlies[studiedPlies.length - 1]
+  const atFirst = selectedPly <= 0
+  const atLast = moves.length === 0 || selectedPly >= moves.length - 1
+  const prevMove = selectedPly > 0 ? moves[selectedPly - 1] : undefined
+  const moveLabel = (m: ParsedMove) => `${m.moveNumber}${m.color === 'w' ? '.' : '…'} ${m.san}`
 
   return (
     <div className="app">
@@ -363,39 +354,37 @@ export default function App() {
                 <div className="board-nav">
                   <button
                     className="navbtn"
-                    onClick={() => studiedPlies.length && setSelectedPly(studiedPlies[0])}
-                    disabled={atFirstStudied}
-                    aria-label="First of your moves"
+                    onClick={() => setSelectedPly(0)}
+                    disabled={atFirst}
+                    aria-label="First move"
                   >
                     ⏮
                   </button>
                   <button
                     className="navbtn"
-                    onClick={() => stepStudied(-1)}
-                    disabled={atFirstStudied}
-                    aria-label="Previous of your moves"
+                    onClick={() => stepPly(-1)}
+                    disabled={atFirst}
+                    aria-label="Previous move"
                   >
                     ◀
                   </button>
                   <span className="navlabel">
-                    {move.moveNumber}
-                    {move.color === 'w' ? '.' : '…'} {move.san}
+                    {moveLabel(move)}
+                    {move.color !== focus && <span className="nav-opp"> · opponent</span>}
                   </span>
                   <button
                     className="navbtn"
-                    onClick={() => stepStudied(1)}
-                    disabled={atLastStudied}
-                    aria-label="Next of your moves"
+                    onClick={() => stepPly(1)}
+                    disabled={atLast}
+                    aria-label="Next move"
                   >
                     ▶
                   </button>
                   <button
                     className="navbtn"
-                    onClick={() =>
-                      studiedPlies.length && setSelectedPly(studiedPlies[studiedPlies.length - 1])
-                    }
-                    disabled={atLastStudied}
-                    aria-label="Last of your moves"
+                    onClick={() => moves.length && setSelectedPly(moves.length - 1)}
+                    disabled={atLast}
+                    aria-label="Last move"
                   >
                     ⏭
                   </button>
@@ -444,16 +433,18 @@ export default function App() {
               </div>
               <div className="explain-panel">
                 <div className="explain-head">
-                  <span className="explain-move">
-                    {move.moveNumber}
-                    {move.color === 'w' ? '.' : '…'} {move.san}
-                  </span>
+                  <span className="explain-move">{moveLabel(move)}</span>
                   <span className="explain-side">
                     {move.color === focus
                       ? `${colorName(focus)} — your move`
-                      : `${colorName(move.color)} to move`}
+                      : `${colorName(move.color)} — opponent`}
                   </span>
                 </div>
+                {move.color === focus && prevMove ? (
+                  <p className="reply-to">
+                    In reply to {colorName(prevMove.color)}’s <strong>{moveLabel(prevMove)}</strong>
+                  </p>
+                ) : null}
                 {move.color === focus ? (
                   <MoveAnalysis
                     move={move}
@@ -466,8 +457,8 @@ export default function App() {
                   />
                 ) : (
                   <p className="note">
-                    This is {colorName(move.color)}’s move. Use ◀ ▶ to step to one of your
-                    moves and see which rules of thumb apply.
+                    {colorName(move.color)} played <strong>{moveLabel(move)}</strong>. Press ▶ to see{' '}
+                    {colorName(focus)}’s reply and its analysis.
                   </p>
                 )}
                 <AskBox

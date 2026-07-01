@@ -103,6 +103,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .navbtn:hover:not(:disabled) { border-color: var(--accent); }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
 .navlabel { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
+.nav-opp { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+.reply-to { margin: -4px 0 12px; font-size: 13px; color: var(--muted); }
 
 /* board-side explanation panel */
 .explain-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-height: 200px; }
