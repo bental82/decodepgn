@@ -135,7 +135,7 @@ export default function App() {
     [apiKey],
   )
 
-  const handleSubmit = (pgn: string, f: Focus) => {
+  const handleSubmit = (pgn: string, f: Focus): boolean => {
     try {
       const g = parsePgn(pgn)
       genRef.current++
@@ -157,8 +157,10 @@ export default function App() {
       setSelectedPly(first)
       setTab('move')
       setPhase('game')
+      return true
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'Could not parse that PGN.')
+      return false
     }
   }
 

@@ -102,9 +102,13 @@ interface LichessPlayer {
 }
 
 async function fetchLichess(username: string): Promise<ImportedGame[]> {
+  // perfType narrows to standard-chess pools SERVER-side; without it the
+  // max=N cap could be eaten entirely by variant games (Crazyhouse, 960, …)
+  // and a player of variants would import zero games.
+  const standardPerfs = 'ultraBullet,bullet,blitz,rapid,classical,correspondence'
   const url =
     `https://lichess.org/api/games/user/${encodeURIComponent(username)}` +
-    `?max=${MAX_GAMES}&pgnInJson=true&clocks=false&evals=false&opening=false`
+    `?max=${MAX_GAMES}&perfType=${standardPerfs}&pgnInJson=true&clocks=false&evals=false&opening=false`
   const res = await getResponse(url, 'application/x-ndjson')
   const text = await res.text()
 
@@ -117,6 +121,7 @@ async function fetchLichess(username: string): Promise<ImportedGame[]> {
       pgn?: string
       variant?: string
       speed?: string
+      status?: string
       lastMoveAt?: number
       createdAt?: number
       winner?: string
@@ -130,6 +135,7 @@ async function fetchLichess(username: string): Promise<ImportedGame[]> {
     }
     if (!g || typeof g.pgn !== 'string' || !g.pgn.trim()) continue
     if (g.variant && g.variant !== 'standard') continue
+    if (g.status === 'aborted' || g.status === 'noStart') continue // zero-move games
 
     const nameOf = (p?: LichessPlayer) =>
       p?.user?.name ?? (typeof p?.aiLevel === 'number' ? `Stockfish AI level ${p.aiLevel}` : 'Anonymous')

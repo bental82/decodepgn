@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { fetchRecentGames, type ImportSource, type ImportedGame } from '../lib/importers'
 import type { Focus } from '../shared/types'
 
@@ -8,7 +8,8 @@ const USER_STORAGE: Record<ImportSource, string> = {
 }
 
 interface Props {
-  onPick: (pgn: string, focus: Focus) => void
+  /** Load a game into the analyser. Returns false if the PGN could not be parsed. */
+  onPick: (pgn: string, focus: Focus) => boolean
 }
 
 // Pull recent games straight from the chess.com / Lichess public APIs by
@@ -21,30 +22,45 @@ export default function GameImport({ onPick }: Props) {
   const [games, setGames] = useState<ImportedGame[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bumped on every load/source switch so a slow response for the previous
+  // source can't render its games (or its error) under the new tab.
+  const reqRef = useRef(0)
 
   const pickSource = (s: ImportSource) => {
     if (s === source) return
+    reqRef.current++ // invalidate any in-flight fetch
     setSource(s)
     setGames(null)
     setError(null)
+    setLoading(false)
     setUsername(localStorage.getItem(USER_STORAGE[s]) || '')
   }
 
   const load = async () => {
     const u = username.trim()
     if (!u || loading) return
+    const reqId = ++reqRef.current
     setLoading(true)
     setError(null)
     setGames(null)
     try {
       const list = await fetchRecentGames(source, u)
+      if (reqRef.current !== reqId) return // stale — user switched source
       setGames(list)
       localStorage.setItem(USER_STORAGE[source], u)
     } catch (e) {
+      if (reqRef.current !== reqId) return
       setError(e instanceof Error ? e.message : 'Could not fetch games.')
     } finally {
-      setLoading(false)
+      if (reqRef.current === reqId) setLoading(false)
     }
+  }
+
+  const pick = (g: ImportedGame) => {
+    setError(null)
+    const ok = onPick(g.pgn, g.userColor)
+    // Surface parse failures HERE — the PGN-card error is off-screen from this list.
+    if (!ok) setError('Could not read that game’s moves (it may be empty or aborted). Try another game.')
   }
 
   const resultGlyph = (r: ImportedGame['userResult']) => (r === 'won' ? '1' : r === 'lost' ? '0' : '½')
@@ -105,11 +121,7 @@ export default function GameImport({ onPick }: Props) {
           <ul className="cc-list">
             {games.map((g, i) => (
               <li key={g.url || i}>
-                <button
-                  className="cc-game"
-                  onClick={() => onPick(g.pgn, g.userColor)}
-                  title="Analyse this game"
-                >
+                <button className="cc-game" onClick={() => pick(g)} title="Analyse this game">
                   <span className={'cc-res r-' + g.userResult}>{resultGlyph(g.userResult)}</span>
                   <span className="cc-players">
                     {g.white} vs {g.black}
