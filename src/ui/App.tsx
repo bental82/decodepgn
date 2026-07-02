@@ -58,6 +58,8 @@ export default function App() {
   const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
   // The whole-game overview (auto-generated on load, persisted with the game).
   const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
+  // Where the user was reading before a chip jump, so one tap brings them back.
+  const [jumpBack, setJumpBack] = useState<number | null>(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [overviewError, setOverviewError] = useState<string | null>(null)
 
@@ -156,6 +158,7 @@ export default function App() {
       setGameOverview(saved?.overview ?? null)
       setOverviewLoading(false)
       setOverviewError(null)
+      setJumpBack(null)
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -290,6 +293,7 @@ export default function App() {
     setGameOverview(null)
     setOverviewLoading(false)
     setOverviewError(null)
+    setJumpBack(null)
     setHistory(listGames())
   }
 
@@ -328,6 +332,18 @@ export default function App() {
   // opponent moves show on the board with a note, studied moves get analysis.
   const stepPly = (dir: 1 | -1) => {
     setSelectedPly((p) => Math.min(moves.length - 1, Math.max(0, p + dir)))
+  }
+
+  // Chip jumps (overview key moments, by-rule chips) remember where the user
+  // was reading; chained jumps keep the ORIGINAL spot until they return.
+  const jumpTo = (ply: number) => {
+    setJumpBack((prev) => (prev === null && ply !== selectedPly ? selectedPly : prev))
+    setSelectedPly(ply)
+    setTab('move')
+  }
+  const returnFromJump = () => {
+    if (jumpBack !== null) setSelectedPly(jumpBack)
+    setJumpBack(null)
   }
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
@@ -450,7 +466,7 @@ export default function App() {
                 loading={overviewLoading}
                 error={overviewError}
                 moves={moves}
-                onJump={setSelectedPly}
+                onJump={jumpTo}
                 onRetry={fetchOverview}
               />
               <StatusLegend />
@@ -502,6 +518,11 @@ export default function App() {
                     ⏭
                   </button>
                 </div>
+                {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
+                  <button className="jump-back" onClick={returnFromJump}>
+                    ↩ Back to {moveLabel(moves[jumpBack])}
+                  </button>
+                ) : null}
                 </div>
                 {studiedPlies.length > 0 && (
                   <div className="analysis-progress">
@@ -614,10 +635,7 @@ export default function App() {
                 moves={moves}
                 focus={focus}
                 results={results}
-                onJump={(ply) => {
-                  setSelectedPly(ply)
-                  setTab('move')
-                }}
+                onJump={jumpTo}
                 onPickRule={openRule}
               />
             </div>
