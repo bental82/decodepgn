@@ -74,6 +74,9 @@ export interface RelevanceMapProps {
   results: Record<number, MoveResult> // ply -> result
   onJump: (ply: number) => void
   onPickRule: (id: number) => void
+  /** re-run the whole analysis (adds the engine check to older analyses) */
+  onReanalyzeAll: () => void
+  reanalyzing: boolean
 }
 
 export interface GameSummaryProps {

@@ -286,8 +286,10 @@ export default function App() {
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies])
 
-  const handleAnalyzeAll = async () => {
-    const plies = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).map((m) => m.ply)
+  const handleAnalyzeAll = async (force = false) => {
+    const plies = moves
+      .filter((m) => isStudied(m.color, focus) && (force || !results[m.ply]))
+      .map((m) => m.ply)
     if (!plies.length) return
     const gen = genRef.current
     const BATCH = 6
@@ -512,7 +514,7 @@ export default function App() {
             </div>
             <button
               className="btn"
-              onClick={handleAnalyzeAll}
+              onClick={() => void handleAnalyzeAll()}
               disabled={!!allProgress || focusMovesRemaining === 0}
             >
               {allProgress
@@ -771,6 +773,8 @@ export default function App() {
                 results={results}
                 onJump={jumpTo}
                 onPickRule={openRule}
+                onReanalyzeAll={() => void handleAnalyzeAll(true)}
+                reanalyzing={!!allProgress}
               />
             </div>
           )}

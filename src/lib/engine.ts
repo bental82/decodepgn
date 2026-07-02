@@ -27,6 +27,8 @@ const SCORE_CACHE_MAX = 4000
 
 let workerPromise: Promise<Worker> | null = null
 let engineBroken = false
+let initFailures = 0
+const MAX_INIT_FAILURES = 3
 // Single worker — serialize evaluations through a promise chain.
 let queue: Promise<unknown> = Promise.resolve()
 
@@ -39,7 +41,7 @@ function initWorker(): Promise<Worker> {
       reject(e)
       return
     }
-    const timer = setTimeout(() => reject(new Error('Engine init timed out')), 20_000)
+    const timer = setTimeout(() => reject(new Error('Engine init timed out')), 45_000)
     const onMsg = (e: MessageEvent) => {
       const line = String(e.data)
       if (line === 'uciok') {
@@ -75,7 +77,11 @@ export async function engineAvailable(): Promise<boolean> {
     await getWorker()
     return true
   } catch {
-    engineBroken = true
+    // A slow network can fail the first 7MB wasm download — allow retries
+    // before giving up on the session.
+    workerPromise = null
+    initFailures++
+    if (initFailures >= MAX_INIT_FAILURES) engineBroken = true
     return false
   }
 }
