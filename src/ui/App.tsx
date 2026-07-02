@@ -492,7 +492,6 @@ export default function App() {
   }, [tab])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
-  const prevMove = selectedPly > 0 ? moves[selectedPly - 1] : undefined
   const moveLabel = (m: ParsedMove) => `${m.moveNumber}${m.color === 'w' ? '.' : '…'} ${m.san}`
 
   return (
@@ -703,19 +702,6 @@ export default function App() {
                 </div>
               </div>
               <div className="explain-panel" ref={explainRef}>
-                <div className="explain-head">
-                  <span className="explain-move">{moveLabel(move)}</span>
-                  <span className="explain-side">
-                    {isStudied(move.color, focus)
-                      ? `${colorName(move.color)} — your move`
-                      : `${colorName(move.color)} — opponent`}
-                  </span>
-                </div>
-                {isStudied(move.color, focus) && prevMove ? (
-                  <p className="reply-to">
-                    In reply to {colorName(prevMove.color)}’s <strong>{moveLabel(prevMove)}</strong>
-                  </p>
-                ) : null}
                 {isStudied(move.color, focus) ? (
                   <MoveAnalysis
                     move={move}
