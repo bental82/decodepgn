@@ -680,47 +680,6 @@ export default function App() {
                   </button>
                 ) : null}
                 </div>
-                {studiedPlies.length > 0 && (
-                  <div className="analysis-progress">
-                    <div className="movedots" aria-label="Your moves — analysis progress">
-                      {studiedPlies.map((p) => {
-                        const st = results[p]
-                          ? 'done'
-                          : loadingPlies.has(p)
-                            ? 'loading'
-                            : queuedPlies.has(p)
-                              ? 'queued'
-                              : 'pending'
-                        const mm = moves[p]
-                        const stLabel =
-                          st === 'done'
-                            ? 'analysed'
-                            : st === 'loading'
-                              ? 'analysing…'
-                              : st === 'queued'
-                                ? 'queued'
-                                : 'not analysed'
-                        return (
-                          <button
-                            key={p}
-                            className={'movedot ' + st + (p === selectedPly ? ' active' : '')}
-                            title={`${mm.moveNumber}${mm.color === 'w' ? '.' : '…'} ${mm.san} — ${stLabel}`}
-                            aria-label={`Move ${mm.moveNumber} ${mm.san}, ${stLabel}`}
-                            onClick={() => setSelectedPly(p)}
-                          />
-                        )
-                      })}
-                    </div>
-                    <div className="progress-caption">
-                      {analyzedFocus} of {studiedPlies.length} of your moves analysed
-                      {focusMovesRemaining > 0 && !allProgress ? (
-                        <button className="linkbtn" onClick={handleAnalyzeAll}>
-                          Analyse remaining
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="explain-panel" ref={explainRef}>
                 <div className="explain-head">
