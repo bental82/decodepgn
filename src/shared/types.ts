@@ -1,7 +1,13 @@
 // Types shared between the browser and the serverless analysis function.
 
 export type Color = 'w' | 'b'
-export type Focus = 'w' | 'b'
+/** which side is being studied — or both */
+export type Focus = 'w' | 'b' | 'both'
+
+/** Is a move by `color` part of the studied side(s)? */
+export function isStudied(color: Color, focus: Focus): boolean {
+  return focus === 'both' || color === focus
+}
 
 export interface ParsedMove {
   ply: number // 0-based index into the move list
@@ -57,6 +63,8 @@ export interface RuleHit {
   id: number // rule number (1..RULE_COUNT)
   status: RuleStatus
   why: string
+  /** 1-5: how central this rule is to THIS move (5 = the key idea). Results are sorted by it. */
+  relevance?: number
 }
 
 /** A cleaner alternative move, suggested when the played move breaks a principle. */

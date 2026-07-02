@@ -12,6 +12,7 @@ import {
   type SavedQuiz,
 } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
+import { isStudied } from '../shared/types'
 import type { EngineEval, Focus, GameOverview, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import AskBox from './AskBox'
@@ -80,7 +81,7 @@ export default function App() {
 
   const analyzePlies = useCallback(
     async (mvs: ParsedMove[], f: Focus, plies: number[]) => {
-      const targets = plies.filter((ply) => mvs[ply] && mvs[ply].color === f)
+      const targets = plies.filter((ply) => mvs[ply] && isStudied(mvs[ply].color, f))
       if (!targets.length) return
       const gen = genRef.current
       setLoadingPlies((prev) => new Set([...prev, ...targets]))
@@ -164,7 +165,7 @@ export default function App() {
       setQueuedPlies(new Set())
       setParseError(null)
       setHighlightRule(undefined)
-      const first = g.moves.find((m) => m.color === f)?.ply ?? 0
+      const first = g.moves.find((m) => isStudied(m.color, f))?.ply ?? 0
       setSelectedPly(first)
       setTab('move')
       setPhase('game')
@@ -229,17 +230,20 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'game') return
     const m = moves[selectedPly]
-    if (!m || m.color !== focus) return
-    if (results[selectedPly] || loadingPlies.has(selectedPly) || errorByPly[selectedPly]) return
+    if (!m || !isStudied(m.color, focus)) return
+    if (
+      results[selectedPly] ||
+      loadingPlies.has(selectedPly) ||
+      queuedPlies.has(selectedPly) ||
+      errorByPly[selectedPly]
+    )
+      return
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies])
 
   const handleAnalyzeAll = async () => {
-    const plies = moves.filter((m) => m.color === focus && !results[m.ply]).map((m) => m.ply)
-    if (!plies.length) {
-      setTab('map')
-      return
-    }
+    const plies = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).map((m) => m.ply)
+    if (!plies.length) return
     const gen = genRef.current
     const BATCH = 6
     const CONCURRENCY = 3
@@ -266,9 +270,20 @@ export default function App() {
     if (genRef.current === gen) {
       setAllProgress(null)
       setQueuedPlies(new Set())
-      setTab('map')
     }
   }
+
+  // Analyse the WHOLE game automatically after a load: browsing stays instant
+  // because every move is already (being) analysed in background batches.
+  const autoRanRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (phase !== 'game' || moves.length === 0) return
+    const key = storeRef.current?.key ?? ''
+    if (autoRanRef.current === key) return
+    autoRanRef.current = key
+    void handleAnalyzeAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, moves])
 
   const saveKey = (k: string) => {
     setApiKey(k)
@@ -321,9 +336,9 @@ export default function App() {
   }, [results])
 
   const move = moves[selectedPly]
-  const focusMovesRemaining = moves.filter((m) => m.color === focus && !results[m.ply]).length
+  const focusMovesRemaining = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).length
   const studiedPlies = useMemo(
-    () => moves.filter((m) => m.color === focus).map((m) => m.ply),
+    () => moves.filter((m) => isStudied(m.color, focus)).map((m) => m.ply),
     [moves, focus],
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
@@ -378,7 +393,7 @@ export default function App() {
                   ? 'All analysed ✓'
                   : analyzedFocus > 0
                     ? `Analyse remaining (${focusMovesRemaining})`
-                    : `Analyse all ${studiedPlies.length} ${colorName(focus)} moves`}
+                    : `Analyse all ${studiedPlies.length} ${focus === 'both' ? '' : colorName(focus) + ' '}moves`}
             </button>
             <button
               className="btn ghost"
@@ -477,7 +492,7 @@ export default function App() {
                 <div className="board-sticky">
                 <Board
                   fen={move.fenAfter}
-                  orientation={focus}
+                  orientation={focus === 'b' ? 'b' : 'w'}
                   lastMove={{ from: move.from, to: move.to }}
                 />
                 <div className="board-nav">
@@ -499,7 +514,7 @@ export default function App() {
                   </button>
                   <span className="navlabel">
                     {moveLabel(move)}
-                    {move.color !== focus && <span className="nav-opp"> · opponent</span>}
+                    {!isStudied(move.color, focus) && <span className="nav-opp"> · opponent</span>}
                   </span>
                   <button
                     className="navbtn"
@@ -570,17 +585,17 @@ export default function App() {
                 <div className="explain-head">
                   <span className="explain-move">{moveLabel(move)}</span>
                   <span className="explain-side">
-                    {move.color === focus
-                      ? `${colorName(focus)} — your move`
+                    {isStudied(move.color, focus)
+                      ? `${colorName(move.color)} — your move`
                       : `${colorName(move.color)} — opponent`}
                   </span>
                 </div>
-                {move.color === focus && prevMove ? (
+                {isStudied(move.color, focus) && prevMove ? (
                   <p className="reply-to">
                     In reply to {colorName(prevMove.color)}’s <strong>{moveLabel(prevMove)}</strong>
                   </p>
                 ) : null}
-                {move.color === focus ? (
+                {isStudied(move.color, focus) ? (
                   <MoveAnalysis
                     move={move}
                     focus={focus}

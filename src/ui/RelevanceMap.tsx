@@ -2,6 +2,7 @@ import type { ParsedMove, MoveResult } from '../shared/types'
 import type { RelevanceMapProps } from './contract'
 import { statusMeta, colorName } from './contract'
 import { RULES_BY_ID } from '../shared/rules'
+import { isStudied } from '../shared/types'
 
 export default function RelevanceMap({ moves, focus, results, onJump, onPickRule }: RelevanceMapProps) {
   const map: Record<number, { ply: number; status: MoveResult['rules'][number]['status'] }[]> = {}
@@ -13,7 +14,7 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
   }
 
   const analysedCount = Object.keys(results).length
-  const totalFocus = moves.filter((m) => m.color === focus).length
+  const totalFocus = moves.filter((m) => isStudied(m.color, focus)).length
 
   const ruleIds = Object.keys(map).map(Number)
   ruleIds.sort((a, b) => {
@@ -26,7 +27,7 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
     <div className="relmap">
       <h2>Where each rule came up</h2>
       <p className="muted">
-        {analysedCount} of {totalFocus} {colorName(focus)} moves analysed.
+        {analysedCount} of {totalFocus} studied moves analysed ({colorName(focus)}).
       </p>
       {ruleIds.length === 0 ? (
         <p className="empty">

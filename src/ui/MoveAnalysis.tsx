@@ -84,23 +84,31 @@ export default function MoveAnalysis({
         {result.rules.length === 0 ? (
           <p className="note">No single rule stood out for this move.</p>
         ) : (
-          result.rules.map((hit) => {
-            const meta = statusMeta(hit.status)
-            return (
-              <div className="finding" key={hit.id}>
-                <div className="finding-top">
-                  <span className={'badge ' + meta.cls} title={meta.desc}>
-                    {meta.icon} {meta.label}
-                  </span>
-                  <button className="rule-link" onClick={() => onOpenRule(hit.id)}>
-                    <span className="rule-num">#{hit.id}</span>{' '}
-                    {RULES_BY_ID[hit.id]?.title ?? 'Rule ' + hit.id}
-                  </button>
+          [...result.rules]
+            // most important first (server pre-sorts; this also covers older saved results)
+            .sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
+            .map((hit) => {
+              const meta = statusMeta(hit.status)
+              return (
+                <div className="finding" key={hit.id}>
+                  <div className="finding-top">
+                    <span className={'badge ' + meta.cls} title={meta.desc}>
+                      {meta.icon} {meta.label}
+                    </span>
+                    <button className="rule-link" onClick={() => onOpenRule(hit.id)}>
+                      <span className="rule-num">#{hit.id}</span>{' '}
+                      {RULES_BY_ID[hit.id]?.title ?? 'Rule ' + hit.id}
+                    </button>
+                    {(hit.relevance ?? 0) >= 5 ? (
+                      <span className="key-rule" title="The key idea of this move">
+                        ★ key
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="why">{hit.why}</p>
                 </div>
-                <p className="why">{hit.why}</p>
-              </div>
-            )
-          })
+              )
+            })
         )}
       </div>
 

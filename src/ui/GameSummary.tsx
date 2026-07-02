@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import type { Soundness } from '../shared/types'
+import { isStudied } from '../shared/types'
 import type { GameSummaryProps } from './contract'
 import { colorName } from './contract'
 
@@ -33,14 +34,14 @@ export default function GameSummary({ moves, focus, results, onPickRule }: GameS
     return { broke: top3(brokeRec), followed: top3(followedRec), sound: soundCount, analysed: analysedN }
   }, [results])
 
-  const totalFocus = moves.filter((m) => m.color === focus).length
+  const totalFocus = moves.filter((m) => isStudied(m.color, focus)).length
 
   if (analysed === 0) {
     return (
       <div className="summary">
         <h2>Game takeaways</h2>
         <p className="muted">
-          Analyse your moves (open them in Study, or use “Analyse all {colorName(focus)} moves”) to see
+          Analyse your moves (they analyse automatically after loading; see “Analyse remaining” if any were skipped) to see
           which principles you followed and broke most across the game.
         </p>
       </div>
@@ -69,7 +70,7 @@ export default function GameSummary({ moves, focus, results, onPickRule }: GameS
     <div className="summary">
       <h2>Game takeaways</h2>
       <p className="muted small">
-        Based on {analysed} of {totalFocus} {colorName(focus)} move(s) analysed.
+        Based on {analysed} of {totalFocus} studied move(s) ({colorName(focus)}).
       </p>
       <div className="summary-cols">
         <div className="summary-col">

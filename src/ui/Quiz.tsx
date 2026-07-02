@@ -117,7 +117,7 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, save
         <div className="quiz-board">
           <Board
             fen={refMove.fenAfter}
-            orientation={focus}
+            orientation={focus === 'b' ? 'b' : 'w'}
             lastMove={{ from: refMove.from, to: refMove.to }}
             caption={`After ${refMove.moveNumber}${refMove.color === 'w' ? '.' : '…'} ${refMove.san}`}
           />

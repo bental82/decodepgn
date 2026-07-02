@@ -68,6 +68,15 @@ export default function PgnInput({
           />
           Study Black’s decisions
         </label>
+        <label className={color === 'both' ? 'active' : ''}>
+          <input
+            type="radio"
+            name="focus"
+            checked={color === 'both'}
+            onChange={() => setColor('both')}
+          />
+          Study both sides
+        </label>
       </div>
 
       {error ? <div className="error">{error}</div> : null}

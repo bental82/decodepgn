@@ -194,8 +194,13 @@ const OUTPUT_TOOL = {
                     type: 'string',
                     description: 'One plain-language sentence explaining the relevance for a club player.',
                   },
+                  relevance: {
+                    type: 'integer',
+                    description:
+                      'How central this rule is to THIS move, 1-5: 5 = the key idea of the move, 3 = clearly in play, 1 = worth a passing mention.',
+                  },
                 },
-                required: ['id', 'status', 'why'],
+                required: ['id', 'status', 'why', 'relevance'],
               },
             },
             lesson: {
@@ -231,8 +236,8 @@ const OUTPUT_TOOL = {
 
 export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse> {
   const apiKey = resolveKey(input)
-  if (input.focus !== 'w' && input.focus !== 'b') {
-    throw new AnalyzeError('focus must be "w" or "b".')
+  if (input.focus !== 'w' && input.focus !== 'b' && input.focus !== 'both') {
+    throw new AnalyzeError('focus must be "w", "b", or "both".')
   }
   if (!Array.isArray(input.game) || !Array.isArray(input.targets)) {
     throw new AnalyzeError('Malformed request: game and targets are required.')
@@ -277,7 +282,8 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
   const requestedPlies = new Set(targets.map((t) => t.ply))
   const game = sanitizeGame(input.game)
 
-  const sideName = input.focus === 'w' ? 'White' : 'Black'
+  const both = input.focus === 'both'
+  const sideName = input.focus === 'w' ? 'White' : input.focus === 'b' ? 'Black' : 'each side'
   const moveText = moveTextOf(game)
 
   const byPly = new Map(game.map((m) => [m.ply, m]))
@@ -286,7 +292,8 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     .map((t) => {
       const m = byPly.get(t.ply)
       const label = m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : `ply ${t.ply}`
-      let line = `- ply ${t.ply}: ${sideName}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
+      const mover = m ? (m.color === 'w' ? 'White' : 'Black') : sideName
+      let line = `- ply ${t.ply}: ${mover}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
       if (t.engine) {
         const e = t.engine
         line += e.isBest
@@ -297,7 +304,11 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
     })
     .join('\n')
 
-  const system = systemWith(`Analyse the requested ${sideName} move(s) strictly from ${sideName}'s perspective and report using the report_relevance tool.
+  const system = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. ${
+    both
+      ? 'Both sides are under study: analyse EACH move strictly from the perspective of the side that played it.'
+      : `Analyse strictly from ${sideName}'s perspective.`
+  }
 
 For each move, decide which rules are genuinely relevant (usually 1-4; do not force irrelevant ones) and pick rules that fit this move and phase of the game (opening/development rules early, endgame rules once queens or most pieces are gone).
 Set each rule's status honestly:
@@ -305,7 +316,7 @@ Set each rule's status honestly:
 - "partially": partly upholds it, with a trade-off.
 - "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
 - "relevant": the rule is in play but the move is genuinely neutral toward it.
-Give one clear sentence per rule. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
+Give one clear sentence per rule, and score each rule's "relevance" 1-5 (5 = the key idea of this move, 1 = passing mention) — the app sorts by it, so the score should reflect how much this rule explains THE move. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
 
 Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
 - If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
@@ -333,14 +344,21 @@ ${targetLines}`
       const out: MoveResult = {
         ply: r.ply,
         lesson: typeof r.lesson === 'string' ? r.lesson : '',
-        rules: (r.rules || []).filter(
-          (h: RuleHit) =>
-            Number.isInteger(h.id) &&
-            h.id >= 1 &&
-            h.id <= RULE_COUNT &&
-            typeof h.why === 'string' &&
-            validStatuses.has(h.status),
-        ),
+        rules: (r.rules || [])
+          .filter(
+            (h: RuleHit) =>
+              Number.isInteger(h.id) &&
+              h.id >= 1 &&
+              h.id <= RULE_COUNT &&
+              typeof h.why === 'string' &&
+              validStatuses.has(h.status),
+          )
+          .map((h: RuleHit) => ({
+            ...h,
+            relevance: Math.min(5, Math.max(1, intOr(h.relevance, 3))),
+          }))
+          // most important first (stable, so the model's order breaks ties)
+          .sort((a: RuleHit, b: RuleHit) => (b.relevance ?? 3) - (a.relevance ?? 3)),
       }
       if (typeof r.soundness === 'string' && validSoundness.has(r.soundness)) {
         out.soundness = r.soundness as Soundness
@@ -398,22 +416,22 @@ const QUIZ_TOOL = {
 
 export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
   const apiKey = resolveKey(input)
-  const focus = input.focus === 'b' ? 'b' : 'w'
-  const sideName = focus === 'w' ? 'White' : 'Black'
+  const focus = input.focus === 'b' ? 'b' : input.focus === 'both' ? 'both' : 'w'
+  const sideName = focus === 'w' ? 'White' : focus === 'b' ? 'Black' : 'both sides'
   const game = sanitizeGame(input.game)
   if (game.length === 0) throw new AnalyzeError('A game is required to build a quiz.')
   const count = Math.min(10, Math.max(1, intOr(input.count, 6)))
   const moveText = moveTextOf(game)
 
-  const system = systemWith(`Create a short multiple-choice quiz that teaches a ${sideName} player the rules of thumb, based on the game below. Use the make_quiz tool.
+  const system = systemWith(`Create a short multiple-choice quiz that teaches a player studying ${sideName} the rules of thumb, based on the game below. Use the make_quiz tool.
 
 Each question must have a clear "prompt", 3-4 "options" with EXACTLY ONE having correct=true, and a one-line "explanation" of the correct answer. Make the wrong options plausible but clearly worse. Vary the questions across these kinds:
 - "Which rule does <move> most FOLLOW / BREAK here?" (options are rule titles).
-- "Which of these ${sideName} moves best follows rule #NN (<title>)?" (options are moves that appear in the game).
+- "Which of these moves best follows rule #NN (<title>)?" (options are moves that appear in the game).
 - A concept check about what a specific rule means.
 Only reference moves that actually appear in the game, citing them by move number and SAN. Set "ruleId" to the main rule number (1-${RULE_COUNT}) and "ply" to the referenced game ply when applicable. Keep prompts and options concise.`)
 
-  const user = `The player being quizzed is ${sideName}. Base the quiz on this game.
+  const user = `The player being quizzed is studying ${sideName}. Base the quiz on this game.
 Game (SAN):
 ${moveText}
 
@@ -498,8 +516,8 @@ const OVERVIEW_TOOL = {
 
 export async function runOverview(input: OverviewRequest): Promise<OverviewResponse> {
   const apiKey = resolveKey(input)
-  const focus = input.focus === 'b' ? 'b' : 'w'
-  const sideName = focus === 'w' ? 'White' : 'Black'
+  const focus = input.focus === 'b' ? 'b' : input.focus === 'both' ? 'both' : 'w'
+  const sideName = focus === 'w' ? 'White' : focus === 'b' ? 'Black' : 'both sides'
   const game = sanitizeGame(input.game)
   if (game.length === 0) throw new AnalyzeError('A game is required for an overview.')
 
@@ -508,12 +526,12 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
   const black = clip(h.Black, 40) || 'Black'
   const result = clip(h.Result, 8)
 
-  const system = systemWith(`Write a short OVERVIEW of the whole game from ${sideName}'s perspective, using the report_overview tool. Be decisive and concrete — this is the opening summary a coach gives before going move by move.
+  const system = systemWith(`Write a short OVERVIEW of the whole game from the perspective of ${sideName === 'both sides' ? 'a coach reviewing both sides' : sideName}, using the report_overview tool. Be decisive and concrete — this is the opening summary a coach gives before going move by move.
 - "summary": what decided the game — what won it and what lost it (2-4 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack), citing rule numbers where natural.
 - "trend": the arc of the game — who stood better in which phase and where the momentum shifted (1-2 sentences).
 - "keyMoments": 2-4 pivotal plies in game order, each with a short title and a one-line why. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
 
-  const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The player under study is ${sideName}.
+  const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The side under study: ${sideName}.
 Moves (SAN):
 ${moveTextOf(game)}
 

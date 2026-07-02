@@ -88,8 +88,8 @@ export interface SettingsProps {
   onClose: () => void
 }
 
-export function colorName(c: Focus): 'White' | 'Black' {
-  return c === 'w' ? 'White' : 'Black'
+export function colorName(c: Focus): string {
+  return c === 'w' ? 'White' : c === 'b' ? 'Black' : 'Both sides'
 }
 
 export interface StatusMeta {
