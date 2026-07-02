@@ -5,12 +5,27 @@ import { RULES_BY_ID } from '../shared/rules'
 import { isStudied } from '../shared/types'
 
 export default function RelevanceMap({ moves, focus, results, onJump, onPickRule }: RelevanceMapProps) {
-  const map: Record<number, { ply: number; status: MoveResult['rules'][number]['status'] }[]> = {}
+  const map: Record<
+    number,
+    { ply: number; status: MoveResult['rules'][number]['status']; cpLoss?: number }[]
+  > = {}
   for (const r of Object.values(results)) {
     for (const hit of r.rules) {
       if (!map[hit.id]) map[hit.id] = []
-      map[hit.id].push({ ply: r.ply, status: hit.status })
+      map[hit.id].push({ ply: r.ply, status: hit.status, cpLoss: r.engine?.cpLoss })
     }
+  }
+
+  // Engine cost of breaking vs following a rule: total centipawn loss (per
+  // Stockfish) across the moves where the rule got that status.
+  const engImpact = (hits: { status: string; cpLoss?: number }[]) => {
+    const agg = (statuses: string[]) => {
+      const withEng = hits.filter((h) => statuses.includes(h.status) && h.cpLoss !== undefined)
+      return withEng.length
+        ? { n: withEng.length, cp: withEng.reduce((s, h) => s + (h.cpLoss ?? 0), 0) }
+        : null
+    }
+    return { broke: agg(['violates']), followed: agg(['follows']) }
   }
 
   const analysedCount = Object.keys(results).length
@@ -36,6 +51,7 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
       ) : (
         ruleIds.map((id) => {
           const chips = [...map[id]].sort((a, b) => a.ply - b.ply)
+          const impact = engImpact(map[id])
           return (
             <div className="relrule" key={id}>
               <div className="relrule-head">
@@ -44,6 +60,18 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
                 </button>
                 <span className="relcount">{chips.length} move(s)</span>
               </div>
+              {impact.broke || impact.followed ? (
+                <p className="rel-impact" title="Total centipawn loss (Stockfish) on the moves where this rule got that label">
+                  ⚙{' '}
+                  {impact.broke
+                    ? `breaking it cost ${(impact.broke.cp / 100).toFixed(1)} pawns over ${impact.broke.n} move(s)`
+                    : null}
+                  {impact.broke && impact.followed ? ' · ' : null}
+                  {impact.followed
+                    ? `following it cost ${(impact.followed.cp / 100).toFixed(1)} over ${impact.followed.n}`
+                    : null}
+                </p>
+              ) : null}
               <div className="relmoves">
                 {chips.map(({ ply, status }) => {
                   const m: ParsedMove | undefined = moves[ply]

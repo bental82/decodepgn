@@ -25,6 +25,7 @@ import PieceSprite from './PieceSprite'
 import PgnInput from './PgnInput'
 import Quiz from './Quiz'
 import RelevanceMap from './RelevanceMap'
+import RuleModal from './RuleModal'
 import RulesReference from './RulesReference'
 import Settings from './Settings'
 
@@ -43,6 +44,8 @@ export default function App() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('move')
   const [highlightRule, setHighlightRule] = useState<number | undefined>()
+  // A rule opened as a popup (from the move card / by-rule map / quiz).
+  const [ruleModalId, setRuleModalId] = useState<number | null>(null)
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(KEY_STORAGE) || '')
   const [showSettings, setShowSettings] = useState(false)
   const [hasServerKey, setHasServerKey] = useState(false)
@@ -380,9 +383,10 @@ export default function App() {
     setHistory(listGames())
   }
 
+  // Opening a rule shows a popup (with an Ask thread) so the user never loses
+  // their place; the full list stays reachable from inside the popup.
   const openRule = (id: number) => {
-    setHighlightRule(id)
-    setTab('rules')
+    setRuleModalId(id)
   }
 
   // keyboard navigation through the move list
@@ -464,6 +468,10 @@ export default function App() {
   // starts scrolling under the sticky board (not only when scrolled deep).
   useEffect(() => {
     const onScroll = () => {
+      if (tab === 'rules' || tab === 'map') {
+        setShowToTop(window.scrollY > 220)
+        return
+      }
       const panel = explainRef.current
       if (!panel) {
         setShowToTop(false)
@@ -476,9 +484,10 @@ export default function App() {
           : 82
       setShowToTop(panel.getBoundingClientRect().top < stickyH - 32)
     }
+    onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [tab])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
   const prevMove = selectedPly > 0 ? moves[selectedPly - 1] : undefined
@@ -778,15 +787,33 @@ export default function App() {
         </div>
       )}
 
-      {phase === 'game' && tab === 'move' && showToTop ? (
+      {phase === 'game' && showToTop && tab !== 'quiz' ? (
         <button
           className="to-top"
-          onClick={() => scrollToAnalysisTop(true)}
-          aria-label="Back to the top of the analysis"
+          onClick={() =>
+            tab === 'move'
+              ? scrollToAnalysisTop(true)
+              : window.scrollTo({ top: 0, behavior: 'smooth' })
+          }
+          aria-label="Back to the top"
         >
           ↑ Top
         </button>
       ) : null}
+
+      {ruleModalId !== null && (
+        <RuleModal
+          ruleId={ruleModalId}
+          apiKey={apiKey}
+          onNeedKey={() => setShowSettings(true)}
+          onOpenList={(id) => {
+            setHighlightRule(id)
+            setRuleModalId(null)
+            setTab('rules')
+          }}
+          onClose={() => setRuleModalId(null)}
+        />
+      )}
 
       {showSettings && (
         <Settings

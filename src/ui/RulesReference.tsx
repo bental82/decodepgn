@@ -12,6 +12,7 @@ export default function RulesReference({
 }: RulesReferenceProps) {
   const [query, setQuery] = useState('')
   const hiRef = useRef<HTMLDivElement>(null)
+  const catRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   useEffect(() => {
     if (highlightId !== undefined && hiRef.current) {
@@ -42,11 +43,28 @@ export default function RulesReference({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      <div className="rules-toc" aria-label="Jump to a category">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c}
+            className="toc-chip"
+            onClick={() => catRefs.current[c]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
       {CATEGORIES.map((category) => {
         const rules = filtered.filter((r) => r.category === category)
         if (rules.length === 0) return null
         return (
-          <div key={category}>
+          <div
+            key={category}
+            ref={(el) => {
+              catRefs.current[category] = el
+            }}
+            className="rule-cat-block"
+          >
             <div className="rule-cat">{category}</div>
             {rules.map((r) => {
               const isHi = highlightId === r.id

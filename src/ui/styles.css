@@ -201,6 +201,15 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .chip .cdot { width: 8px; height: 8px; border-radius: 50%; }
 .chip-go { color: var(--muted); font-size: 11px; }
 
+/* rules reference — table of contents + eval-impact line */
+.rules-toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.toc-chip { border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.toc-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.rule-cat-block { scroll-margin-top: 78px; }
+.rel-impact { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.rule-modal-title { font-size: 17px; margin: 4px 0 8px; }
+.rule-modal-detail { margin: 0 0 4px; font-size: 14px; }
+
 /* rules reference */
 .rules-ref { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
 .rules-search { width: 100%; border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
