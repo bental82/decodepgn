@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
-import { analyze, overview as fetchOverviewApi } from '../lib/api'
+import { analyze, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
 import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
 import {
   gameKey,
@@ -55,7 +55,11 @@ export default function App() {
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
   const [history, setHistory] = useState<SavedGame[]>(() => listGames())
   // The current game's generated quiz (persisted alongside the analysis).
+  // Owned here — NOT in the Quiz tab — so generation keeps running and nothing
+  // is lost when the user switches tabs mid-way.
   const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
+  const [quizLoading, setQuizLoading] = useState(false)
+  const [quizError, setQuizError] = useState<string | null>(null)
   // The whole-game overview (auto-generated on load, persisted with the game).
   const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
   // Where the user was reading before a chip jump, so one tap brings them back.
@@ -164,6 +168,8 @@ export default function App() {
       setFocus(f)
       setResults(saved?.results ?? {})
       setQuizSaved(saved?.quiz ?? null)
+      setQuizLoading(false)
+      setQuizError(null)
       setGameOverview(saved?.overview ?? null)
       setEvals(saved?.evals ?? {})
       setOverviewLoading(false)
@@ -227,6 +233,32 @@ export default function App() {
       if (genRef.current === gen) setOverviewLoading(false)
     }
   }, [moves, focus, headers, apiKey])
+
+  const startQuiz = useCallback(async () => {
+    if (!moves.length || quizLoading) return
+    const gen = genRef.current
+    setQuizLoading(true)
+    setQuizError(null)
+    setQuizSaved(null)
+    try {
+      const resp = await fetchQuizApi({
+        mode: 'quiz',
+        focus,
+        game: toGameMoves(moves),
+        apiKey: apiKey.trim() || undefined,
+      })
+      if (genRef.current !== gen) return
+      // setting quizSaved persists it immediately via the save effect
+      setQuizSaved({ questions: resp.questions, answers: resp.questions.map(() => null), current: 0 })
+    } catch (e) {
+      if (genRef.current !== gen) return
+      const msg = e instanceof Error ? e.message : 'Could not build the quiz.'
+      setQuizError(msg)
+      if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
+    } finally {
+      if (genRef.current === gen) setQuizLoading(false)
+    }
+  }, [moves, focus, apiKey, quizLoading])
 
   // Every analysis starts with the whole-game overview — generate it once per
   // loaded game (restored games already have it and skip the call).
@@ -338,6 +370,8 @@ export default function App() {
     setQueuedPlies(new Set())
     setParseError(null)
     setQuizSaved(null)
+    setQuizLoading(false)
+    setQuizError(null)
     setGameOverview(null)
     setEvals({})
     setOverviewLoading(false)
@@ -739,14 +773,14 @@ export default function App() {
 
           {tab === 'quiz' && (
             <Quiz
-              key={storeRef.current?.key ?? 'quiz'} // remount per game
               moves={moves}
               focus={focus}
-              apiKey={apiKey}
-              onNeedKey={() => setShowSettings(true)}
-              onOpenRule={openRule}
               saved={quizSaved}
-              onSave={setQuizSaved}
+              loading={quizLoading}
+              error={quizError}
+              onStart={() => void startQuiz()}
+              onChange={setQuizSaved}
+              onOpenRule={openRule}
             />
           )}
 

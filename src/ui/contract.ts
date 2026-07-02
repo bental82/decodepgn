@@ -42,11 +42,13 @@ export interface RulesReferenceProps {
 export interface QuizProps {
   moves: ParsedMove[]
   focus: Focus
-  apiKey: string
-  onNeedKey: () => void
+  /** the quiz + progress (owned by App so generation survives tab switches) */
+  saved: SavedQuiz | null
+  loading: boolean
+  error: string | null
+  onStart: () => void
+  onChange: (quiz: SavedQuiz) => void
   onOpenRule: (id: number) => void
-  saved: SavedQuiz | null // previously generated quiz for this game, if any
-  onSave: (quiz: SavedQuiz) => void
 }
 
 export interface AskContext {

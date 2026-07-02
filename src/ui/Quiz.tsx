@@ -1,73 +1,34 @@
-import { useEffect, useState } from 'react'
-import { toGameMoves } from '../game'
-import { quiz as fetchQuiz } from '../lib/api'
 import { RULES_BY_ID, RULE_COUNT } from '../shared/rules'
-import type { QuizQuestion } from '../shared/types'
 import type { QuizProps } from './contract'
 import Board from './Board'
 
-export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, saved, onSave }: QuizProps) {
-  // Seed from the saved quiz (if any) so a reload/resume keeps questions,
-  // answers, and position; every change is reported up for persistence.
-  const [questions, setQuestions] = useState<QuizQuestion[] | null>(saved?.questions ?? null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [current, setCurrent] = useState(saved?.current ?? 0)
-  const [answers, setAnswers] = useState<(number | null)[]>(saved?.answers ?? [])
-
-  useEffect(() => {
-    if (questions) onSave({ questions, answers, current })
-  }, [questions, answers, current, onSave])
-
-  const start = async () => {
-    setLoading(true)
-    setError(null)
-    // Drop any previous quiz up front: if the request fails we show the error
-    // screen instead of silently re-rendering the stale quiz.
-    setQuestions(null)
-    setAnswers([])
-    try {
-      const resp = await fetchQuiz({
-        mode: 'quiz',
-        focus,
-        game: toGameMoves(moves),
-        apiKey: apiKey.trim() || undefined,
-      })
-      setQuestions(resp.questions)
-      setAnswers(resp.questions.map(() => null))
-      setCurrent(0)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Could not build the quiz.'
-      setError(msg)
-      if (/api key|401|authentication/i.test(msg)) onNeedKey()
-    } finally {
-      setLoading(false)
-    }
-  }
-
+// Presentational quiz: the quiz itself (questions, answers, position) is owned
+// by App and persisted with the game, so generation keeps running and nothing
+// is lost when the user switches tabs mid-way.
+export default function Quiz({ moves, focus, saved, loading, error, onStart, onChange, onOpenRule }: QuizProps) {
   if (loading) {
     return (
       <div className="quiz">
         <div className="loading-row">
           <span className="spinner" />
-          Building your quiz…
+          Building your quiz… (you can browse other tabs — it keeps working)
         </div>
       </div>
     )
   }
 
-  if (error && !questions) {
+  if (error && !saved) {
     return (
       <div className="quiz">
         <div className="error">{error}</div>
-        <button className="btn" onClick={start}>
+        <button className="btn" onClick={onStart}>
           Try again
         </button>
       </div>
     )
   }
 
-  if (!questions) {
+  if (!saved) {
     return (
       <div className="quiz quiz-intro">
         <h2>Quiz</h2>
@@ -75,13 +36,14 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, save
           Test yourself on the {RULE_COUNT} rules using this game — multiple-choice questions with
           instant feedback and a running score. It’s heuristic coaching, not a rating test.
         </p>
-        <button className="btn primary big" onClick={start}>
+        <button className="btn primary big" onClick={onStart}>
           Start quiz
         </button>
       </div>
     )
   }
 
+  const { questions, answers, current } = saved
   const total = questions.length
   const answeredCount = answers.filter((a) => a !== null).length
   const score = questions.reduce(
@@ -95,11 +57,12 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, save
 
   const choose = (i: number) => {
     if (answers[current] !== null) return
-    setAnswers((prev) => {
-      const c = [...prev]
-      c[current] = i
-      return c
-    })
+    const next = [...answers]
+    next[current] = i
+    onChange({ ...saved, answers: next })
+  }
+  const goTo = (idx: number) => {
+    onChange({ ...saved, current: Math.min(total - 1, Math.max(0, idx)) })
   }
 
   return (
@@ -160,19 +123,15 @@ export default function Quiz({ moves, focus, apiKey, onNeedKey, onOpenRule, save
       ) : null}
 
       <div className="quiz-nav">
-        <button
-          className="btn"
-          disabled={current === 0}
-          onClick={() => setCurrent((c) => Math.max(0, c - 1))}
-        >
+        <button className="btn" disabled={current === 0} onClick={() => goTo(current - 1)}>
           ◀ Prev
         </button>
         {current < total - 1 ? (
-          <button className="btn primary" onClick={() => setCurrent((c) => Math.min(total - 1, c + 1))}>
+          <button className="btn primary" onClick={() => goTo(current + 1)}>
             Next ▶
           </button>
         ) : (
-          <button className="btn" onClick={start}>
+          <button className="btn" onClick={onStart}>
             New quiz
           </button>
         )}
