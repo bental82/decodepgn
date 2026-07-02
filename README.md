@@ -31,6 +31,11 @@ function; the app itself is a static single-page app.
 
 ## How it works
 
+0. Paste a PGN — or **import a recent game by username** from chess.com or
+   Lichess (their public APIs are key-less and CORS-enabled, so this runs
+   entirely in the browser; no account linking). Lichess exports include games
+   vs the Stockfish AI; chess.com bot games usually aren't in its public API —
+   download those as PGN from the site and paste them.
 1. The browser parses your PGN with [chess.js](https://github.com/jhlywa/chess.js)
    into a move list with the position before/after each move.
 2. **Stockfish 18 (lite, single-threaded WASM)** runs in a Web Worker and scores

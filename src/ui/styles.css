@@ -61,6 +61,25 @@ a { color: var(--accent-ink); }
 
 /* landing */
 .landing { max-width: 1000px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: 1.25fr 1fr; gap: 22px; align-items: start; }
+/* game import (chess.com / lichess) */
+.ccimport { grid-column: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.ccimport h2 { font-size: 15px; }
+.cc-sources { display: flex; gap: 6px; margin-bottom: 10px; }
+.cc-source { flex: 1; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); border-radius: 9px; padding: 7px 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cc-source.active { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-weak); }
+.cc-row { display: flex; gap: 8px; }
+.cc-input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; font-size: 14px; }
+.cc-input:focus { outline: none; border-color: var(--accent); }
+.cc-list { list-style: none; margin: 12px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.cc-game { width: 100%; display: flex; align-items: baseline; gap: 10px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; cursor: pointer; font: inherit; color: var(--ink); }
+.cc-game:hover { border-color: var(--accent); }
+.cc-res { flex: none; width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 6px; font-size: 12px; font-weight: 700; align-self: center; }
+.cc-res.r-won { background: var(--good-bg); color: var(--good); }
+.cc-res.r-lost { background: var(--bad-bg); color: var(--bad); }
+.cc-res.r-draw { background: var(--warn-bg); color: var(--warn); }
+.cc-players { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
 /* history of analysed games */
 .history { grid-column: 1 / -1; padding: 16px 18px; }
 .history h2 { font-size: 15px; margin-bottom: 8px; }

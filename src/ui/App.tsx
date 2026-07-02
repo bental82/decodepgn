@@ -16,6 +16,7 @@ import type { EngineEval, Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
+import GameImport from './GameImport'
 import GameSummary from './GameSummary'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
@@ -376,6 +377,7 @@ export default function App() {
             hasServerKey={hasServerKey}
           />
           <IntroCard />
+          <GameImport onPick={handleSubmit} />
         </div>
       ) : (
         <div className="workspace">
