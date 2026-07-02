@@ -74,7 +74,6 @@ export default function MoveAnalysis({
 
       {result.lesson ? (
         <div className="lesson">
-          <span className="lesson-label">Lesson</span>
           <p>{result.lesson}</p>
         </div>
       ) : null}

@@ -160,8 +160,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 .analysis { margin-top: 0; }
 .lesson { background: var(--accent-weak); border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
-.lesson-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
-.lesson p { margin: 4px 0 0; }
+.lesson p { margin: 0; }
 .findings h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .finding { border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel-2); }
 .finding-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
