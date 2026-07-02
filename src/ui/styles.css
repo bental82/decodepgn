@@ -246,7 +246,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* game overview — the coach's opening word */
 .overview { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
-.overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; margin-bottom: 6px; }
+.overview-head { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: none; padding: 0; margin: 0 0 6px; cursor: pointer; font: inherit; }
+.overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
+.overview-chevron { color: var(--accent-ink); font-size: 13px; }
 .overview-summary { margin: 0 0 8px; font-size: 14.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -258,13 +260,6 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 /* return-from-jump pill (lives in the sticky board block) */
 .jump-back { display: block; margin: 8px auto 0; border: 1px solid var(--accent); background: var(--accent-weak); color: var(--accent-ink); border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .jump-back:hover { background: var(--panel-2); }
-
-/* label legend */
-.legend { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; }
-.legend-row { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
-.legend-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; min-width: 96px; }
-.legend-item { display: inline-flex; align-items: center; gap: 7px; }
-.legend-desc { font-size: 12px; color: var(--muted); }
 
 /* per-move analysis progress + dots */
 .analysis-progress { margin-top: 12px; }
@@ -336,6 +331,17 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 /* footer */
 .foot { margin-top: auto; text-align: center; color: var(--muted); font-size: 12.5px; padding: 20px; border-top: 1px solid var(--line); background: var(--panel); }
 
+/* eval bar (Stockfish, White's perspective) */
+.eval-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.evalbar { position: relative; flex: 1; height: 12px; border-radius: 6px; background: #14161c; border: 1px solid var(--line-2); overflow: hidden; }
+.evalbar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: #e8ecf2; transition: width 300ms ease; }
+.eval-num { width: 46px; text-align: right; font-size: 12px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* compact-board toggle (shown on phones) + floating back-to-analysis pill */
+.minibtn { display: none; }
+.to-top { position: fixed; right: 14px; bottom: 18px; z-index: 40; border: 1px solid var(--accent); background: var(--accent-weak); color: var(--accent-ink); border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45); }
+.to-top:hover { background: var(--panel-2); }
+
 /* intermediate widths: stack the study view so the board and explanation
    never clip or overlap; the board centres with a sensible cap. */
 @media (max-width: 1024px) {
@@ -377,7 +383,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   /* the nav lives inside the full-bleed sticky block, so it needs its own inset;
      the progress strip is back in normal (padded) flow. */
   .board-nav { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; margin-top: 8px; }
+  .eval-row { padding-left: 14px; padding-right: 14px; }
   .navbtn { padding: 7px 12px; font-size: 14px; }
+  .minibtn { display: inline-block; }
+  /* compact board: much more room for the analysis text below */
+  .board-sticky.mini .board { width: 56%; max-width: 240px; margin-left: auto; margin-right: auto; border-radius: 8px; border: 1px solid var(--line-2); }
+  .board-sticky.mini { padding-bottom: 6px; }
   /* one horizontally-scrollable row of dots instead of wrapping to many rows */
   .analysis-progress { margin: 10px 0 12px; }
   .movedots { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
@@ -388,10 +399,6 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .explain-head { padding-bottom: 10px; margin-bottom: 10px; }
   .explain-move { font-size: 18px; }
 
-  /* compact legend on phones (labels are self-explanatory; hide descriptions) */
-  .legend { padding: 10px 12px; gap: 7px; }
-  .legend-desc { display: none; }
-  .legend-title { min-width: auto; }
   /* stack the summary columns */
   .summary { padding: 16px; }
   .summary-cols { grid-template-columns: 1fr; }

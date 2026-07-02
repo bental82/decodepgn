@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, overview as fetchOverviewApi } from '../lib/api'
-import { engineAvailable, evaluateMove } from '../lib/engine'
+import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
 import {
   gameKey,
   listGames,
@@ -27,7 +27,6 @@ import Quiz from './Quiz'
 import RelevanceMap from './RelevanceMap'
 import RulesReference from './RulesReference'
 import Settings from './Settings'
-import StatusLegend from './StatusLegend'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
 type Tab = 'move' | 'quiz' | 'map' | 'rules'
@@ -61,6 +60,15 @@ export default function App() {
   const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
   // Where the user was reading before a chip jump, so one tap brings them back.
   const [jumpBack, setJumpBack] = useState<number | null>(null)
+  // Compact board (mobile): more room for the analysis text.
+  const [boardMini, setBoardMini] = useState<boolean>(
+    () => localStorage.getItem('decodepgn.boardMini') === '1',
+  )
+  // ply -> centipawns after that move, from White's perspective (eval bar).
+  const [evals, setEvals] = useState<Record<number, number>>({})
+  const explainRef = useRef<HTMLDivElement | null>(null)
+  const stickyRef = useRef<HTMLDivElement | null>(null)
+  const [showToTop, setShowToTop] = useState(false)
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [overviewError, setOverviewError] = useState<string | null>(null)
 
@@ -157,6 +165,7 @@ export default function App() {
       setResults(saved?.results ?? {})
       setQuizSaved(saved?.quiz ?? null)
       setGameOverview(saved?.overview ?? null)
+      setEvals(saved?.evals ?? {})
       setOverviewLoading(false)
       setOverviewError(null)
       setJumpBack(null)
@@ -190,8 +199,9 @@ export default function App() {
       results,
       quiz: quizSaved ?? undefined,
       overview: gameOverview ?? undefined,
+      evals: Object.keys(evals).length ? evals : undefined,
     })
-  }, [phase, results, focus, headers, quizSaved, gameOverview])
+  }, [phase, results, focus, headers, quizSaved, gameOverview, evals])
 
   const fetchOverview = useCallback(async () => {
     if (!moves.length) return
@@ -285,6 +295,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, moves])
 
+  // Background Stockfish sweep: one eval per position so the eval bar covers
+  // the whole game. Shares the engine's FEN cache with the per-move checks.
+  const sweepRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (phase !== 'game' || moves.length === 0) return
+    const key = storeRef.current?.key ?? ''
+    if (sweepRef.current === key) return
+    sweepRef.current = key
+    const gen = genRef.current
+    const known = new Set(Object.keys(evals).map(Number))
+    void (async () => {
+      if (!(await engineAvailable())) return
+      for (const m of moves) {
+        if (genRef.current !== gen) return
+        if (known.has(m.ply)) continue
+        const cp = await evalAfterMoveWhite(m.fenAfter, m.color)
+        if (cp === null || genRef.current !== gen) continue
+        setEvals((prev) => (prev[m.ply] !== undefined ? prev : { ...prev, [m.ply]: cp }))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, moves])
+
   const saveKey = (k: string) => {
     setApiKey(k)
     if (k.trim()) localStorage.setItem(KEY_STORAGE, k.trim())
@@ -306,6 +339,7 @@ export default function App() {
     setParseError(null)
     setQuizSaved(null)
     setGameOverview(null)
+    setEvals({})
     setOverviewLoading(false)
     setOverviewError(null)
     setJumpBack(null)
@@ -336,6 +370,16 @@ export default function App() {
   }, [results])
 
   const move = moves[selectedPly]
+  // Eval (White's perspective) after the current move: sweep result first,
+  // falling back to the per-move engine check when the sweep hasn't reached it.
+  const currentEvalCp = useMemo(() => {
+    const m = moves[selectedPly]
+    if (!m) return undefined
+    if (evals[m.ply] !== undefined) return evals[m.ply]
+    const e = results[m.ply]?.engine
+    if (e) return m.color === 'w' ? e.evalPlayed : -e.evalPlayed
+    return undefined
+  }, [selectedPly, moves, evals, results])
   const focusMovesRemaining = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).length
   const studiedPlies = useMemo(
     () => moves.filter((m) => isStudied(m.color, focus)).map((m) => m.ply),
@@ -360,6 +404,37 @@ export default function App() {
     if (jumpBack !== null) setSelectedPly(jumpBack)
     setJumpBack(null)
   }
+
+  // Snap the analysis text back to its top when the move changes (only if the
+  // user had scrolled down into it), and expose the same jump as a button.
+  const scrollToAnalysisTop = useCallback((force = false) => {
+    const panel = explainRef.current
+    if (!panel) return
+    const sticky = stickyRef.current
+    const stickyH =
+      sticky && getComputedStyle(sticky).position === 'sticky'
+        ? sticky.getBoundingClientRect().height
+        : 82 // desktop: just below the sticky topbar
+    const top = panel.getBoundingClientRect().top
+    if (force || top < stickyH - 4) {
+      window.scrollTo({ top: Math.max(0, window.scrollY + top - stickyH - 8), behavior: 'smooth' })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'game' || tab !== 'move') return
+    scrollToAnalysisTop(false)
+  }, [selectedPly, phase, tab, scrollToAnalysisTop])
+
+  // Show a floating "back to top of the analysis" pill when scrolled deep.
+  useEffect(() => {
+    const onScroll = () => {
+      const panel = explainRef.current
+      setShowToTop(!!panel && panel.getBoundingClientRect().top < -160)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
   const prevMove = selectedPly > 0 ? moves[selectedPly - 1] : undefined
@@ -484,12 +559,11 @@ export default function App() {
                 onJump={jumpTo}
                 onRetry={fetchOverview}
               />
-              <StatusLegend />
               <div className="study">
               <div className="board-panel">
                 {/* Only this wrapper is sticky on mobile — the progress strip
                     below scrolls away so the analysis text keeps real estate. */}
-                <div className="board-sticky">
+                <div className={'board-sticky' + (boardMini ? ' mini' : '')} ref={stickyRef}>
                 <Board
                   fen={move.fenAfter}
                   orientation={focus === 'b' ? 'b' : 'w'}
@@ -532,7 +606,40 @@ export default function App() {
                   >
                     ⏭
                   </button>
+                  <button
+                    className="navbtn minibtn"
+                    onClick={() =>
+                      setBoardMini((v) => {
+                        localStorage.setItem('decodepgn.boardMini', v ? '0' : '1')
+                        return !v
+                      })
+                    }
+                    aria-label={boardMini ? 'Enlarge board' : 'Shrink board'}
+                    title={boardMini ? 'Enlarge board' : 'Shrink board'}
+                  >
+                    {boardMini ? '⤢' : '⤡'}
+                  </button>
                 </div>
+                {currentEvalCp !== undefined ? (
+                  <div
+                    className="eval-row"
+                    title={`Stockfish evaluation after this move, from White's side: ${(currentEvalCp / 100).toFixed(2)}`}
+                  >
+                    <div className="evalbar">
+                      <div
+                        className="evalbar-fill"
+                        style={{ width: `${50 + 50 * Math.tanh(currentEvalCp / 600)}%` }}
+                      />
+                    </div>
+                    <span className="eval-num">
+                      {Math.abs(currentEvalCp) >= 9000
+                        ? currentEvalCp > 0
+                          ? '+M'
+                          : '−M'
+                        : (currentEvalCp >= 0 ? '+' : '') + (currentEvalCp / 100).toFixed(1)}
+                    </span>
+                  </div>
+                ) : null}
                 {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
                   <button className="jump-back" onClick={returnFromJump}>
                     ↩ Back to {moveLabel(moves[jumpBack])}
@@ -581,7 +688,7 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <div className="explain-panel">
+              <div className="explain-panel" ref={explainRef}>
                 <div className="explain-head">
                   <span className="explain-move">{moveLabel(move)}</span>
                   <span className="explain-side">
@@ -667,6 +774,16 @@ export default function App() {
           )}
         </div>
       )}
+
+      {phase === 'game' && tab === 'move' && showToTop ? (
+        <button
+          className="to-top"
+          onClick={() => scrollToAnalysisTop(true)}
+          aria-label="Back to the top of the analysis"
+        >
+          ↑ Top
+        </button>
+      ) : null}
 
       {showSettings && (
         <Settings

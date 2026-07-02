@@ -24,6 +24,8 @@ export interface SavedGame {
   results: Record<number, MoveResult>
   quiz?: SavedQuiz
   overview?: GameOverview
+  /** ply -> centipawns after that move, from White's perspective (eval bar) */
+  evals?: Record<number, number>
 }
 
 function djb2(s: string): string {

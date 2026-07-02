@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { GameOverview, ParsedMove } from '../shared/types'
 
 interface Props {
@@ -9,15 +10,28 @@ interface Props {
   onRetry: () => void
 }
 
+const OPEN_STORAGE = 'decodepgn.overviewOpen'
+
 // The coach's opening word on the whole game: what decided it, the trend, and
-// clickable key moments. Shown at the top of the Study tab.
+// clickable key moments. Shown at the top of the Study tab; collapsible.
 export default function GameOverviewCard({ overview, loading, error, moves, onJump, onRetry }: Props) {
+  const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_STORAGE) !== '0')
   if (!overview && !loading && !error) return null
+
+  const toggle = () => {
+    setOpen((v) => {
+      localStorage.setItem(OPEN_STORAGE, v ? '0' : '1')
+      return !v
+    })
+  }
 
   return (
     <div className="overview">
-      <div className="overview-label">Game overview</div>
-      {loading ? (
+      <button className="overview-head" onClick={toggle} aria-expanded={open}>
+        <span className="overview-label">Game overview</span>
+        <span className="overview-chevron">{open ? '▾' : '▸'}</span>
+      </button>
+      {!open ? null : loading ? (
         <div className="loading-row">
           <span className="spinner" />
           Reading the whole game…

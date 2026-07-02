@@ -20,6 +20,11 @@ interface ScoredPosition {
   depth: number
 }
 
+// Positions repeat across the whole-game eval sweep and per-move checks
+// (fenBefore of ply n === fenAfter of ply n-1), so cache scores by FEN.
+const scoreCache = new Map<string, ScoredPosition>()
+const SCORE_CACHE_MAX = 4000
+
 let workerPromise: Promise<Worker> | null = null
 let engineBroken = false
 // Single worker — serialize evaluations through a promise chain.
@@ -76,6 +81,8 @@ export async function engineAvailable(): Promise<boolean> {
 }
 
 function scorePosition(fen: string): Promise<ScoredPosition> {
+  const hit = scoreCache.get(fen)
+  if (hit) return Promise.resolve(hit)
   const run = async (): Promise<ScoredPosition> => {
     const w = await getWorker()
     return new Promise((resolve, reject) => {
@@ -104,7 +111,10 @@ function scorePosition(fen: string): Promise<ScoredPosition> {
           clearTimeout(timer)
           w.removeEventListener('message', onMsg)
           const bm = line.split(' ')[1]
-          resolve({ ...last, bestUci: bm && bm !== '(none)' ? bm : last.bestUci })
+          const scored = { ...last, bestUci: bm && bm !== '(none)' ? bm : last.bestUci }
+          if (scoreCache.size >= SCORE_CACHE_MAX) scoreCache.clear()
+          scoreCache.set(fen, scored)
+          resolve(scored)
         }
       }
       w.addEventListener('message', onMsg)
@@ -115,6 +125,23 @@ function scorePosition(fen: string): Promise<ScoredPosition> {
   const p = queue.then(run, run)
   queue = p.catch(() => {})
   return p
+}
+
+/**
+ * Eval of the position AFTER a move, in centipawns from WHITE's perspective.
+ * Terminal positions are scored directly. Null when the engine is unavailable.
+ */
+export async function evalAfterMoveWhite(fenAfter: string, mover: 'w' | 'b'): Promise<number | null> {
+  if (!(await engineAvailable())) return null
+  try {
+    const g = new Chess(fenAfter)
+    if (g.isCheckmate()) return mover === 'w' ? MATE_CP : -MATE_CP
+    if (g.isDraw()) return 0
+    const sc = await scorePosition(fenAfter) // side to move = the opponent
+    return mover === 'w' ? -sc.cp : sc.cp
+  } catch {
+    return null
+  }
 }
 
 interface MoveToEvaluate {
