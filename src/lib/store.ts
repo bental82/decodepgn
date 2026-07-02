@@ -67,10 +67,20 @@ export function loadGame(key: string): SavedGame | null {
   }
 }
 
-/** The most recently saved game, for the "resume" entry point. */
-export function latestGame(): SavedGame | null {
-  const [first] = readIndex()
-  return first ? loadGame(first) : null
+/** All saved games, most recent first, for the history list. */
+export function listGames(): SavedGame[] {
+  return readIndex()
+    .map(loadGame)
+    .filter((g): g is SavedGame => g !== null)
+}
+
+export function removeGame(key: string) {
+  try {
+    localStorage.removeItem(GAME_PREFIX + key)
+  } catch {
+    /* ignore */
+  }
+  writeIndex(readIndex().filter((k) => k !== key))
 }
 
 export function saveGame(game: SavedGame) {

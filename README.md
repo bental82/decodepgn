@@ -7,7 +7,9 @@ more — whether the move **follows, partly follows, or goes against** each one,
 with a one-line reason and a short lesson.
 
 It’s a study aid for club players: the point isn’t an engine score, it’s learning
-to *recognise which ideas are in the position*.
+to *recognise which ideas are in the position*. A local **Stockfish** check keeps
+the coaching honest: the AI sees the engine’s verdict for every analysed move, so
+objectively best moves don’t get scolded for “breaking” a rule of thumb.
 
 - **Study** — step through your moves on a single board; beside each move you get
   a heuristic **soundness** tag (sound / speculative / dubious), a short decisive
@@ -31,17 +33,21 @@ function; the app itself is a static single-page app.
 
 1. The browser parses your PGN with [chess.js](https://github.com/jhlywa/chess.js)
    into a move list with the position before/after each move.
-2. When you open one of your moves, the app POSTs the game (for context) plus the
-   target position to `/api/analyze`.
-3. That function calls Claude with the 81 rules and a **forced tool call** so the
-   model returns strict, validated JSON: for each move, the relevant rule numbers,
-   a status (`follows` / `partially` / `violates` / `relevant`), a one-line reason,
-   and a short lesson.
+2. **Stockfish 18 (lite, single-threaded WASM)** runs in a Web Worker and scores
+   each move you open: the engine’s best move, the eval of best vs played, and
+   the centipawn loss. This is best-effort — if WASM is unavailable, analysis
+   proceeds without it.
+3. The app POSTs the game (for context), the target position, and the engine
+   check to `/api/analyze`. That function calls Claude with the 81 rules and a
+   **forced tool call** so the model returns strict, validated JSON: relevant
+   rule numbers, a status (`follows` / `partially` / `violates` / `relevant`),
+   a one-line reason, a soundness verdict **calibrated against the engine check**
+   (a top-engine move is never labelled dubious), and a short lesson.
 4. Results are cached in the page, pivoted into the per-move and by-rule views,
    and **saved to localStorage per game** (keyed by the move sequence + studied
    side) — reloading, or re-pasting the same PGN, restores every analysed move
-   instead of re-asking Claude, and the landing page offers to resume your last
-   game.
+   and the generated quiz, and the landing page lists **all your analysed games**
+   to reopen or delete.
 
 The 81-rule prompt is identical on every request, so it’s sent as a **cached
 prefix** (`cache_control`) — repeat calls reuse it and cost a fraction of the
@@ -126,3 +132,9 @@ The board uses the classic **cburnett** SVG chess pieces by
 [Colin M.L. Burnett](https://en.wikipedia.org/wiki/User:Cburnett) (via Wikimedia
 Commons), licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
 The sprite in [`src/ui/pieces.svg`](src/ui/pieces.svg) retains that license notice.
+
+The engine check uses **[Stockfish](https://stockfishchess.org/)** (the
+WASM build from the [stockfish npm package](https://www.npmjs.com/package/stockfish),
+vendored in [`public/engine/`](public/engine/)), licensed under the
+[GPL v3](https://github.com/official-stockfish/Stockfish/blob/master/Copying.txt).
+It runs entirely in the user’s browser.

@@ -34,15 +34,41 @@ export default function MoveAnalysis({
   if (!result) return null
 
   const snd = result.soundness ? soundnessMeta(result.soundness) : null
+  const eng = result.engine
 
   return (
     <div className="analysis">
-      {snd ? (
-        <div className={'soundness ' + snd.cls} title={snd.desc}>
-          <span className="snd-badge">
-            {snd.icon} {snd.label} move
-          </span>
-          <span className="snd-hint">heuristic</span>
+      {snd || eng ? (
+        <div className="verdicts">
+          {snd ? (
+            <span className={'soundness ' + snd.cls} title={snd.desc}>
+              <span className="snd-badge">
+                {snd.icon} {snd.label} move
+              </span>
+              <span className="snd-hint">heuristic</span>
+            </span>
+          ) : null}
+          {eng ? (
+            <span
+              className={
+                'badge eng-badge ' +
+                (eng.isBest || eng.cpLoss < 30
+                  ? 'st-follows'
+                  : eng.cpLoss >= 150
+                    ? 'st-violates'
+                    : eng.cpLoss >= 60
+                      ? 'st-partial'
+                      : 'st-relevant')
+              }
+              title={`Stockfish, depth ${eng.depth}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
+            >
+              {eng.isBest
+                ? '⚙ Engine’s top choice'
+                : eng.cpLoss < 30
+                  ? `⚙ Engine-approved (best: ${eng.bestSan})`
+                  : `⚙ Engine prefers ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
+            </span>
+          ) : null}
         </div>
       ) : null}
 

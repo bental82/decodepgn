@@ -12,6 +12,7 @@ import type {
   AnalyzeResponse,
   AskRequest,
   AskResponse,
+  EngineEval,
   GameMove,
   MoveAlternative,
   MoveResult,
@@ -102,9 +103,10 @@ interface ClaudeOpts {
 async function callClaude(
   apiKey: string,
   system: unknown,
-  user: string,
+  user: string | Array<{ role: 'user' | 'assistant'; content: string }>,
   opts: ClaudeOpts,
 ): Promise<unknown> {
+  const messages = typeof user === 'string' ? [{ role: 'user', content: user }] : user
   let resp: Response
   try {
     resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -118,7 +120,7 @@ async function callClaude(
         model: MODEL,
         max_tokens: opts.maxTokens,
         system,
-        messages: [{ role: 'user', content: user }],
+        messages,
         ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'tool', name: opts.toolName } } : {}),
       }),
       signal: AbortSignal.timeout(55_000),
@@ -241,7 +243,31 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
       seen.add(t.ply)
       return true
     })
-    .map((t) => ({ ply: intOr(t.ply, 0), fenAfter: clip(t.fenAfter, 100) }))
+    .map((t) => {
+      const out: { ply: number; fenAfter: string; engine?: EngineEval } = {
+        ply: intOr(t.ply, 0),
+        fenAfter: clip(t.fenAfter, 100),
+      }
+      // optional client-computed Stockfish check — validate every field
+      const e = t.engine
+      if (
+        e &&
+        typeof e.bestSan === 'string' &&
+        Number.isFinite(e.evalBest) &&
+        Number.isFinite(e.evalPlayed) &&
+        Number.isFinite(e.cpLoss)
+      ) {
+        out.engine = {
+          bestSan: clip(e.bestSan, 12),
+          evalBest: Math.trunc(e.evalBest),
+          evalPlayed: Math.trunc(e.evalPlayed),
+          cpLoss: Math.max(0, Math.trunc(e.cpLoss)),
+          isBest: e.isBest === true,
+          depth: intOr(e.depth, 0),
+        }
+      }
+      return out
+    })
   if (targets.length === 0) return { results: [] }
   if (targets.length > MAX_TARGETS) {
     throw new AnalyzeError(`Too many moves in one request (max ${MAX_TARGETS}).`)
@@ -253,11 +279,19 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
   const moveText = moveTextOf(game)
 
   const byPly = new Map(game.map((m) => [m.ply, m]))
+  const pawns = (cp: number) => (cp / 100).toFixed(2)
   const targetLines = targets
     .map((t) => {
       const m = byPly.get(t.ply)
       const label = m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : `ply ${t.ply}`
-      return `- ply ${t.ply}: ${sideName}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
+      let line = `- ply ${t.ply}: ${sideName}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
+      if (t.engine) {
+        const e = t.engine
+        line += e.isBest
+          ? `\n  Engine check (Stockfish): the played move IS the engine's top choice (eval ${pawns(e.evalPlayed)}).`
+          : `\n  Engine check (Stockfish): best was ${e.bestSan} (eval ${pawns(e.evalBest)}); the played move evaluates ${pawns(e.evalPlayed)} — it gives up ${pawns(e.cpLoss)} pawns vs best.`
+      }
+      return line
     })
     .join('\n')
 
@@ -269,7 +303,12 @@ Set each rule's status honestly:
 - "partially": partly upholds it, with a trade-off.
 - "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
 - "relevant": the rule is in play but the move is genuinely neutral toward it.
-Give one clear sentence per rule. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.`)
+Give one clear sentence per rule. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
+
+Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
+- If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
+- If the engine shows a loss of ~1.5 pawns or more, be honest that the move was an error even if it looks principled, and prefer the engine's best move as your "alternative" when it also fits the principle you cite.
+- Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.`)
 
   const user = `Full game in SAN:
 ${moveText}
@@ -439,11 +478,28 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
   }
   const context = contextLines.length ? `Context:\n${contextLines.join('\n')}\n\n` : ''
 
-  const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences), grounded in the ${RULE_COUNT} rules of thumb above. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.`)
+  const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences), grounded in the ${RULE_COUNT} rules of thumb above. The user may ask follow-up questions — treat the conversation as one thread about the same position/rule unless they change the subject. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.`)
 
-  const user = `${context}User question: ${question}`
+  // Rebuild the thread: earlier exchanges (bounded), then the new question.
+  // The shared context rides on the FIRST user turn so the cache-friendly
+  // system prefix stays identical across calls.
+  const history = (Array.isArray(input.history) ? input.history : [])
+    .filter((h) => h && typeof h.q === 'string' && typeof h.a === 'string')
+    .slice(-6)
+    .map((h) => ({ q: clip(h.q, 500), a: clip(h.a, 1500) }))
 
-  const text = (await callClaude(apiKey, system, user, { maxTokens: 700 })) as string
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  if (history.length) {
+    history.forEach((h, i) => {
+      messages.push({ role: 'user', content: i === 0 ? `${context}${h.q}` : h.q })
+      messages.push({ role: 'assistant', content: h.a })
+    })
+    messages.push({ role: 'user', content: question })
+  } else {
+    messages.push({ role: 'user', content: `${context}User question: ${question}` })
+  }
+
+  const text = (await callClaude(apiKey, system, messages, { maxTokens: 700 })) as string
   const answer = clip(text, 1500).trim()
   return { answer: answer || 'No answer was returned. Please try rephrasing.' }
 }

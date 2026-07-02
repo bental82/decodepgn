@@ -22,10 +22,21 @@ export interface GameMove {
   san: string
 }
 
+/** Objective engine check for a played move (computed client-side by Stockfish). */
+export interface EngineEval {
+  bestSan: string // engine's preferred move in that position
+  evalBest: number // centipawns from the mover's perspective, best play
+  evalPlayed: number // centipawns from the mover's perspective after the played move
+  cpLoss: number // how much the played move gave up vs the engine's best (>= 0)
+  isBest: boolean // the played move IS the engine's top choice
+  depth: number
+}
+
 /** A move we want Claude to analyse, with the exact resulting position. */
 export interface AnalyzeTarget {
   ply: number
   fenAfter: string
+  engine?: EngineEval
 }
 
 export interface AnalyzeRequest {
@@ -60,6 +71,8 @@ export interface MoveResult {
   lesson: string
   soundness?: Soundness
   alternative?: MoveAlternative | null
+  /** merged in client-side so the engine check is shown and persisted */
+  engine?: EngineEval
 }
 
 export interface AnalyzeResponse {
@@ -95,9 +108,17 @@ export interface QuizResponse {
 
 // ---- Ask mode (free-form question) ----
 
+/** One earlier question/answer pair, for follow-up questions. */
+export interface AskExchange {
+  q: string
+  a: string
+}
+
 export interface AskRequest {
   mode: 'ask'
   question: string
+  /** Earlier exchanges in this thread, oldest first. */
+  history?: AskExchange[]
   focus?: Focus
   game?: GameMove[]
   ply?: number

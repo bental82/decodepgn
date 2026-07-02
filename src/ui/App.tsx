@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze } from '../lib/api'
-import { gameKey, latestGame, loadGame, saveGame, type SavedGame, type SavedQuiz } from '../lib/store'
+import { engineAvailable, evaluateMove } from '../lib/engine'
+import {
+  gameKey,
+  listGames,
+  loadGame,
+  removeGame,
+  saveGame,
+  type SavedGame,
+  type SavedQuiz,
+} from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
-import type { Focus, MoveResult, ParsedMove } from '../shared/types'
+import type { EngineEval, Focus, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
@@ -42,7 +51,7 @@ export default function App() {
   const genRef = useRef(0)
   // Identity of the current game in local storage, for persisting analysis.
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
-  const [resume, setResume] = useState<SavedGame | null>(() => latestGame())
+  const [history, setHistory] = useState<SavedGame[]>(() => listGames())
   // The current game's generated quiz (persisted alongside the analysis).
   const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
 
@@ -73,17 +82,32 @@ export default function App() {
         return c
       })
       try {
+        // Best-effort engine check per target (Stockfish in a worker); the AI
+        // weighs it so objectively strong moves don't get scolded.
+        const targetObjs = toTargets(mvs, targets)
+        const engineByPly = new Map<number, EngineEval>()
+        if (await engineAvailable()) {
+          for (const t of targetObjs) {
+            if (genRef.current !== gen) return
+            const pm = mvs[t.ply]
+            const ev = await evaluateMove(pm)
+            if (ev) {
+              t.engine = ev
+              engineByPly.set(t.ply, ev)
+            }
+          }
+        }
         const resp = await analyze({
           focus: f,
           game: toGameMoves(mvs),
-          targets: toTargets(mvs, targets),
+          targets: targetObjs,
           apiKey: apiKey.trim() || undefined,
         })
         if (genRef.current !== gen) return
         const returned = new Set(resp.results.map((r) => r.ply))
         setResults((prev) => {
           const c = { ...prev }
-          for (const r of resp.results) c[r.ply] = r
+          for (const r of resp.results) c[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
           // targets Claude skipped: record an empty result so we don't loop forever
           for (const p of targets) if (!returned.has(p) && !c[p]) c[p] = { ply: p, rules: [], lesson: '' }
           return c
@@ -219,7 +243,7 @@ export default function App() {
     setQueuedPlies(new Set())
     setParseError(null)
     setQuizSaved(null)
-    setResume(latestGame())
+    setHistory(listGames())
   }
 
   const openRule = (id: number) => {
@@ -310,16 +334,40 @@ export default function App() {
 
       {phase === 'input' ? (
         <div className="landing">
-          {resume ? (
-            <button className="resume-card" onClick={() => handleSubmit(resume.pgn, resume.focus)}>
-              <span className="resume-title">
-                ▶ Resume {resume.headers.White ?? 'White'} vs {resume.headers.Black ?? 'Black'}
-              </span>
-              <span className="resume-meta">
-                {Object.keys(resume.results).length} move(s) already analysed as{' '}
-                {colorName(resume.focus)} — picks up where you left off
-              </span>
-            </button>
+          {history.length > 0 ? (
+            <div className="history card">
+              <h2>Your analysed games</h2>
+              <ul className="history-list">
+                {history.map((g) => (
+                  <li key={g.key}>
+                    <button className="history-row" onClick={() => handleSubmit(g.pgn, g.focus)}>
+                      <span className="history-title">
+                        {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
+                      </span>
+                      <span className="history-meta">
+                        as {colorName(g.focus)} · {Object.keys(g.results).length} analysed
+                        {g.quiz ? ' · quiz' : ''} ·{' '}
+                        {new Date(g.savedAt).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </span>
+                    </button>
+                    <button
+                      className="history-del"
+                      aria-label="Delete this saved analysis"
+                      title="Delete this saved analysis"
+                      onClick={() => {
+                        removeGame(g.key)
+                        setHistory(listGames())
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <PgnInput
             onSubmit={handleSubmit}

@@ -61,10 +61,17 @@ a { color: var(--accent-ink); }
 
 /* landing */
 .landing { max-width: 1000px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: 1.25fr 1fr; gap: 22px; align-items: start; }
-.resume-card { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; background: var(--accent-weak); border: 1px solid var(--accent); border-radius: 12px; padding: 13px 16px; cursor: pointer; font: inherit; color: var(--ink); }
-.resume-card:hover { background: var(--panel-2); }
-.resume-title { font-weight: 700; color: var(--accent-ink); }
-.resume-meta { font-size: 13px; color: var(--muted); }
+/* history of analysed games */
+.history { grid-column: 1 / -1; padding: 16px 18px; }
+.history h2 { font-size: 15px; margin-bottom: 8px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.history-list li { display: flex; align-items: stretch; gap: 6px; }
+.history-row { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }
+.history-row:hover { border-color: var(--accent); }
+.history-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-meta { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.history-del { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 13px; }
+.history-del:hover { color: var(--bad); border-color: var(--line-2); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
@@ -199,6 +206,11 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .snd-spec { background: var(--warn-bg); color: var(--warn); }
 .snd-dubious { background: var(--bad-bg); color: var(--bad); }
 
+/* verdict row on the move card: soundness + engine check side by side */
+.verdicts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.verdicts .soundness { margin-bottom: 0; }
+.eng-badge { font-size: 12.5px; padding: 4px 11px; }
+
 /* soundness banner on the move card */
 .soundness { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .snd-badge { font-size: 13px; font-weight: 700; padding: 4px 11px; border-radius: 999px; }
@@ -249,15 +261,17 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 /* responsive tab labels (short label shown on phones) */
 .tab-short { display: none; }
 
-/* ask-a-question box */
+/* ask-a-question thread */
 .askbox { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-.ask-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.ask-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.ask-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; }
 .ask-row { display: flex; gap: 8px; }
 .ask-input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; font-size: 14px; }
 .ask-input:focus { outline: none; border-color: var(--accent); }
-.ask-answer { margin-top: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.ask-answer p { margin: 0; font-size: 14px; }
-.ask-note { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ask-thread { margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
+.ask-exchange .ask-q { margin: 0 0 4px; font-size: 13.5px; font-weight: 600; color: var(--accent-ink); }
+.ask-exchange .ask-a { margin: 0; font-size: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ask-note { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .error.small { font-size: 13px; padding: 8px 10px; margin: 8px 0 0; }
 .rule-ask { margin: -4px 0 10px; padding: 0 2px; }
 .rule-ask .askbox { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -352,6 +366,10 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .tabs button { font-size: 13px; padding: 9px 5px; }
   .tab-long { display: none; }
   .tab-short { display: inline; }
+
+  /* history rows stack their meta on phones */
+  .history-row { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .history-meta { white-space: normal; }
 
   /* quiz on phones */
   .quiz { padding: 16px; }
