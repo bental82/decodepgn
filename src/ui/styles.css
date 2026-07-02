@@ -259,6 +259,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .overview-summary { margin: 0 0 8px; font-size: 14.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.overview-ask[hidden] { display: none; }
+.overview-ask .askbox { margin-top: 12px; padding-top: 12px; }
 .moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font: inherit; }
 .moment:hover { border-color: var(--accent); }
 .moment-move { font-weight: 700; color: var(--accent-ink); }

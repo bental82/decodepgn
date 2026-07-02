@@ -612,6 +612,11 @@ export default function App() {
                 moves={moves}
                 onJump={jumpTo}
                 onRetry={fetchOverview}
+                askKey={storeRef.current?.key ?? 'game'}
+                askContext={{ focus, game: toGameMoves(moves) }}
+                apiKey={apiKey}
+                onNeedKey={() => setShowSettings(true)}
+                onOpenRule={openRule}
               />
               <div className="study">
               <div className="board-panel">
