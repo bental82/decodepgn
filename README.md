@@ -11,7 +11,9 @@ to *recognise which ideas are in the position*. A local **Stockfish** check keep
 the coaching honest: the AI sees the engine’s verdict for every analysed move, so
 objectively best moves don’t get scolded for “breaking” a rule of thumb.
 
-- **Study** — step through your moves on a single board; beside each move you get
+- **Study** — every analysis opens with a **game overview**: what decided the
+  game, the momentum arc, and 2-4 clickable key moments that jump to the board.
+  Then step through your moves on a single board; beside each move you get
   a heuristic **soundness** tag (sound / speculative / dubious), a short decisive
   lesson, and the relevant rules clearly labelled **Followed / Mixed / Broke / In
   play** (with a legend). When a move breaks a principle it also suggests a

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { parsePgn, toGameMoves, toTargets } from '../game'
-import { analyze } from '../lib/api'
+import { analyze, overview as fetchOverviewApi } from '../lib/api'
 import { engineAvailable, evaluateMove } from '../lib/engine'
 import {
   gameKey,
@@ -12,11 +12,12 @@ import {
   type SavedQuiz,
 } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
-import type { EngineEval, Focus, MoveResult, ParsedMove } from '../shared/types'
+import type { EngineEval, Focus, GameOverview, MoveResult, ParsedMove } from '../shared/types'
 import { colorName } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
 import GameImport from './GameImport'
+import GameOverviewCard from './GameOverviewCard'
 import GameSummary from './GameSummary'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
@@ -55,6 +56,10 @@ export default function App() {
   const [history, setHistory] = useState<SavedGame[]>(() => listGames())
   // The current game's generated quiz (persisted alongside the analysis).
   const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
+  // The whole-game overview (auto-generated on load, persisted with the game).
+  const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
 
   // Learn whether the deployment has its own key, so we can be honest about
   // whether the user needs to bring one.
@@ -148,6 +153,9 @@ export default function App() {
       setFocus(f)
       setResults(saved?.results ?? {})
       setQuizSaved(saved?.quiz ?? null)
+      setGameOverview(saved?.overview ?? null)
+      setOverviewLoading(false)
+      setOverviewError(null)
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -164,11 +172,11 @@ export default function App() {
     }
   }
 
-  // Persist the analysis (PGN + per-move results) and the generated quiz, so a
-  // reload or revisit of the same game restores everything.
+  // Persist the analysis (PGN + per-move results), the quiz, and the overview,
+  // so a reload or revisit of the same game restores everything.
   useEffect(() => {
     if (phase !== 'game' || !storeRef.current) return
-    if (Object.keys(results).length === 0 && !quizSaved) return
+    if (Object.keys(results).length === 0 && !quizSaved && !gameOverview) return
     saveGame({
       key: storeRef.current.key,
       pgn: storeRef.current.pgn,
@@ -177,8 +185,41 @@ export default function App() {
       savedAt: Date.now(),
       results,
       quiz: quizSaved ?? undefined,
+      overview: gameOverview ?? undefined,
     })
-  }, [phase, results, focus, headers, quizSaved])
+  }, [phase, results, focus, headers, quizSaved, gameOverview])
+
+  const fetchOverview = useCallback(async () => {
+    if (!moves.length) return
+    const gen = genRef.current
+    setOverviewLoading(true)
+    setOverviewError(null)
+    try {
+      const resp = await fetchOverviewApi({
+        mode: 'overview',
+        focus,
+        game: toGameMoves(moves),
+        headers,
+        apiKey: apiKey.trim() || undefined,
+      })
+      if (genRef.current !== gen) return
+      setGameOverview(resp.overview)
+    } catch (e) {
+      if (genRef.current !== gen) return
+      const msg = e instanceof Error ? e.message : 'Could not build the overview.'
+      setOverviewError(msg)
+      if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
+    } finally {
+      if (genRef.current === gen) setOverviewLoading(false)
+    }
+  }, [moves, focus, headers, apiKey])
+
+  // Every analysis starts with the whole-game overview — generate it once per
+  // loaded game (restored games already have it and skip the call).
+  useEffect(() => {
+    if (phase !== 'game' || gameOverview || overviewLoading || overviewError) return
+    void fetchOverview()
+  }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview])
 
   // Auto-analyse the selected move when it belongs to the studied colour and
   // hasn't been analysed (or errored) yet.
@@ -246,6 +287,9 @@ export default function App() {
     setQueuedPlies(new Set())
     setParseError(null)
     setQuizSaved(null)
+    setGameOverview(null)
+    setOverviewLoading(false)
+    setOverviewError(null)
     setHistory(listGames())
   }
 
@@ -401,6 +445,14 @@ export default function App() {
 
           {tab === 'move' && move && (
             <>
+              <GameOverviewCard
+                overview={gameOverview}
+                loading={overviewLoading}
+                error={overviewError}
+                moves={moves}
+                onJump={setSelectedPly}
+                onRetry={fetchOverview}
+              />
               <StatusLegend />
               <div className="study">
               <div className="board-panel">

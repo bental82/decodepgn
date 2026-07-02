@@ -41,7 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? await engine.runQuiz(body)
         : mode === 'ask'
           ? await engine.runAsk(body)
-          : await engine.runAnalyze(body)
+          : mode === 'overview'
+            ? await engine.runOverview(body)
+            : await engine.runAnalyze(body)
     res.status(200).json(result)
   } catch (e) {
     const err = e as { name?: string; status?: number; message?: string }

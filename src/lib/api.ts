@@ -5,6 +5,8 @@ import type {
   AnalyzeResponse,
   AskRequest,
   AskResponse,
+  OverviewRequest,
+  OverviewResponse,
   QuizRequest,
   QuizResponse,
 } from '../shared/types'
@@ -53,4 +55,8 @@ export function quiz(req: QuizRequest): Promise<QuizResponse> {
 
 export function ask(req: AskRequest): Promise<AskResponse> {
   return postAnalyze<AskResponse>(req, 45_000)
+}
+
+export function overview(req: OverviewRequest): Promise<OverviewResponse> {
+  return postAnalyze<OverviewResponse>(req, 45_000)
 }

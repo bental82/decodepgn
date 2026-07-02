@@ -106,6 +106,34 @@ export interface QuizResponse {
   questions: QuizQuestion[]
 }
 
+// ---- Game overview ----
+
+export interface KeyMoment {
+  ply: number
+  title: string // e.g. "The decisive sacrifice"
+  why: string // one line on why this moment mattered
+}
+
+export interface GameOverview {
+  /** what decided the game — what won it / what lost it, for the studied side */
+  summary: string
+  /** the arc of the game: who stood better when, where momentum shifted */
+  trend: string
+  keyMoments: KeyMoment[]
+}
+
+export interface OverviewRequest {
+  mode: 'overview'
+  focus: Focus
+  game: GameMove[]
+  headers?: Record<string, string>
+  apiKey?: string
+}
+
+export interface OverviewResponse {
+  overview: GameOverview
+}
+
 // ---- Ask mode (free-form question) ----
 
 /** One earlier question/answer pair, for follow-up questions. */

@@ -243,6 +243,17 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
 .alt p { margin: 3px 0 0; font-size: 14px; }
 
+/* game overview — the coach's opening word */
+.overview { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+.overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; margin-bottom: 6px; }
+.overview-summary { margin: 0 0 8px; font-size: 14.5px; }
+.overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); }
+.overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font: inherit; }
+.moment:hover { border-color: var(--accent); }
+.moment-move { font-weight: 700; color: var(--accent-ink); }
+.moment-title { color: var(--muted); }
+
 /* label legend */
 .legend { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; }
 .legend-row { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }

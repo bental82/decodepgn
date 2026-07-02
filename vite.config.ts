@@ -51,7 +51,9 @@ function devApi(): import('vite').Plugin {
               ? await mod.runQuiz(body)
               : body?.mode === 'ask'
                 ? await mod.runAsk(body)
-                : await mod.runAnalyze(body)
+                : body?.mode === 'overview'
+                  ? await mod.runOverview(body)
+                  : await mod.runAnalyze(body)
           res.setHeader('content-type', 'application/json')
           res.end(JSON.stringify(result))
         } catch (e: any) {

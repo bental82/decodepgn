@@ -14,6 +14,8 @@ import type {
   AskResponse,
   EngineEval,
   GameMove,
+  OverviewRequest,
+  OverviewResponse,
   MoveAlternative,
   MoveResult,
   QuizQuestion,
@@ -454,6 +456,99 @@ Create ${count} questions.`
   }
   if (questions.length === 0) throw new AnalyzeError('Could not generate quiz questions. Try again.', 502)
   return { questions }
+}
+
+// ---- Game overview ----
+
+const OVERVIEW_TOOL = {
+  name: 'report_overview',
+  description: 'Report a short overview of the whole game.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      summary: {
+        type: 'string',
+        description:
+          "2-4 decisive sentences on what decided the game from the studied side's perspective: what won it, what lost it.",
+      },
+      trend: {
+        type: 'string',
+        description:
+          '1-2 sentences on the arc of the game: who stood better in which phase and where the momentum shifted.',
+      },
+      keyMoments: {
+        type: 'array',
+        description: '2-4 pivotal moments, in game order.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            ply: { type: 'integer', description: 'The ply of the pivotal move.' },
+            title: { type: 'string', description: 'A 2-5 word label, e.g. "The decisive sacrifice".' },
+            why: { type: 'string', description: 'One line on why this moment mattered.' },
+          },
+          required: ['ply', 'title', 'why'],
+        },
+      },
+    },
+    required: ['summary', 'trend', 'keyMoments'],
+  },
+}
+
+export async function runOverview(input: OverviewRequest): Promise<OverviewResponse> {
+  const apiKey = resolveKey(input)
+  const focus = input.focus === 'b' ? 'b' : 'w'
+  const sideName = focus === 'w' ? 'White' : 'Black'
+  const game = sanitizeGame(input.game)
+  if (game.length === 0) throw new AnalyzeError('A game is required for an overview.')
+
+  const h = input.headers ?? {}
+  const white = clip(h.White, 40) || 'White'
+  const black = clip(h.Black, 40) || 'Black'
+  const result = clip(h.Result, 8)
+
+  const system = systemWith(`Write a short OVERVIEW of the whole game from ${sideName}'s perspective, using the report_overview tool. Be decisive and concrete — this is the opening summary a coach gives before going move by move.
+- "summary": what decided the game — what won it and what lost it (2-4 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack), citing rule numbers where natural.
+- "trend": the arc of the game — who stood better in which phase and where the momentum shifted (1-2 sentences).
+- "keyMoments": 2-4 pivotal plies in game order, each with a short title and a one-line why. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
+
+  const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The player under study is ${sideName}.
+Moves (SAN):
+${moveTextOf(game)}
+
+Give the overview.`
+
+  const data = (await callClaude(apiKey, system, user, {
+    maxTokens: 1200,
+    tool: OVERVIEW_TOOL,
+    toolName: 'report_overview',
+  })) as { summary?: unknown; trend?: unknown; keyMoments?: unknown }
+
+  const rawMoments = Array.isArray(data.keyMoments) ? data.keyMoments : []
+  const keyMoments = rawMoments
+    .filter(
+      (m: { ply?: unknown; title?: unknown; why?: unknown }) =>
+        m &&
+        Number.isInteger(m.ply) &&
+        game.some((gm) => gm.ply === m.ply) &&
+        typeof m.title === 'string' &&
+        typeof m.why === 'string',
+    )
+    .slice(0, 4)
+    .map((m: { ply: number; title: string; why: string }) => ({
+      ply: m.ply,
+      title: clip(m.title, 60),
+      why: clip(m.why, 240),
+    }))
+
+  const overview = {
+    summary: typeof data.summary === 'string' ? clip(data.summary, 900) : '',
+    trend: typeof data.trend === 'string' ? clip(data.trend, 400) : '',
+    keyMoments,
+  }
+  if (!overview.summary) throw new AnalyzeError('Claude did not return an overview.', 502)
+  return { overview }
 }
 
 // ---- Ask mode (free-form question) ----
