@@ -460,11 +460,21 @@ export default function App() {
     scrollToAnalysisTop(false)
   }, [selectedPly, phase, tab, scrollToAnalysisTop])
 
-  // Show a floating "back to top of the analysis" pill when scrolled deep.
+  // Show the floating "back to top of the analysis" pill as soon as the text
+  // starts scrolling under the sticky board (not only when scrolled deep).
   useEffect(() => {
     const onScroll = () => {
       const panel = explainRef.current
-      setShowToTop(!!panel && panel.getBoundingClientRect().top < -160)
+      if (!panel) {
+        setShowToTop(false)
+        return
+      }
+      const sticky = stickyRef.current
+      const stickyH =
+        sticky && getComputedStyle(sticky).position === 'sticky'
+          ? sticky.getBoundingClientRect().height
+          : 82
+      setShowToTop(panel.getBoundingClientRect().top < stickyH - 32)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
