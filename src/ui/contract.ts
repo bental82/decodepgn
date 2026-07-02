@@ -66,6 +66,8 @@ export interface AskBoxProps {
   onNeedKey: () => void
   placeholder?: string
   label?: string
+  /** when set, rule citations in answers ("#42", "rule 42") open the rule popup */
+  onOpenRule?: (id: number) => void
 }
 
 export interface RelevanceMapProps {

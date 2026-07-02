@@ -1,6 +1,7 @@
 import { RULES_BY_ID } from '../shared/rules'
 import type { MoveAnalysisProps } from './contract'
 import { soundnessMeta, statusMeta } from './contract'
+import RuleText from './RuleText'
 
 export default function MoveAnalysis({
   result,
@@ -74,7 +75,9 @@ export default function MoveAnalysis({
 
       {result.lesson ? (
         <div className="lesson">
-          <p>{result.lesson}</p>
+          <p>
+            <RuleText text={result.lesson} onOpenRule={onOpenRule} />
+          </p>
         </div>
       ) : null}
 
@@ -104,7 +107,9 @@ export default function MoveAnalysis({
                       </span>
                     ) : null}
                   </div>
-                  <p className="why">{hit.why}</p>
+                  <p className="why">
+                    <RuleText text={hit.why} onOpenRule={onOpenRule} />
+                  </p>
                 </div>
               )
             })
@@ -115,7 +120,8 @@ export default function MoveAnalysis({
         <div className="alt">
           <span className="alt-label">Cleaner here</span>
           <p>
-            <strong>{result.alternative.move}</strong> — {result.alternative.why}
+            <strong>{result.alternative.move}</strong> —{' '}
+            <RuleText text={result.alternative.why} onOpenRule={onOpenRule} />
           </p>
         </div>
       ) : null}

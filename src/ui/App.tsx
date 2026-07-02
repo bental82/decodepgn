@@ -731,6 +731,7 @@ export default function App() {
                   onNeedKey={() => setShowSettings(true)}
                   label="Ask about this move"
                   placeholder="e.g. why is this move risky here?"
+                  onOpenRule={openRule}
                 />
               </div>
               </div>
@@ -801,6 +802,7 @@ export default function App() {
             setRuleModalId(null)
             setTab('rules')
           }}
+          onOpenRule={openRule}
           onClose={() => setRuleModalId(null)}
         />
       )}

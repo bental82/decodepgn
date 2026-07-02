@@ -167,6 +167,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .rule-link { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink); text-align: left; }
 .rule-link:hover { color: var(--accent); text-decoration: underline; }
+/* rule citation inside prose (lesson, findings, Ask answers) → opens the popup */
+.rule-ref { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--accent-ink); text-decoration: underline dotted; text-underline-offset: 2px; }
+.rule-ref:hover { color: var(--accent); text-decoration-style: solid; }
 .rule-num { color: var(--muted); font-weight: 600; font-size: 12px; }
 .key-rule { font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .why { margin: 6px 0 0; font-size: 14px; overflow-wrap: break-word; }
