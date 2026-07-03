@@ -3,6 +3,7 @@ import { RULES_BY_ID, RULE_COUNT } from '../shared/rules'
 import type { AnnoArrow, AnnoColor, BoardAnnotations } from '../shared/types'
 import type { QuizProps } from './contract'
 import Board from './Board'
+import RuleText from './RuleText'
 
 /** Resolve a SAN move to an arrow on the given position (deterministic, no AI). */
 function moveArrow(fen: string, san: string, color: AnnoColor): AnnoArrow | null {
@@ -186,7 +187,8 @@ export default function Quiz({
 
       {chosen !== null ? (
         <div className={'quiz-feedback ' + (q.options[chosen]?.correct ? 'ok' : 'no')}>
-          <strong>{q.options[chosen]?.correct ? 'Correct.' : 'Not quite.'}</strong> {q.explanation}
+          <strong>{q.options[chosen]?.correct ? 'Correct.' : 'Not quite.'}</strong>{' '}
+          <RuleText text={q.explanation} onOpenRule={onOpenRule} />
           {q.ruleId ? (
             <button className="rule-link" onClick={() => onOpenRule(q.ruleId as number)}>
               {' '}

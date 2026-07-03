@@ -683,7 +683,7 @@ async function runBestMoveQuiz(input: QuizRequest): Promise<QuizResponse> {
   const system = systemWith(`You are building a "find the strongest move" quiz from the player's OWN game, using the make_bestmove_quiz tool. Each listed position gives the move actually PLAYED and the TARGET move — the strongest or clearly cleaner move (sometimes the played move itself, when the player found it).
 Return exactly one item per listed ply:
 - "distractors": 1-2 plausible but inferior LEGAL moves in that position (SAN) that a club player would seriously consider — tempting captures, checks, natural developing moves. Never include the played or target move, and never a move that is equally strong.
-- "explanation": 2-3 sentences teaching why the target move is strongest, grounded in the rules of thumb (cite rule numbers where natural). When the game move differed, say plainly why it fell short, naming it (e.g. "In the game, Nf3 let Black free the bishop"). When the game move IS the target, reinforce what made it right. Do not give the answer away in a distractor.`)
+- "explanation": 2-3 sentences that TEACH, not just judge. Name the principle at work and ALWAYS cite at least one rule by number (e.g. "rule 17" — the app turns citations into tappable links), say concretely what the target move achieves, and end with the transferable idea: what the player should look for in positions like this. When the game move differed, say plainly why it fell short, naming it (e.g. "In the game, Nf3 let Black free the bishop"). When the game move IS the target, reinforce what made it right so the player repeats it on purpose. Do not give the answer away in a distractor.`)
 
   const user = `Full game in SAN (for context):
 ${moveTextOf(game)}
@@ -737,7 +737,7 @@ ${lines}`
     }
     let explanation =
       typeof item?.explanation === 'string' && item.explanation.trim()
-        ? clip(item.explanation, 420)
+        ? clip(item.explanation, 600)
         : `${t.correct} was the strongest move here.`
     if (t.played !== t.correct && !explanation.includes(t.played)) {
       explanation += ` In the game, ${t.played} was played.`
