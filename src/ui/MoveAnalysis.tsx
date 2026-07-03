@@ -81,13 +81,15 @@ export default function MoveAnalysis({
                       ? 'st-partial'
                       : 'st-relevant')
               }
-              title={`Stockfish, depth ${eng.depth}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
+              title={`Stockfish, depth ${eng.depth}. Best move: ${eng.bestSan}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
             >
+              {/* short labels so the badge row stays one line on phones;
+                  the tooltip above carries the full detail */}
               {eng.isBest
-                ? '⚙ Engine’s top choice'
+                ? '⚙ Engine’s top'
                 : eng.cpLoss < 30
-                  ? `⚙ Engine-approved (best: ${eng.bestSan})`
-                  : `⚙ Engine prefers ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
+                  ? '⚙ Engine-approved'
+                  : `⚙ Better: ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
             </span>
           ) : null}
         </div>
