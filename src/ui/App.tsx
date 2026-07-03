@@ -108,6 +108,11 @@ export default function App() {
     }
   }, [])
 
+  // Latest results, readable from stable callbacks (analyzePlies reuses saved
+  // engine checks on re-analysis without re-creating itself on every result).
+  const resultsRef = useRef(results)
+  resultsRef.current = results
+
   const analyzePlies = useCallback(
     async (mvs: ParsedMove[], f: Focus, plies: number[]) => {
       const targets = plies.filter((ply) => mvs[ply] && isStudied(mvs[ply].color, f))
@@ -124,8 +129,21 @@ export default function App() {
         // weighs it so objectively strong moves don't get scolded.
         const targetObjs = toTargets(mvs, targets)
         const engineByPly = new Map<number, EngineEval>()
-        if (await engineAvailable()) {
-          for (const t of targetObjs) {
+        // Re-analysis: the position hasn't changed, so a previously computed
+        // engine check is still valid — reuse it instead of re-running
+        // Stockfish (which made "Re-analyse" feel unresponsive for ~30s).
+        const pending: typeof targetObjs = []
+        for (const t of targetObjs) {
+          const prior = resultsRef.current[t.ply]?.engine
+          if (prior) {
+            t.engine = prior
+            engineByPly.set(t.ply, prior)
+          } else {
+            pending.push(t)
+          }
+        }
+        if (pending.length > 0 && (await engineAvailable())) {
+          for (const t of pending) {
             if (genRef.current !== gen) return
             const pm = mvs[t.ply]
             const ev = await evaluateMove(pm)
@@ -465,6 +483,18 @@ export default function App() {
     return u
   }, [results])
 
+  // Saved analyses from before the board-graphics feature have no graphics on
+  // any rule — that's the cue to offer a one-tap full re-analysis.
+  const hasAnyGraphics = useMemo(
+    () =>
+      Object.values(results).some((r) =>
+        r.rules.some(
+          (h) => h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0,
+        ),
+      ),
+    [results],
+  )
+
   const move = moves[selectedPly]
 
   // Board graphics: reset the selection whenever the move changes.
@@ -714,6 +744,23 @@ export default function App() {
                 onNeedKey={() => setShowSettings(true)}
                 onOpenRule={openRule}
               />
+              {analyzedFocus > 0 && !hasAnyGraphics ? (
+                <div className="regen-banner">
+                  <span>
+                    This analysis predates the <strong>board graphics</strong> — re-analyse to get
+                    squares and arrows with each rule.
+                  </span>
+                  <button
+                    className="btn"
+                    onClick={() => void handleAnalyzeAll(true)}
+                    disabled={!!allProgress}
+                  >
+                    {allProgress
+                      ? `Re-analysing… ${allProgress.done}/${allProgress.total}`
+                      : 'Re-analyse all moves'}
+                  </button>
+                </div>
+              ) : null}
               <div className="study">
               <div className="board-panel">
                 {/* Only this wrapper is sticky on mobile — the progress strip

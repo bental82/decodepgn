@@ -51,6 +51,14 @@ export default function MoveAnalysis({
 
   return (
     <div className="analysis">
+      {loading ? (
+        // Re-analysing an already-analysed move: keep the old result visible
+        // but SAY that work is happening (the button used to look dead).
+        <div className="loading-row">
+          <span className="spinner" />
+          Re-analysing this move…
+        </div>
+      ) : null}
       {snd || eng ? (
         <div className="verdicts">
           {snd ? (
@@ -161,8 +169,8 @@ export default function MoveAnalysis({
         </div>
       ) : null}
 
-      <button className="btn ghost reanalyze" onClick={onReanalyze}>
-        Re-analyse
+      <button className="btn ghost reanalyze" onClick={onReanalyze} disabled={loading}>
+        {loading ? 'Re-analysing…' : 'Re-analyse'}
       </button>
     </div>
   )

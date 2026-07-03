@@ -39,6 +39,24 @@ export default function RelevanceMap({
   const analysedCount = Object.keys(results).length
   const totalFocus = moves.filter((m) => isStudied(m.color, focus)).length
 
+  // Older saved analyses may predate the engine check and/or the board
+  // graphics — offer the full re-run whenever either is missing everywhere.
+  const noEngine =
+    analysedCount > 0 && !Object.values(results).some((r) => r.engine !== undefined)
+  const noGraphics =
+    analysedCount > 0 &&
+    !Object.values(results).some((r) =>
+      r.rules.some(
+        (h) => h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0,
+      ),
+    )
+  const missing =
+    noEngine && noGraphics
+      ? 'the engine check and the board graphics'
+      : noEngine
+        ? 'the engine check'
+        : 'the board graphics'
+
   const ruleIds = Object.keys(map).map(Number)
   ruleIds.sort((a, b) => {
     const diff = map[b].length - map[a].length
@@ -52,13 +70,12 @@ export default function RelevanceMap({
       <p className="muted">
         {analysedCount} of {totalFocus} studied moves analysed ({colorName(focus)}).
       </p>
-      {analysedCount > 0 &&
-      !ruleIds.some((id) => map[id].some((h) => h.cpLoss !== undefined)) ? (
+      {noEngine || noGraphics ? (
         <p className="note small">
-          ⚙ No Stockfish data on these moves — they were analysed before the engine check was added
-          (or the engine didn’t load).{' '}
+          ⚙ These moves were analysed before {missing} {noEngine && !noGraphics ? 'was' : 'were'}{' '}
+          added.{' '}
           <button className="linkbtn" onClick={onReanalyzeAll} disabled={reanalyzing}>
-            {reanalyzing ? 'Re-analysing…' : 'Re-analyse with the engine'}
+            {reanalyzing ? 'Re-analysing…' : 'Re-analyse all moves'}
           </button>
         </p>
       ) : null}
