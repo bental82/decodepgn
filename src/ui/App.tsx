@@ -772,12 +772,12 @@ export default function App() {
                     below scrolls away so the analysis text keeps real estate. */}
                 <div className={'board-sticky' + (boardMini ? ' mini' : '')} ref={stickyRef}>
                 {/* The alternative-move arrow lives in the position BEFORE the
-                    played move — show that position while it's toggled on. */}
+                    played move — show that position while it's toggled on. The
+                    green arrow says it all; no caption (it only ate board space). */}
                 {gfx.kind === 'alt' && altArrow ? (
                   <Board
                     fen={move.fenBefore}
                     orientation={focus === 'b' ? 'b' : 'w'}
-                    caption={`Instead of ${move.san} — the suggested ${results[selectedPly]?.alternative?.move ?? ''}`}
                     annotations={boardAnnotations}
                   />
                 ) : (
