@@ -320,13 +320,6 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .overview-ask[hidden] { display: none; }
 .overview-ask .askbox { margin-top: 12px; padding-top: 12px; }
-.overview-actions {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px;
-}
-.overview-actions[hidden] { display: none; }
-.overview-actions .btn { flex-shrink: 0; }
-.overview-actions span { flex: 1; min-width: 200px; }
 .moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font: inherit; }
 .moment:hover { border-color: var(--accent); }
 .moment-move { font-weight: 700; color: var(--accent-ink); }
