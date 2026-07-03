@@ -8,6 +8,7 @@
 
 import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
+import { stripToolLeak } from '../shared/types.js'
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
@@ -58,6 +59,34 @@ function friendlyAnthropicMessage(status: number, raw: string): string {
 
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
 const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as number) : d)
+/** Every model-written prose field goes through this: leak-strip, then clip. */
+const cleanClip = (s: unknown, n: number) => clip(stripToolLeak(s), n)
+
+/**
+ * When tool-call syntax leaks into a prose field, the graphics the model meant
+ * to attach often ride along as literal JSON ("…<parameter name=\"graphics\">
+ * {\"arrows\":[…]}"). Rescue that object so the drawing isn't lost — it still
+ * passes through sanitizeGraphics like any other input.
+ */
+function leakedGraphics(s: unknown): unknown {
+  if (typeof s !== 'string') return undefined
+  const at = s.indexOf('name="graphics"')
+  if (at === -1) return undefined
+  const start = s.indexOf('{', at)
+  if (start === -1) return undefined
+  let depth = 0
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '{') depth++
+    else if (s[i] === '}' && --depth === 0) {
+      try {
+        return JSON.parse(s.slice(start, i + 1))
+      } catch {
+        return undefined
+      }
+    }
+  }
+  return undefined
+}
 
 /** Resolve the API key from the request or the environment, or throw 401. */
 function resolveKey(input: { apiKey?: string }): string {
@@ -433,7 +462,7 @@ ${targetLines}`
     .map((r) => {
       const out: MoveResult = {
         ply: r.ply,
-        lesson: typeof r.lesson === 'string' ? r.lesson : '',
+        lesson: stripToolLeak(r.lesson),
         rules: (r.rules || [])
           .filter(
             (h: RuleHit) =>
@@ -447,10 +476,13 @@ ${targetLines}`
             const hit: RuleHit = {
               id: h.id,
               status: h.status,
-              why: h.why,
+              why: stripToolLeak(h.why),
               relevance: Math.min(5, Math.max(1, intOr(h.relevance, 3))),
             }
-            const gfx = sanitizeGraphics((h as { graphics?: unknown }).graphics)
+            // graphics may arrive structured, or embedded in a why-leak
+            const gfx = sanitizeGraphics(
+              (h as { graphics?: unknown }).graphics ?? leakedGraphics(h.why),
+            )
             if (gfx) hit.graphics = gfx
             return hit
           })
@@ -462,7 +494,7 @@ ${targetLines}`
       }
       const alt = r.alternative as MoveAlternative | undefined
       if (alt && typeof alt.move === 'string' && alt.move.trim() && typeof alt.why === 'string') {
-        out.alternative = { move: clip(alt.move, 16), why: clip(alt.why, 240) }
+        out.alternative = { move: clip(alt.move, 16), why: cleanClip(alt.why, 240) }
       }
       return out
     })
@@ -548,7 +580,7 @@ Create ${count} questions.`
     const rawOpts = Array.isArray(q.options) ? q.options : []
     const valid: { text: string; correct: boolean }[] = rawOpts
       .filter((o: { text?: unknown }) => o && typeof o.text === 'string' && o.text.trim())
-      .map((o: { text: string; correct?: unknown }) => ({ text: clip(o.text, 160), correct: o.correct === true }))
+      .map((o: { text: string; correct?: unknown }) => ({ text: cleanClip(o.text, 160), correct: o.correct === true }))
     // Find the answer BEFORE trimming (so an over-long list can't drop it), and
     // enforce exactly one correct option — the schema only "describes" that.
     const correctIdx = valid.findIndex((o) => o.correct)
@@ -566,9 +598,9 @@ Create ${count} questions.`
       ;[options[i], options[j]] = [options[j], options[i]]
     }
     const out: QuizQuestion = {
-      prompt: clip(q.prompt, 400),
+      prompt: cleanClip(q.prompt, 400),
       options,
-      explanation: typeof q.explanation === 'string' ? clip(q.explanation, 300) : '',
+      explanation: cleanClip(q.explanation, 300),
     }
     if (Number.isInteger(q.ruleId) && q.ruleId >= 1 && q.ruleId <= RULE_COUNT) out.ruleId = q.ruleId
     // Only keep plies that actually exist in the supplied game.
@@ -735,10 +767,8 @@ ${lines}`
       const j = Math.floor(Math.random() * (i + 1))
       ;[options[i], options[j]] = [options[j], options[i]]
     }
-    let explanation =
-      typeof item?.explanation === 'string' && item.explanation.trim()
-        ? clip(item.explanation, 600)
-        : `${t.correct} was the strongest move here.`
+    const cleanedExpl = cleanClip(item?.explanation, 600).trim()
+    let explanation = cleanedExpl || `${t.correct} was the strongest move here.`
     if (t.played !== t.correct && !explanation.includes(t.played)) {
       explanation += ` In the game, ${t.played} was played.`
     }
@@ -837,13 +867,13 @@ Give the overview.`
     .slice(0, 4)
     .map((m: { ply: number; title: string; why: string }) => ({
       ply: m.ply,
-      title: clip(m.title, 60),
-      why: clip(m.why, 240),
+      title: cleanClip(m.title, 60),
+      why: cleanClip(m.why, 240),
     }))
 
   const overview = {
-    summary: typeof data.summary === 'string' ? clip(data.summary, 900) : '',
-    trend: typeof data.trend === 'string' ? clip(data.trend, 400) : '',
+    summary: cleanClip(data.summary, 900),
+    trend: cleanClip(data.trend, 400),
     keyMoments,
   }
   if (!overview.summary) throw new AnalyzeError('Claude did not return an overview.', 502)
@@ -915,11 +945,12 @@ When the context includes a position (FEN) and showing beats telling, also fill 
     tool: ASK_TOOL,
     toolName: 'answer_question',
   })) as { answer?: unknown; graphics?: unknown }
-  const answer = clip(data.answer, 1500).trim()
+  const answer = cleanClip(data.answer, 1500).trim()
   const out: AskResponse = { answer: answer || 'No answer was returned. Please try rephrasing.' }
   // Graphics only make sense against a concrete position the client showed us.
+  // They may arrive structured — or embedded in an answer-leak (see cleanClip).
   if (input.fen) {
-    const gfx = sanitizeGraphics(data.graphics)
+    const gfx = sanitizeGraphics(data.graphics ?? leakedGraphics(data.answer))
     if (gfx) out.graphics = gfx
   }
   return out

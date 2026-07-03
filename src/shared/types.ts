@@ -9,6 +9,19 @@ export function isStudied(color: Color, focus: Focus): boolean {
   return focus === 'both' || color === focus
 }
 
+// The model very occasionally leaks its tool-call syntax into a prose field —
+// the text ends with something like:
+//   "…every move (Rule 62). </parameter> <parameter name=\"graphics\">{…}"
+// Everything from the first leaked tag onward is machinery, not content.
+const TOOL_LEAK_RE = /<\/?(?:antml:)?(?:parameter|invoke|function)[\s>:]/i
+
+/** Keep only the real prose before any leaked tool-call markup. */
+export function stripToolLeak(s: unknown): string {
+  if (typeof s !== 'string') return ''
+  const i = s.search(TOOL_LEAK_RE)
+  return i === -1 ? s : s.slice(0, i).trimEnd()
+}
+
 export interface ParsedMove {
   ply: number // 0-based index into the move list
   moveNumber: number // 1-based chess move number

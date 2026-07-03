@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { RULES, RULES_BY_ID } from '../shared/rules'
+import { stripToolLeak } from '../shared/types'
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // case/apostrophe/whitespace-insensitive key for title lookups
@@ -38,12 +39,15 @@ const RULE_REF = new RegExp(
  * Numbers that don't match a real rule id stay plain text.
  */
 export default function RuleText({
-  text,
+  text: rawText,
   onOpenRule,
 }: {
   text: string
   onOpenRule: (id: number) => void
 }) {
+  // Guard at render too: analyses SAVED before the server started stripping
+  // leaked tool-call syntax still display clean without re-analysing.
+  const text = stripToolLeak(rawText)
   const nodes: ReactNode[] = []
   let last = 0
   for (const m of text.matchAll(RULE_REF)) {
