@@ -8,12 +8,14 @@ interface Props {
   onNeedKey: () => void
   /** open the full searchable list, highlighting this rule */
   onOpenList: (id: number) => void
+  /** rule citations inside Ask answers switch the popup to that rule */
+  onOpenRule?: (id: number) => void
   onClose: () => void
 }
 
 // Popup with a single rule's full text + an Ask thread about it, so tapping a
 // rule anywhere (move card, by-rule map, quiz) never loses your place.
-export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onClose }: Props) {
+export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onOpenRule, onClose }: Props) {
   const rule = RULES_BY_ID[ruleId]
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onClo
           onNeedKey={onNeedKey}
           label="Ask about this rule"
           placeholder="e.g. when does this not apply?"
+          onOpenRule={onOpenRule}
         />
         <div className="modal-actions">
           <button className="btn ghost" onClick={() => onOpenList(rule.id)}>

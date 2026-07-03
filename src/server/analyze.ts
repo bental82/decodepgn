@@ -559,6 +559,12 @@ Create ${count} questions.`
       options = valid.filter((o, i) => o.correct || i < (correctIdx < 5 ? 5 : 4)).slice(0, 5)
     }
     if (options.length < 2) continue
+    // Shuffle: models habitually write the correct option FIRST, so without
+    // this the right answer is almost always "A".
+    for (let i = options.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[options[i], options[j]] = [options[j], options[i]]
+    }
     const out: QuizQuestion = {
       prompt: clip(q.prompt, 400),
       options,

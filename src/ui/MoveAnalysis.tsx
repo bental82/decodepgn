@@ -2,6 +2,7 @@ import { RULES_BY_ID } from '../shared/rules'
 import type { RuleHit } from '../shared/types'
 import type { MoveAnalysisProps } from './contract'
 import { soundnessMeta, statusMeta } from './contract'
+import RuleText from './RuleText'
 
 function hasGraphics(h: RuleHit): boolean {
   return !!h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0
@@ -86,8 +87,9 @@ export default function MoveAnalysis({
 
       {result.lesson ? (
         <div className="lesson">
-          <span className="lesson-label">Lesson</span>
-          <p>{result.lesson}</p>
+          <p>
+            <RuleText text={result.lesson} onOpenRule={onOpenRule} />
+          </p>
         </div>
       ) : null}
 
@@ -128,7 +130,9 @@ export default function MoveAnalysis({
                       </button>
                     ) : null}
                   </div>
-                  <p className="why">{hit.why}</p>
+                  <p className="why">
+                    <RuleText text={hit.why} onOpenRule={onOpenRule} />
+                  </p>
                 </div>
               )
             })
@@ -151,7 +155,8 @@ export default function MoveAnalysis({
             ) : null}
           </div>
           <p>
-            <strong>{result.alternative.move}</strong> — {result.alternative.why}
+            <strong>{result.alternative.move}</strong> —{' '}
+            <RuleText text={result.alternative.why} onOpenRule={onOpenRule} />
           </p>
         </div>
       ) : null}

@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import type { GameOverview, ParsedMove } from '../shared/types'
+import type { AskContext } from './contract'
+import AskBox from './AskBox'
+import RuleText from './RuleText'
 
 interface Props {
   overview: GameOverview | null
@@ -8,13 +11,31 @@ interface Props {
   moves: ParsedMove[]
   onJump: (ply: number) => void
   onRetry: () => void
+  /** remount key for the Ask thread — changes when a different game loads */
+  askKey: string
+  askContext: AskContext
+  apiKey: string
+  onNeedKey: () => void
+  onOpenRule: (id: number) => void
 }
 
 const OPEN_STORAGE = 'decodepgn.overviewOpen'
 
 // The coach's opening word on the whole game: what decided it, the trend, and
 // clickable key moments. Shown at the top of the Study tab; collapsible.
-export default function GameOverviewCard({ overview, loading, error, moves, onJump, onRetry }: Props) {
+export default function GameOverviewCard({
+  overview,
+  loading,
+  error,
+  moves,
+  onJump,
+  onRetry,
+  askKey,
+  askContext,
+  apiKey,
+  onNeedKey,
+  onOpenRule,
+}: Props) {
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_STORAGE) !== '0')
   if (!overview && !loading && !error) return null
 
@@ -45,8 +66,14 @@ export default function GameOverviewCard({ overview, loading, error, moves, onJu
         </>
       ) : overview ? (
         <>
-          <p className="overview-summary">{overview.summary}</p>
-          {overview.trend ? <p className="overview-trend">{overview.trend}</p> : null}
+          <p className="overview-summary">
+            <RuleText text={overview.summary} onOpenRule={onOpenRule} />
+          </p>
+          {overview.trend ? (
+            <p className="overview-trend">
+              <RuleText text={overview.trend} onOpenRule={onOpenRule} />
+            </p>
+          ) : null}
           {overview.keyMoments.length > 0 ? (
             <div className="overview-moments">
               {overview.keyMoments.map((k) => {
@@ -68,6 +95,19 @@ export default function GameOverviewCard({ overview, loading, error, moves, onJu
           ) : null}
         </>
       ) : null}
+      {/* Stays mounted while collapsed so the thread (and an in-flight
+          question) survives closing and reopening the card. */}
+      <div className="overview-ask" hidden={!open}>
+        <AskBox
+          key={askKey}
+          context={askContext}
+          apiKey={apiKey}
+          onNeedKey={onNeedKey}
+          label="Ask about the game"
+          placeholder="e.g. where did I lose the thread?"
+          onOpenRule={onOpenRule}
+        />
+      </div>
     </div>
   )
 }

@@ -100,6 +100,7 @@ export default function RulesReference({
                         onNeedKey={onNeedKey}
                         label="Ask about this rule"
                         placeholder="e.g. when does this not apply?"
+                        onOpenRule={onPickRule}
                       />
                     </div>
                   ) : null}

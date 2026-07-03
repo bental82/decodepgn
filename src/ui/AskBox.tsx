@@ -3,11 +3,12 @@ import { ask as fetchAsk } from '../lib/api'
 import type { AskExchange } from '../shared/types'
 import type { AskBoxProps } from './contract'
 import Board from './Board'
+import RuleText from './RuleText'
 
 // A small "ask a question" thread. Answers are grounded in the rule set (and
 // any context passed in — the current move/position or a specific rule), and
 // follow-up questions continue the same conversation.
-export default function AskBox({ context, apiKey, onNeedKey, placeholder, label }: AskBoxProps) {
+export default function AskBox({ context, apiKey, onNeedKey, placeholder, label, onOpenRule }: AskBoxProps) {
   const [q, setQ] = useState('')
   const [thread, setThread] = useState<AskExchange[]>([])
   const [loading, setLoading] = useState(false)
@@ -56,7 +57,9 @@ export default function AskBox({ context, apiKey, onNeedKey, placeholder, label 
           {thread.map((x, i) => (
             <div className="ask-exchange" key={i}>
               <p className="ask-q">{x.q}</p>
-              <p className="ask-a">{x.a}</p>
+              <p className="ask-a">
+                {onOpenRule ? <RuleText text={x.a} onOpenRule={onOpenRule} /> : x.a}
+              </p>
               {x.graphics && context.fen ? (
                 <div className="ask-board">
                   <Board

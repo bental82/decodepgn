@@ -136,13 +136,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
 .navlabel { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
 .nav-opp { color: var(--muted); font-weight: 500; font-size: 12.5px; }
-.reply-to { margin: -4px 0 12px; font-size: 13px; color: var(--muted); }
 
 /* board-side explanation panel */
 .explain-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-height: 200px; }
-.explain-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.explain-move { font-size: 20px; font-weight: 700; }
-.explain-side { font-size: 13px; color: var(--accent-ink); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
 
 /* inlined piece sprite (hidden; provides the #wk … #bp defs for <use>) */
 .piece-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -195,14 +191,16 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 .analysis { margin-top: 0; }
 .lesson { background: var(--accent-weak); border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
-.lesson-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
-.lesson p { margin: 4px 0 0; }
+.lesson p { margin: 0; }
 .findings h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .finding { border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel-2); }
 .finding-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .rule-link { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink); text-align: left; }
 .rule-link:hover { color: var(--accent); text-decoration: underline; }
+/* rule citation inside prose (lesson, findings, Ask answers) → opens the popup */
+.rule-ref { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--accent-ink); text-decoration: underline dotted; text-underline-offset: 2px; }
+.rule-ref:hover { color: var(--accent); text-decoration-style: solid; }
 .rule-num { color: var(--muted); font-weight: 600; font-size: 12px; }
 .key-rule { font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .why { margin: 6px 0 0; font-size: 14px; overflow-wrap: break-word; }
@@ -304,6 +302,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .overview-summary { margin: 0 0 8px; font-size: 14.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.overview-ask[hidden] { display: none; }
+.overview-ask .askbox { margin-top: 12px; padding-top: 12px; }
 .moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font: inherit; }
 .moment:hover { border-color: var(--accent); }
 .moment-move { font-weight: 700; color: var(--accent-ink); }
@@ -445,8 +445,6 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .explain-panel { margin-top: 12px; }
 
   .explain-panel { padding: 14px 16px; min-height: 0; }
-  .explain-head { padding-bottom: 10px; margin-bottom: 10px; }
-  .explain-move { font-size: 18px; }
 
   /* stack the summary columns */
   .summary { padding: 16px; }

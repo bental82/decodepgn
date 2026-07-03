@@ -4,7 +4,15 @@ import { statusMeta, colorName } from './contract'
 import { RULES_BY_ID } from '../shared/rules'
 import { isStudied } from '../shared/types'
 
-export default function RelevanceMap({ moves, focus, results, onJump, onPickRule }: RelevanceMapProps) {
+export default function RelevanceMap({
+  moves,
+  focus,
+  results,
+  onJump,
+  onPickRule,
+  onReanalyzeAll,
+  reanalyzing,
+}: RelevanceMapProps) {
   const map: Record<
     number,
     { ply: number; status: MoveResult['rules'][number]['status']; cpLoss?: number }[]
@@ -44,6 +52,16 @@ export default function RelevanceMap({ moves, focus, results, onJump, onPickRule
       <p className="muted">
         {analysedCount} of {totalFocus} studied moves analysed ({colorName(focus)}).
       </p>
+      {analysedCount > 0 &&
+      !ruleIds.some((id) => map[id].some((h) => h.cpLoss !== undefined)) ? (
+        <p className="note small">
+          ⚙ No Stockfish data on these moves — they were analysed before the engine check was added
+          (or the engine didn’t load).{' '}
+          <button className="linkbtn" onClick={onReanalyzeAll} disabled={reanalyzing}>
+            {reanalyzing ? 'Re-analysing…' : 'Re-analyse with the engine'}
+          </button>
+        </p>
+      ) : null}
       {ruleIds.length === 0 ? (
         <p className="empty">
           Analyse some moves to build this map — click your moves in the list, or use “Analyse all”.

@@ -93,6 +93,8 @@ export interface AskBoxProps {
   onNeedKey: () => void
   placeholder?: string
   label?: string
+  /** when set, rule citations in answers ("#42", "rule 42") open the rule popup */
+  onOpenRule?: (id: number) => void
 }
 
 export interface RelevanceMapProps {
@@ -101,6 +103,9 @@ export interface RelevanceMapProps {
   results: Record<number, MoveResult> // ply -> result
   onJump: (ply: number) => void
   onPickRule: (id: number) => void
+  /** re-run the whole analysis (adds the engine check to older analyses) */
+  onReanalyzeAll: () => void
+  reanalyzing: boolean
 }
 
 export interface GameSummaryProps {

@@ -341,8 +341,10 @@ export default function App() {
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies])
 
-  const handleAnalyzeAll = async () => {
-    const plies = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).map((m) => m.ply)
+  const handleAnalyzeAll = async (force = false) => {
+    const plies = moves
+      .filter((m) => isStudied(m.color, focus) && (force || !results[m.ply]))
+      .map((m) => m.ply)
     if (!plies.length) return
     const gen = genRef.current
     const BATCH = 6
@@ -586,7 +588,6 @@ export default function App() {
   }, [tab])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
-  const prevMove = selectedPly > 0 ? moves[selectedPly - 1] : undefined
   const moveLabel = (m: ParsedMove) => `${m.moveNumber}${m.color === 'w' ? '.' : '…'} ${m.san}`
 
   return (
@@ -608,7 +609,7 @@ export default function App() {
             </div>
             <button
               className="btn"
-              onClick={handleAnalyzeAll}
+              onClick={() => void handleAnalyzeAll()}
               disabled={!!allProgress || focusMovesRemaining === 0}
             >
               {allProgress
@@ -707,6 +708,11 @@ export default function App() {
                 moves={moves}
                 onJump={jumpTo}
                 onRetry={fetchOverview}
+                askKey={storeRef.current?.key ?? 'game'}
+                askContext={{ focus, game: toGameMoves(moves) }}
+                apiKey={apiKey}
+                onNeedKey={() => setShowSettings(true)}
+                onOpenRule={openRule}
               />
               <div className="study">
               <div className="board-panel">
@@ -809,19 +815,6 @@ export default function App() {
                 </div>
               </div>
               <div className="explain-panel" ref={explainRef}>
-                <div className="explain-head">
-                  <span className="explain-move">{moveLabel(move)}</span>
-                  <span className="explain-side">
-                    {isStudied(move.color, focus)
-                      ? `${colorName(move.color)} — your move`
-                      : `${colorName(move.color)} — opponent`}
-                  </span>
-                </div>
-                {isStudied(move.color, focus) && prevMove ? (
-                  <p className="reply-to">
-                    In reply to {colorName(prevMove.color)}’s <strong>{moveLabel(prevMove)}</strong>
-                  </p>
-                ) : null}
                 {isStudied(move.color, focus) ? (
                   <MoveAnalysis
                     move={move}
@@ -855,6 +848,7 @@ export default function App() {
                   onNeedKey={() => setShowSettings(true)}
                   label="Ask about this move"
                   placeholder="e.g. why is this move risky here?"
+                  onOpenRule={openRule}
                 />
               </div>
               </div>
@@ -884,6 +878,8 @@ export default function App() {
                 results={results}
                 onJump={jumpTo}
                 onPickRule={openRule}
+                onReanalyzeAll={() => void handleAnalyzeAll(true)}
+                reanalyzing={!!allProgress}
               />
             </div>
           )}
@@ -924,6 +920,7 @@ export default function App() {
             setRuleModalId(null)
             setTab('rules')
           }}
+          onOpenRule={openRule}
           onClose={() => setRuleModalId(null)}
         />
       )}
