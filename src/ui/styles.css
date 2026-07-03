@@ -128,6 +128,16 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* study: board + explanation side by side */
 /* Board sized by viewport height so it stays large but always fits on screen. */
+/* "your saved analysis predates the board graphics" call-to-action */
+.regen-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--accent-weak); border: 1px solid var(--accent);
+  border-radius: 12px; padding: 10px 14px; margin-bottom: 14px;
+  font-size: 13.5px;
+}
+.regen-banner span { flex: 1; min-width: 220px; }
+.regen-banner .btn { flex-shrink: 0; }
+
 .study { display: grid; grid-template-columns: clamp(360px, 58vh, 620px) 1fr; gap: 24px; align-items: start; }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
