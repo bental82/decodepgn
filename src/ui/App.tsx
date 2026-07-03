@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
 import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
@@ -13,8 +14,18 @@ import {
 } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
 import { isStudied } from '../shared/types'
-import type { EngineEval, Focus, GameOverview, MoveResult, ParsedMove } from '../shared/types'
+import type {
+  BestMoveTarget,
+  BoardAnnotations,
+  EngineEval,
+  Focus,
+  GameOverview,
+  MoveResult,
+  ParsedMove,
+  QuizKind,
+} from '../shared/types'
 import { colorName } from './contract'
+import type { GfxSelection } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
 import GameImport from './GameImport'
@@ -67,6 +78,9 @@ export default function App() {
   const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
   // Where the user was reading before a chip jump, so one tap brings them back.
   const [jumpBack, setJumpBack] = useState<number | null>(null)
+  // What the sticky board is illustrating for the selected move ('auto' = the
+  // key rule's graphics). Reset whenever the move changes.
+  const [gfx, setGfx] = useState<GfxSelection>({ kind: 'auto' })
   // Compact board (mobile): more room for the analysis text.
   const [boardMini, setBoardMini] = useState<boolean>(
     () => localStorage.getItem('decodepgn.boardMini') === '1',
@@ -178,6 +192,7 @@ export default function App() {
       setOverviewLoading(false)
       setOverviewError(null)
       setJumpBack(null)
+      setGfx({ kind: 'auto' })
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -237,31 +252,71 @@ export default function App() {
     }
   }, [moves, focus, headers, apiKey])
 
-  const startQuiz = useCallback(async () => {
-    if (!moves.length || quizLoading) return
-    const gen = genRef.current
-    setQuizLoading(true)
-    setQuizError(null)
-    setQuizSaved(null)
-    try {
-      const resp = await fetchQuizApi({
-        mode: 'quiz',
-        focus,
-        game: toGameMoves(moves),
-        apiKey: apiKey.trim() || undefined,
-      })
-      if (genRef.current !== gen) return
-      // setting quizSaved persists it immediately via the save effect
-      setQuizSaved({ questions: resp.questions, answers: resp.questions.map(() => null), current: 0 })
-    } catch (e) {
-      if (genRef.current !== gen) return
-      const msg = e instanceof Error ? e.message : 'Could not build the quiz.'
-      setQuizError(msg)
-      if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
-    } finally {
-      if (genRef.current === gen) setQuizLoading(false)
+  // Positions the best-move quiz can draw on: analysed moves of the studied
+  // side that carry an engine check or an AI alternative. Moves that clearly
+  // weren't ideal come first (that's the point of the quiz); best moves the
+  // player FOUND fill remaining slots as reinforcement.
+  const bestMoveTargets = useMemo<BestMoveTarget[]>(() => {
+    const cands = moves
+      .filter((m) => isStudied(m.color, focus))
+      .map((m) => ({ m, r: results[m.ply] }))
+      .filter((x): x is { m: ParsedMove; r: MoveResult } => !!x.r && (!!x.r.engine || !!x.r.alternative))
+    const notIdeal = cands.filter(
+      ({ r }) =>
+        (r.engine && !r.engine.isBest && r.engine.cpLoss >= 50) ||
+        (!r.engine && !!r.alternative) ||
+        r.soundness === 'dubious',
+    )
+    notIdeal.sort((a, b) => (b.r.engine?.cpLoss ?? 0) - (a.r.engine?.cpLoss ?? 0))
+    const picked = notIdeal.slice(0, 8)
+    if (picked.length < 6) {
+      const found = cands.filter(
+        (c) => !picked.includes(c) && c.r.engine && (c.r.engine.isBest || c.r.engine.cpLoss < 30),
+      )
+      picked.push(...found.slice(0, 6 - picked.length))
     }
-  }, [moves, focus, apiKey, quizLoading])
+    return picked
+      .sort((a, b) => a.m.ply - b.m.ply)
+      .map(({ m, r }) => ({
+        ply: m.ply,
+        fenBefore: m.fenBefore,
+        played: m.san,
+        best: r.engine?.bestSan || undefined,
+        cpLoss: r.engine?.cpLoss,
+        alternative: r.alternative?.move,
+      }))
+  }, [moves, focus, results])
+
+  const startQuiz = useCallback(
+    async (kind: QuizKind) => {
+      if (!moves.length || quizLoading) return
+      const gen = genRef.current
+      setQuizLoading(true)
+      setQuizError(null)
+      setQuizSaved(null)
+      try {
+        const resp = await fetchQuizApi({
+          mode: 'quiz',
+          kind,
+          focus,
+          game: toGameMoves(moves),
+          targets: kind === 'bestmove' ? bestMoveTargets : undefined,
+          apiKey: apiKey.trim() || undefined,
+        })
+        if (genRef.current !== gen) return
+        // setting quizSaved persists it immediately via the save effect
+        setQuizSaved({ kind, questions: resp.questions, answers: resp.questions.map(() => null), current: 0 })
+      } catch (e) {
+        if (genRef.current !== gen) return
+        const msg = e instanceof Error ? e.message : 'Could not build the quiz.'
+        setQuizError(msg)
+        if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
+      } finally {
+        if (genRef.current === gen) setQuizLoading(false)
+      }
+    },
+    [moves, focus, apiKey, quizLoading, bestMoveTargets],
+  )
 
   // Every analysis starts with the whole-game overview — generate it once per
   // loaded game (restored games already have it and skip the call).
@@ -380,6 +435,7 @@ export default function App() {
     setOverviewLoading(false)
     setOverviewError(null)
     setJumpBack(null)
+    setGfx({ kind: 'auto' })
     setHistory(listGames())
   }
 
@@ -408,6 +464,46 @@ export default function App() {
   }, [results])
 
   const move = moves[selectedPly]
+
+  // Board graphics: reset the selection whenever the move changes.
+  useEffect(() => {
+    setGfx({ kind: 'auto' })
+  }, [selectedPly])
+
+  // The suggested cleaner move resolved to real squares on the position BEFORE
+  // the move — a deterministic arrow, no AI geometry involved.
+  const altArrow = useMemo(() => {
+    const alt = results[selectedPly]?.alternative
+    const m = moves[selectedPly]
+    if (!alt || !m) return null
+    try {
+      const mv = new Chess(m.fenBefore).move(alt.move, { strict: false })
+      return mv ? { from: mv.from, to: mv.to } : null
+    } catch {
+      return null
+    }
+  }, [results, selectedPly, moves])
+
+  // The rule whose graphics show by default: the most relevant one that has any.
+  const autoGfxRule = useMemo(() => {
+    const r = results[selectedPly]
+    if (!r) return undefined
+    return [...r.rules]
+      .sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
+      .find((h) => h.graphics && (h.graphics.squares?.length || h.graphics.arrows?.length))
+  }, [results, selectedPly])
+
+  const boardAnnotations = useMemo<BoardAnnotations | undefined>(() => {
+    if (gfx.kind === 'off') return undefined
+    if (gfx.kind === 'alt') {
+      return altArrow ? { arrows: [{ from: altArrow.from, to: altArrow.to, color: 'green' }] } : undefined
+    }
+    const r = results[selectedPly]
+    if (!r) return undefined
+    if (gfx.kind === 'rule') return r.rules.find((h) => h.id === gfx.id)?.graphics
+    return autoGfxRule?.graphics
+  }, [gfx, altArrow, results, selectedPly, autoGfxRule])
+
   // Eval (White's perspective) after the current move: sweep result first,
   // falling back to the per-move engine check when the sweep hasn't reached it.
   const currentEvalCp = useMemo(() => {
@@ -617,11 +713,23 @@ export default function App() {
                 {/* Only this wrapper is sticky on mobile — the progress strip
                     below scrolls away so the analysis text keeps real estate. */}
                 <div className={'board-sticky' + (boardMini ? ' mini' : '')} ref={stickyRef}>
-                <Board
-                  fen={move.fenAfter}
-                  orientation={focus === 'b' ? 'b' : 'w'}
-                  lastMove={{ from: move.from, to: move.to }}
-                />
+                {/* The alternative-move arrow lives in the position BEFORE the
+                    played move — show that position while it's toggled on. */}
+                {gfx.kind === 'alt' && altArrow ? (
+                  <Board
+                    fen={move.fenBefore}
+                    orientation={focus === 'b' ? 'b' : 'w'}
+                    caption={`Instead of ${move.san} — the suggested ${results[selectedPly]?.alternative?.move ?? ''}`}
+                    annotations={boardAnnotations}
+                  />
+                ) : (
+                  <Board
+                    fen={move.fenAfter}
+                    orientation={focus === 'b' ? 'b' : 'w'}
+                    lastMove={{ from: move.from, to: move.to }}
+                    annotations={boardAnnotations}
+                  />
+                )}
                 <div className="board-nav">
                   <button
                     className="navbtn"
@@ -723,6 +831,10 @@ export default function App() {
                     error={errorByPly[selectedPly]}
                     onReanalyze={() => analyzePlies(moves, focus, [selectedPly])}
                     onOpenRule={openRule}
+                    gfx={gfx}
+                    onGfx={setGfx}
+                    autoGfxRuleId={autoGfxRule?.id}
+                    altArrow={!!altArrow}
                   />
                 ) : (
                   <p className="note">
@@ -756,9 +868,10 @@ export default function App() {
               saved={quizSaved}
               loading={quizLoading}
               error={quizError}
-              onStart={() => void startQuiz()}
+              onStart={(kind) => void startQuiz(kind)}
               onChange={setQuizSaved}
               onOpenRule={openRule}
+              bestMoveReady={bestMoveTargets.length}
             />
           )}
 

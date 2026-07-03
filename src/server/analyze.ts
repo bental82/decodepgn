@@ -6,12 +6,18 @@
 // This module is server-only (it imports the Anthropic SDK and reads the API
 // key). It must never be imported by browser code.
 
+import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
+  AnnoArrow,
+  AnnoColor,
+  AnnoSquare,
   AskRequest,
   AskResponse,
+  BestMoveTarget,
+  BoardAnnotations,
   EngineEval,
   GameMove,
   OverviewRequest,
@@ -161,6 +167,86 @@ async function callClaude(
   return typeof textBlock?.text === 'string' ? textBlock.text : ''
 }
 
+// ---- Board graphics (shared by the analyse and ask schemas) ----
+
+const ANNO_COLORS: AnnoColor[] = ['green', 'red', 'yellow', 'blue']
+const SQUARE_RE = /^[a-h][1-8]$/
+const MAX_ANNO_SQUARES = 8
+const MAX_ANNO_ARROWS = 6
+
+function graphicsSchema(description: string) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    description,
+    properties: {
+      squares: {
+        type: 'array',
+        description: `Squares to tint (max ${MAX_ANNO_SQUARES}).`,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            square: { type: 'string', description: 'A square in algebraic notation, e.g. "e4".' },
+            color: { type: 'string', enum: ANNO_COLORS },
+          },
+          required: ['square', 'color'],
+        },
+      },
+      arrows: {
+        type: 'array',
+        description: `Arrows to draw, from square to square (max ${MAX_ANNO_ARROWS}). Several arrows are fine when the explanation needs them — a manoeuvre, converging attackers, competing plans.`,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            from: { type: 'string', description: 'Start square, e.g. "g1".' },
+            to: { type: 'string', description: 'End square, e.g. "f3".' },
+            color: { type: 'string', enum: ANNO_COLORS },
+          },
+          required: ['from', 'to', 'color'],
+        },
+      },
+    },
+  }
+}
+
+/** Shared colour legend, kept identical across prompts so graphics mean the same thing everywhere. */
+const GRAPHICS_LEGEND =
+  'Colours: green = good squares / strong moves, red = weaknesses / hanging pieces / danger, yellow = key squares, files or diagonals to watch, blue = plans and manoeuvres.'
+
+/** Keep only well-formed squares/arrows; never trust the model's geometry blindly. */
+function sanitizeGraphics(g: unknown): BoardAnnotations | undefined {
+  if (!g || typeof g !== 'object') return undefined
+  const raw = g as { squares?: unknown; arrows?: unknown }
+  const squares: AnnoSquare[] = []
+  const seenSq = new Set<string>()
+  for (const s of Array.isArray(raw.squares) ? raw.squares : []) {
+    const sq = s as { square?: unknown; color?: unknown }
+    if (typeof sq.square !== 'string' || !SQUARE_RE.test(sq.square)) continue
+    if (!ANNO_COLORS.includes(sq.color as AnnoColor) || seenSq.has(sq.square)) continue
+    seenSq.add(sq.square)
+    squares.push({ square: sq.square, color: sq.color as AnnoColor })
+    if (squares.length >= MAX_ANNO_SQUARES) break
+  }
+  const arrows: AnnoArrow[] = []
+  const seenAr = new Set<string>()
+  for (const a of Array.isArray(raw.arrows) ? raw.arrows : []) {
+    const ar = a as { from?: unknown; to?: unknown; color?: unknown }
+    if (typeof ar.from !== 'string' || !SQUARE_RE.test(ar.from)) continue
+    if (typeof ar.to !== 'string' || !SQUARE_RE.test(ar.to) || ar.to === ar.from) continue
+    if (!ANNO_COLORS.includes(ar.color as AnnoColor) || seenAr.has(ar.from + ar.to)) continue
+    seenAr.add(ar.from + ar.to)
+    arrows.push({ from: ar.from, to: ar.to, color: ar.color as AnnoColor })
+    if (arrows.length >= MAX_ANNO_ARROWS) break
+  }
+  if (!squares.length && !arrows.length) return undefined
+  const out: BoardAnnotations = {}
+  if (squares.length) out.squares = squares
+  if (arrows.length) out.arrows = arrows
+  return out
+}
+
 const OUTPUT_TOOL = {
   name: 'report_relevance',
   description: 'Report which rules of thumb are relevant for each requested move.',
@@ -199,6 +285,9 @@ const OUTPUT_TOOL = {
                     description:
                       'How central this rule is to THIS move, 1-5: 5 = the key idea of the move, 3 = clearly in play, 1 = worth a passing mention.',
                   },
+                  graphics: graphicsSchema(
+                    "OPTIONAL board graphics that SHOW this rule's point in the resulting position: tint the weak square, arrow the open file, mark the exposed king. Only when it genuinely illustrates the idea — accuracy over decoration.",
+                  ),
                 },
                 required: ['id', 'status', 'why', 'relevance'],
               },
@@ -316,7 +405,8 @@ Set each rule's status honestly:
 - "partially": partly upholds it, with a trade-off.
 - "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
 - "relevant": the rule is in play but the move is genuinely neutral toward it.
-Give one clear sentence per rule, and score each rule's "relevance" 1-5 (5 = the key idea of this move, 1 = passing mention) — the app sorts by it, so the score should reflect how much this rule explains THE move. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
+Give one clear sentence per rule, and score each rule's "relevance" 1-5 (5 = the key idea of this move, 1 = passing mention) — the app sorts by it, so the score should reflect how much this rule explains THE move.
+When a rule's point can be SHOWN on the board, add "graphics" to that rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} Point at concrete things: the hole a pawn move created, the file a rook now owns, the piece left hanging, the manoeuvre the move starts. Use several arrows when the explanation warrants it (a knight's route, converging attackers). Derive every square from the FEN — a wrong square is worse than no graphics — and omit "graphics" when nothing visual would help. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
 
 Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
 - If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
@@ -353,10 +443,17 @@ ${targetLines}`
               typeof h.why === 'string' &&
               validStatuses.has(h.status),
           )
-          .map((h: RuleHit) => ({
-            ...h,
-            relevance: Math.min(5, Math.max(1, intOr(h.relevance, 3))),
-          }))
+          .map((h: RuleHit) => {
+            const hit: RuleHit = {
+              id: h.id,
+              status: h.status,
+              why: h.why,
+              relevance: Math.min(5, Math.max(1, intOr(h.relevance, 3))),
+            }
+            const gfx = sanitizeGraphics((h as { graphics?: unknown }).graphics)
+            if (gfx) hit.graphics = gfx
+            return hit
+          })
           // most important first (stable, so the model's order breaks ties)
           .sort((a: RuleHit, b: RuleHit) => (b.relevance ?? 3) - (a.relevance ?? 3)),
       }
@@ -415,6 +512,7 @@ const QUIZ_TOOL = {
 }
 
 export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
+  if (input.kind === 'bestmove') return runBestMoveQuiz(input)
   const apiKey = resolveKey(input)
   const focus = input.focus === 'b' ? 'b' : input.focus === 'both' ? 'both' : 'w'
   const sideName = focus === 'w' ? 'White' : focus === 'b' ? 'Black' : 'both sides'
@@ -473,6 +571,183 @@ Create ${count} questions.`
     if (questions.length >= 10) break
   }
   if (questions.length === 0) throw new AnalyzeError('Could not generate quiz questions. Try again.', 502)
+  return { questions }
+}
+
+// ---- Best-move quiz ----
+
+/** Parse a move (SAN or coordinate notation) against a FEN; returns canonical SAN or null. */
+function legalSan(fen: string, move: string): string | null {
+  if (!move) return null
+  try {
+    const mv = new Chess(fen).move(move, { strict: false })
+    return mv ? mv.san : null
+  } catch {
+    return null
+  }
+}
+
+const BESTMOVE_TOOL = {
+  name: 'make_bestmove_quiz',
+  description: 'Return distractor moves and an explanation for each quiz position.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      items: {
+        type: 'array',
+        description: 'Exactly one item per listed position, in the given order.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            ply: { type: 'integer', description: 'The ply of the position, as listed.' },
+            distractors: {
+              type: 'array',
+              description:
+                '1-2 plausible but inferior LEGAL moves (SAN) a club player would seriously consider — tempting captures, natural developing moves. NEVER the played or target move.',
+              items: { type: 'string' },
+            },
+            explanation: {
+              type: 'string',
+              description:
+                '2-3 sentences: why the target move is strongest (cite rule numbers where natural), and — when the game move differed — why the game move fell short, naming it.',
+            },
+          },
+          required: ['ply', 'distractors', 'explanation'],
+        },
+      },
+    },
+    required: ['items'],
+  },
+}
+
+async function runBestMoveQuiz(input: QuizRequest): Promise<QuizResponse> {
+  const apiKey = resolveKey(input)
+  const game = sanitizeGame(input.game)
+
+  // Verify every target on a real board: the position must parse, the played
+  // and correct moves must be legal there. The correct answer is decided HERE
+  // (engine best > AI alternative > the played move), never by the quiz model.
+  interface Verified {
+    ply: number
+    fen: string
+    played: string
+    correct: string
+    cpLoss?: number
+    mover: 'White' | 'Black'
+  }
+  const targets: Verified[] = []
+  for (const raw of Array.isArray(input.targets) ? input.targets : []) {
+    const t = raw as BestMoveTarget
+    if (!t || !Number.isInteger(t.ply) || typeof t.fenBefore !== 'string' || typeof t.played !== 'string') continue
+    const fen = clip(t.fenBefore, 100)
+    const played = legalSan(fen, clip(t.played, 12))
+    if (!played) continue
+    const correctRaw =
+      (typeof t.best === 'string' && t.best.trim()) ||
+      (typeof t.alternative === 'string' && t.alternative.trim()) ||
+      t.played
+    const correct = legalSan(fen, clip(correctRaw, 12))
+    if (!correct) continue
+    targets.push({
+      ply: t.ply,
+      fen,
+      played,
+      correct,
+      cpLoss: Number.isFinite(t.cpLoss) ? Math.max(0, Math.trunc(t.cpLoss as number)) : undefined,
+      mover: fen.split(' ')[1] === 'b' ? 'Black' : 'White',
+    })
+    if (targets.length >= 10) break
+  }
+  if (!targets.length) {
+    throw new AnalyzeError('No usable positions for a best-move quiz — analyse some moves first.')
+  }
+
+  const lines = targets
+    .map((t) => {
+      let line = `- ply ${t.ply} — ${t.mover} to move. FEN: ${t.fen}. Played in the game: ${t.played}. Target move: ${t.correct}.`
+      if (t.correct === t.played) line += ' (The player FOUND the target move — write the explanation as reinforcement.)'
+      else if (t.cpLoss !== undefined)
+        line += ` (Stockfish: the played move gave up about ${(t.cpLoss / 100).toFixed(1)} pawns vs the target.)`
+      return line
+    })
+    .join('\n')
+
+  const system = systemWith(`You are building a "find the strongest move" quiz from the player's OWN game, using the make_bestmove_quiz tool. Each listed position gives the move actually PLAYED and the TARGET move — the strongest or clearly cleaner move (sometimes the played move itself, when the player found it).
+Return exactly one item per listed ply:
+- "distractors": 1-2 plausible but inferior LEGAL moves in that position (SAN) that a club player would seriously consider — tempting captures, checks, natural developing moves. Never include the played or target move, and never a move that is equally strong.
+- "explanation": 2-3 sentences teaching why the target move is strongest, grounded in the rules of thumb (cite rule numbers where natural). When the game move differed, say plainly why it fell short, naming it (e.g. "In the game, Nf3 let Black free the bishop"). When the game move IS the target, reinforce what made it right. Do not give the answer away in a distractor.`)
+
+  const user = `Full game in SAN (for context):
+${moveTextOf(game)}
+
+The positions:
+${lines}`
+
+  const data = (await callClaude(apiKey, system, user, {
+    maxTokens: 3000,
+    tool: BESTMOVE_TOOL,
+    toolName: 'make_bestmove_quiz',
+  })) as { items?: unknown }
+
+  const rawItems = Array.isArray(data.items) ? data.items : []
+  const itemByPly = new Map<number, { distractors?: unknown; explanation?: unknown }>()
+  for (const it of rawItems) {
+    if (it && Number.isInteger(it.ply) && !itemByPly.has(it.ply)) itemByPly.set(it.ply, it)
+  }
+
+  const questions: QuizQuestion[] = []
+  for (const t of targets) {
+    const item = itemByPly.get(t.ply)
+    // Options: the correct move, the game move (when different), then verified
+    // distractors — all legality-checked against the position.
+    const options: string[] = [t.correct]
+    if (t.played !== t.correct) options.push(t.played)
+    for (const d of Array.isArray(item?.distractors) ? item.distractors : []) {
+      if (options.length >= 4) break
+      if (typeof d !== 'string') continue
+      const san = legalSan(t.fen, clip(d, 12))
+      if (san && !options.includes(san)) options.push(san)
+    }
+    // Top up from the position's legal moves if the model came up short.
+    if (options.length < 4) {
+      try {
+        const all = new Chess(t.fen).moves()
+        for (const i of [0, Math.floor(all.length / 2), all.length - 1, ...all.keys()]) {
+          if (options.length >= 4) break
+          const san = all[i]
+          if (san && !options.includes(san)) options.push(san)
+        }
+      } catch {
+        /* keep what we have */
+      }
+    }
+    if (options.length < 2) continue
+    // Fisher-Yates shuffle so the answer isn't always option A.
+    for (let i = options.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[options[i], options[j]] = [options[j], options[i]]
+    }
+    let explanation =
+      typeof item?.explanation === 'string' && item.explanation.trim()
+        ? clip(item.explanation, 420)
+        : `${t.correct} was the strongest move here.`
+    if (t.played !== t.correct && !explanation.includes(t.played)) {
+      explanation += ` In the game, ${t.played} was played.`
+    }
+    questions.push({
+      prompt:
+        t.mover +
+        ' to move — what is the strongest move here?' +
+        (t.played === t.correct ? '' : ' (One of these was played in the game.)'),
+      options: options.map((text) => ({ text, correct: text === t.correct })),
+      explanation,
+      ply: t.ply,
+      fen: t.fen,
+    })
+  }
+  if (!questions.length) throw new AnalyzeError('Could not build best-move questions. Try again.', 502)
   return { questions }
 }
 
@@ -571,6 +846,22 @@ Give the overview.`
 
 // ---- Ask mode (free-form question) ----
 
+const ASK_TOOL = {
+  name: 'answer_question',
+  description: "Answer the user's chess question, optionally pointing at the board.",
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      answer: { type: 'string', description: 'The answer: 2-4 concise, decisive sentences.' },
+      graphics: graphicsSchema(
+        'OPTIONAL board graphics for the position under discussion (its FEN is in the context). Use them whenever pointing at squares or drawing arrows would make the answer clearer; omit when no specific position is in context.',
+      ),
+    },
+    required: ['answer'],
+  },
+}
+
 export async function runAsk(input: AskRequest): Promise<AskResponse> {
   const apiKey = resolveKey(input)
   const question = clip(input.question, 500).trim()
@@ -591,7 +882,8 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
   }
   const context = contextLines.length ? `Context:\n${contextLines.join('\n')}\n\n` : ''
 
-  const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences), grounded in the ${RULE_COUNT} rules of thumb above. The user may ask follow-up questions — treat the conversation as one thread about the same position/rule unless they change the subject. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.`)
+  const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences) using the answer_question tool, grounded in the ${RULE_COUNT} rules of thumb above. The user may ask follow-up questions — treat the conversation as one thread about the same position/rule unless they change the subject. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.
+When the context includes a position (FEN) and showing beats telling, also fill "graphics": tinted squares and arrows on that position. ${GRAPHICS_LEGEND} Several arrows are fine when the answer describes a sequence or manoeuvre. Derive every square from the FEN; omit "graphics" when no position is in context or nothing visual would help.`)
 
   // Rebuild the thread: earlier exchanges (bounded), then the new question.
   // The shared context rides on the FIRST user turn so the cache-friendly
@@ -612,7 +904,17 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
     messages.push({ role: 'user', content: `${context}User question: ${question}` })
   }
 
-  const text = (await callClaude(apiKey, system, messages, { maxTokens: 700 })) as string
-  const answer = clip(text, 1500).trim()
-  return { answer: answer || 'No answer was returned. Please try rephrasing.' }
+  const data = (await callClaude(apiKey, system, messages, {
+    maxTokens: 900,
+    tool: ASK_TOOL,
+    toolName: 'answer_question',
+  })) as { answer?: unknown; graphics?: unknown }
+  const answer = clip(data.answer, 1500).trim()
+  const out: AskResponse = { answer: answer || 'No answer was returned. Please try rephrasing.' }
+  // Graphics only make sense against a concrete position the client showed us.
+  if (input.fen) {
+    const gfx = sanitizeGraphics(data.graphics)
+    if (gfx) out.graphics = gfx
+  }
+  return out
 }

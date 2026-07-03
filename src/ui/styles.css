@@ -22,6 +22,12 @@
   --light-sq: #f1f3f7;
   --dark-sq: #6b95e0;
   --hi: rgba(255, 221, 66, 0.62);
+  /* board annotation palette (AI graphics): green = good, red = danger,
+     yellow = watch this, blue = plan/manoeuvre */
+  --anno-green: #16a34a;
+  --anno-red: #dc2626;
+  --anno-yellow: #d97706;
+  --anno-blue: #2563eb;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -151,6 +157,31 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .sq.light { background: var(--light-sq); }
 .sq.dark { background: var(--dark-sq); }
 .sq.hi::after { content: ''; position: absolute; inset: 0; background: var(--hi); pointer-events: none; }
+
+/* AI board graphics: tinted squares (::before so the piece stays on top) and
+   an SVG arrow layer over the whole grid. */
+.sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+}
+.sq.anno-green::before { background: var(--anno-green); }
+.sq.anno-red::before { background: var(--anno-red); }
+.sq.anno-yellow::before { background: var(--anno-yellow); }
+.sq.anno-blue::before { background: var(--anno-blue); }
+.board { position: relative; }
+.board-arrows {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 2;
+}
+.board-arrows g { opacity: 0.8; }
+.board-arrows line { stroke-width: 0.17; stroke-linecap: round; }
+.board-arrows .ar-green line { stroke: var(--anno-green); }
+.board-arrows .ar-green polygon { fill: var(--anno-green); }
+.board-arrows .ar-red line { stroke: var(--anno-red); }
+.board-arrows .ar-red polygon { fill: var(--anno-red); }
+.board-arrows .ar-yellow line { stroke: var(--anno-yellow); }
+.board-arrows .ar-yellow polygon { fill: var(--anno-yellow); }
+.board-arrows .ar-blue line { stroke: var(--anno-blue); }
+.board-arrows .ar-blue polygon { fill: var(--anno-blue); }
 /* no drop-shadow: it smears the vector edges at phone sizes and reads as blur */
 .piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
 .coord { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; z-index: 2; user-select: none; pointer-events: none; }
@@ -250,8 +281,20 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* better-alternative line */
 .alt { border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 14px; margin: 2px 0 14px; background: var(--panel-2); }
+.alt-head { display: flex; align-items: center; gap: 10px; }
 .alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
 .alt p { margin: 3px 0 0; font-size: 14px; }
+
+/* "show on board" toggles next to rules / the alternative move */
+.gfx-btn {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+  color: var(--muted); background: none;
+  border: 1px solid var(--line-2); border-radius: 999px;
+  padding: 2px 9px; cursor: pointer; white-space: nowrap;
+}
+.gfx-btn:hover { color: var(--ink); border-color: var(--accent); }
+.gfx-btn.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-weak); }
 
 /* game overview — the coach's opening word */
 .overview { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
@@ -300,6 +343,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .ask-thread { margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
 .ask-exchange .ask-q { margin: 0 0 4px; font-size: 13.5px; font-weight: 600; color: var(--accent-ink); }
 .ask-exchange .ask-a { margin: 0; font-size: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+/* mini board under an answer that came with graphics */
+.ask-board { max-width: 300px; margin: 8px auto 2px; }
+.ask-board .board { box-shadow: none; }
 .ask-note { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .error.small { font-size: 13px; padding: 8px 10px; margin: 8px 0 0; }
 .rule-ask { margin: -4px 0 10px; padding: 0 2px; }
@@ -309,6 +355,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .quiz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; max-width: 720px; margin: 0 auto; }
 .quiz-intro { text-align: center; }
 .quiz-intro h2 { font-size: 20px; }
+.quiz-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; text-align: left; }
+.quiz-kind { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; }
+.quiz-kind h3 { margin: 0; font-size: 16px; }
+.quiz-kind p { margin: 0; font-size: 13.5px; color: var(--muted); flex: 1; }
+.quiz-kind .btn { align-self: flex-start; }
+@media (max-width: 640px) { .quiz-kinds { grid-template-columns: 1fr; } }
 .quiz-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-size: 13px; color: var(--muted); font-weight: 600; }
 .quiz-score { color: var(--accent-ink); }
 .quiz-board { max-width: 320px; margin: 0 auto 14px; }
@@ -326,6 +378,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .quiz-feedback.no { border-left-color: var(--bad); }
 .quiz-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
 .quiz-final { margin-top: 14px; text-align: center; font-size: 16px; }
+.quiz-again { display: flex; gap: 10px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
 
 /* footer */
 .foot { margin-top: auto; text-align: center; color: var(--muted); font-size: 12.5px; padding: 20px; border-top: 1px solid var(--line); background: var(--panel); }

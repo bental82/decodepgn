@@ -1,7 +1,16 @@
 // The contract between App and the presentational components: prop shapes plus
 // small display helpers. Components import their props from here.
 
-import type { Focus, GameMove, MoveResult, ParsedMove, RuleStatus, Soundness } from '../shared/types'
+import type {
+  BoardAnnotations,
+  Focus,
+  GameMove,
+  MoveResult,
+  ParsedMove,
+  QuizKind,
+  RuleStatus,
+  Soundness,
+} from '../shared/types'
 import type { SavedQuiz } from '../lib/store'
 
 export type Orientation = 'w' | 'b'
@@ -19,7 +28,16 @@ export interface BoardProps {
   orientation: Orientation
   lastMove?: { from: string; to: string }
   caption?: string
+  /** squares to tint + arrows to draw (AI graphics or deterministic client ones) */
+  annotations?: BoardAnnotations
 }
+
+/** What the sticky board is currently illustrating for the selected move. */
+export type GfxSelection =
+  | { kind: 'auto' } // default: the key rule's graphics, if it has any
+  | { kind: 'off' }
+  | { kind: 'rule'; id: number }
+  | { kind: 'alt' } // the suggested cleaner move, as an arrow
 
 export interface MoveAnalysisProps {
   move: ParsedMove
@@ -29,6 +47,13 @@ export interface MoveAnalysisProps {
   error?: string | null
   onReanalyze: () => void
   onOpenRule: (id: number) => void
+  /** board-graphics selection (owned by App, which renders the board) */
+  gfx: GfxSelection
+  onGfx: (sel: GfxSelection) => void
+  /** the rule whose graphics show by default, so its toggle renders as active */
+  autoGfxRuleId?: number
+  /** the alternative move parsed to a real arrow — enables its board toggle */
+  altArrow: boolean
 }
 
 export interface RulesReferenceProps {
@@ -46,9 +71,11 @@ export interface QuizProps {
   saved: SavedQuiz | null
   loading: boolean
   error: string | null
-  onStart: () => void
+  onStart: (kind: QuizKind) => void
   onChange: (quiz: SavedQuiz) => void
   onOpenRule: (id: number) => void
+  /** how many analysed positions the best-move quiz can draw on right now */
+  bestMoveReady: number
 }
 
 export interface AskContext {

@@ -1,6 +1,11 @@
 import { RULES_BY_ID } from '../shared/rules'
+import type { RuleHit } from '../shared/types'
 import type { MoveAnalysisProps } from './contract'
 import { soundnessMeta, statusMeta } from './contract'
+
+function hasGraphics(h: RuleHit): boolean {
+  return !!h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0
+}
 
 export default function MoveAnalysis({
   result,
@@ -8,6 +13,10 @@ export default function MoveAnalysis({
   error,
   onReanalyze,
   onOpenRule,
+  gfx,
+  onGfx,
+  autoGfxRuleId,
+  altArrow,
 }: MoveAnalysisProps) {
   if (error) {
     return (
@@ -35,6 +44,9 @@ export default function MoveAnalysis({
 
   const snd = result.soundness ? soundnessMeta(result.soundness) : null
   const eng = result.engine
+  const ruleShown = (id: number) =>
+    (gfx.kind === 'rule' && gfx.id === id) || (gfx.kind === 'auto' && autoGfxRuleId === id)
+  const altShown = gfx.kind === 'alt'
 
   return (
     <div className="analysis">
@@ -89,6 +101,7 @@ export default function MoveAnalysis({
             .sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
             .map((hit) => {
               const meta = statusMeta(hit.status)
+              const shown = ruleShown(hit.id)
               return (
                 <div className="finding" key={hit.id}>
                   <div className="finding-top">
@@ -104,6 +117,16 @@ export default function MoveAnalysis({
                         ★ key
                       </span>
                     ) : null}
+                    {hasGraphics(hit) ? (
+                      <button
+                        className={'gfx-btn' + (shown ? ' on' : '')}
+                        aria-pressed={shown}
+                        title={shown ? 'Hide these marks from the board' : 'Show this idea on the board'}
+                        onClick={() => onGfx(shown ? { kind: 'off' } : { kind: 'rule', id: hit.id })}
+                      >
+                        ◈ board
+                      </button>
+                    ) : null}
                   </div>
                   <p className="why">{hit.why}</p>
                 </div>
@@ -114,7 +137,19 @@ export default function MoveAnalysis({
 
       {result.alternative ? (
         <div className="alt">
-          <span className="alt-label">Cleaner here</span>
+          <div className="alt-head">
+            <span className="alt-label">Cleaner here</span>
+            {altArrow ? (
+              <button
+                className={'gfx-btn' + (altShown ? ' on' : '')}
+                aria-pressed={altShown}
+                title={altShown ? 'Hide the arrow' : 'Show this move as an arrow on the board'}
+                onClick={() => onGfx(altShown ? { kind: 'off' } : { kind: 'alt' })}
+              >
+                ◈ board
+              </button>
+            ) : null}
+          </div>
           <p>
             <strong>{result.alternative.move}</strong> — {result.alternative.why}
           </p>

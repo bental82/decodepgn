@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ask as fetchAsk } from '../lib/api'
 import type { AskExchange } from '../shared/types'
 import type { AskBoxProps } from './contract'
+import Board from './Board'
 
 // A small "ask a question" thread. Answers are grounded in the rule set (and
 // any context passed in — the current move/position or a specific rule), and
@@ -21,11 +22,14 @@ export default function AskBox({ context, apiKey, onNeedKey, placeholder, label 
       const resp = await fetchAsk({
         mode: 'ask',
         question,
-        history: thread,
+        // graphics stay client-side; the model only needs the words
+        history: thread.map(({ q, a }) => ({ q, a })),
         ...context,
         apiKey: apiKey.trim() || undefined,
       })
-      setThread((prev) => [...prev, { q: question, a: resp.answer }])
+      const exchange: AskExchange = { q: question, a: resp.answer }
+      if (resp.graphics && context.fen) exchange.graphics = resp.graphics
+      setThread((prev) => [...prev, exchange])
       setQ('')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not get an answer.'
@@ -53,6 +57,15 @@ export default function AskBox({ context, apiKey, onNeedKey, placeholder, label 
             <div className="ask-exchange" key={i}>
               <p className="ask-q">{x.q}</p>
               <p className="ask-a">{x.a}</p>
+              {x.graphics && context.fen ? (
+                <div className="ask-board">
+                  <Board
+                    fen={context.fen}
+                    orientation={context.focus === 'b' ? 'b' : 'w'}
+                    annotations={x.graphics}
+                  />
+                </div>
+              ) : null}
             </div>
           ))}
           <span className="ask-note">Heuristic coaching — not gospel.</span>
