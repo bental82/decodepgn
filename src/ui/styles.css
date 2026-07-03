@@ -268,6 +268,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .modal-head h2 { font-size: 18px; margin: 0; }
 .modal input { width: 100%; border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; font-size: 14px; font-family: ui-monospace, monospace; margin: 8px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.settings-update {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px;
+}
+.settings-update span { flex: 1; min-width: 200px; }
+.settings-update .btn { flex-shrink: 0; }
 
 /* soundness badge colours (reuse .badge sizing) */
 .snd-sound { background: var(--good-bg); color: var(--good); }

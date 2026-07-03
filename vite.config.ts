@@ -70,5 +70,10 @@ function devApi(): import('vite').Plugin {
 
 export default defineConfig({
   plugins: [react(), devApi()],
+  // Shown in Settings so users can tell which build their (home-screen) app
+  // is actually running; Vercel injects the commit sha at build time.
+  define: {
+    __BUILD_ID__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'dev'),
+  },
   build: { outDir: 'dist', sourcemap: false },
 })

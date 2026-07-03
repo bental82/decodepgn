@@ -1,8 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsProps } from './contract'
 
+/**
+ * Force-load the newest deployed version. Home-screen (PWA-style) installs —
+ * especially on iOS — keep serving a cached start page long after a deploy;
+ * this clears every app cache and reloads with a cache-busting URL. Saved
+ * games and the API key live in localStorage and are NOT touched.
+ */
+async function hardRefresh() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister()))
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch {
+    /* best-effort — the cache-busting reload below still helps */
+  }
+  const u = new URL(window.location.href)
+  u.searchParams.set('fresh', String(Date.now()))
+  window.location.replace(u.toString())
+}
+
 export default function Settings({ apiKey, hasServerKey, onSave, onClose }: SettingsProps) {
   const [value, setValue] = useState(apiKey)
+  const [refreshing, setRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -58,6 +83,22 @@ export default function Settings({ apiKey, hasServerKey, onSave, onClose }: Sett
           </button>
           <button className="btn primary" onClick={() => onSave(value)}>
             Save
+          </button>
+        </div>
+        <div className="settings-update">
+          <span className="muted small">
+            App version: <code>{__BUILD_ID__}</code>. Seeing something stale? Force-load the newest
+            version — your saved games and key are kept.
+          </span>
+          <button
+            className="btn"
+            disabled={refreshing}
+            onClick={() => {
+              setRefreshing(true)
+              void hardRefresh()
+            }}
+          >
+            {refreshing ? 'Updating…' : '⟳ Update app'}
           </button>
         </div>
       </div>
