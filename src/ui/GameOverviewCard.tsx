@@ -17,6 +17,10 @@ interface Props {
   apiKey: string
   onNeedKey: () => void
   onOpenRule: (id: number) => void
+  /** force re-analysis of the whole game (fresh overview + every move) */
+  onReanalyzeAll: () => void
+  /** move re-analysis progress, when one is running (null otherwise) */
+  progress: { done: number; total: number } | null
 }
 
 const OPEN_STORAGE = 'decodepgn.overviewOpen'
@@ -35,6 +39,8 @@ export default function GameOverviewCard({
   apiKey,
   onNeedKey,
   onOpenRule,
+  onReanalyzeAll,
+  progress,
 }: Props) {
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_STORAGE) !== '0')
   if (!overview && !loading && !error) return null
@@ -107,6 +113,16 @@ export default function GameOverviewCard({
           placeholder="e.g. where did I lose the thread?"
           onOpenRule={onOpenRule}
         />
+      </div>
+      <div className="overview-actions" hidden={!open}>
+        <button className="btn" onClick={onReanalyzeAll} disabled={!!progress || loading}>
+          {progress
+            ? `Re-analysing… ${progress.done}/${progress.total}`
+            : '⟳ Re-analyse the whole game'}
+        </button>
+        <span className="muted small">
+          Regenerates this overview and every move’s analysis (board graphics included).
+        </span>
       </div>
     </div>
   )

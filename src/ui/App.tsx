@@ -743,6 +743,11 @@ export default function App() {
                 apiKey={apiKey}
                 onNeedKey={() => setShowSettings(true)}
                 onOpenRule={openRule}
+                onReanalyzeAll={() => {
+                  void fetchOverview()
+                  void handleAnalyzeAll(true)
+                }}
+                progress={allProgress}
               />
               {analyzedFocus > 0 && !hasAnyGraphics ? (
                 <div className="regen-banner">
