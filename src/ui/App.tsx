@@ -286,13 +286,15 @@ export default function App() {
         r.soundness === 'dubious',
     )
     notIdeal.sort((a, b) => (b.r.engine?.cpLoss ?? 0) - (a.r.engine?.cpLoss ?? 0))
-    const picked = notIdeal.slice(0, 8)
-    if (picked.length < 6) {
-      const found = cands.filter(
-        (c) => !picked.includes(c) && c.r.engine && (c.r.engine.isBest || c.r.engine.cpLoss < 30),
-      )
-      picked.push(...found.slice(0, 6 - picked.length))
-    }
+    // Aim for 10 targets so the quiz always has a healthy length: the biggest
+    // mistakes first (they teach), then moves the player got RIGHT (they
+    // reinforce) — a couple of reinforcement slots are reserved when possible.
+    const MAX = 10
+    const found = cands.filter(
+      (c) => !notIdeal.includes(c) && c.r.engine && (c.r.engine.isBest || c.r.engine.cpLoss < 30),
+    )
+    const picked = notIdeal.slice(0, found.length ? MAX - Math.min(3, found.length) : MAX)
+    picked.push(...found.slice(0, MAX - picked.length))
     return picked
       .sort((a, b) => a.m.ply - b.m.ply)
       .map(({ m, r }) => ({
