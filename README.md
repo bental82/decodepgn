@@ -17,11 +17,20 @@ objectively best moves don’t get scolded for “breaking” a rule of thumb.
   a heuristic **soundness** tag (sound / speculative / dubious), a short decisive
   lesson, and the relevant rules clearly labelled **Followed / Mixed / Broke / In
   play** (with a legend). When a move breaks a principle it also suggests a
-  cleaner alternative. A progress strip shows which of your moves are analysed, and
-  an **Ask** box answers free-form questions about the current move.
-- **Quiz** — multiple-choice questions generated from this game and the 81 rules,
-  with a position on the board, instant right/wrong feedback, a one-line
-  explanation, and a running score.
+  cleaner alternative. The coach **draws on the board**: each rule can come with
+  tinted squares and arrows (green = good, red = danger, yellow = watch, blue =
+  plan) shown on the sticky board — toggle any rule's graphics with its
+  **◈ board** button, and show the suggested alternative as an arrow on the
+  position where it applied. A progress strip shows which of your moves are
+  analysed, and an **Ask** box answers free-form questions about the current
+  move — answers can point at the board too, on a mini board in the thread.
+- **Quiz** — two kinds. A **rules quiz**: multiple-choice questions generated
+  from this game and the 81 rules. And a **best-move quiz**: positions from
+  your own game where you're asked for the strongest move — built around the
+  moments your move wasn't ideal (per Stockfish and the analysis), with the
+  game move among the options, an explanation of why the better move wins,
+  and the correct/chosen moves drawn as arrows after you answer. Both give
+  instant feedback and a running score.
 - **By rule** — a **game-takeaways** panel (your most-broken and most-followed
   principles, plus a soundness tally) over a map of where each rule came up; every
   move chip jumps to that position on the board.

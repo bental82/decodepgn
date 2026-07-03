@@ -2,7 +2,7 @@
 // by the move sequence + studied side, so re-loading the same PGN (or resuming
 // after a reload) restores every analysed move instead of re-asking Claude.
 
-import type { Focus, GameOverview, MoveResult, ParsedMove, QuizQuestion } from '../shared/types'
+import type { Focus, GameOverview, MoveResult, ParsedMove, QuizKind, QuizQuestion } from '../shared/types'
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
@@ -13,6 +13,8 @@ export interface SavedQuiz {
   questions: QuizQuestion[]
   answers: (number | null)[]
   current: number
+  /** which quiz this is (older saves have none = 'rules') */
+  kind?: QuizKind
 }
 
 export interface SavedGame {

@@ -54,6 +54,28 @@ export interface AnalyzeRequest {
   apiKey?: string
 }
 
+// ---- Board graphics ----
+// The AI (and deterministic client code) can point at the board: tinted
+// squares and arrows in a small named palette the UI maps to theme colors.
+
+export type AnnoColor = 'green' | 'red' | 'yellow' | 'blue'
+
+export interface AnnoSquare {
+  square: string // e.g. "e4"
+  color: AnnoColor
+}
+
+export interface AnnoArrow {
+  from: string
+  to: string
+  color: AnnoColor
+}
+
+export interface BoardAnnotations {
+  squares?: AnnoSquare[]
+  arrows?: AnnoArrow[]
+}
+
 export type RuleStatus = 'follows' | 'partially' | 'violates' | 'relevant'
 
 /** Heuristic judgment of the move itself, independent of which rules apply. */
@@ -65,6 +87,8 @@ export interface RuleHit {
   why: string
   /** 1-5: how central this rule is to THIS move (5 = the key idea). Results are sorted by it. */
   relevance?: number
+  /** squares/arrows that show this rule's point on the board */
+  graphics?: BoardAnnotations
 }
 
 /** A cleaner alternative move, suggested when the played move breaks a principle. */
@@ -100,12 +124,29 @@ export interface QuizQuestion {
   explanation: string
   ruleId?: number // main rule the question is about (1..RULE_COUNT)
   ply?: number // game ply the question references, if any
+  /** best-move questions: the position to solve (side to move is quizzed) */
+  fen?: string
+}
+
+export type QuizKind = 'rules' | 'bestmove'
+
+/** A position for the best-move quiz: what was played, and what was better. */
+export interface BestMoveTarget {
+  ply: number
+  fenBefore: string
+  played: string // SAN actually played
+  best?: string // engine's best move (SAN), when an engine check ran
+  cpLoss?: number // centipawns the played move gave up vs best
+  alternative?: string // AI-suggested cleaner move (SAN)
 }
 
 export interface QuizRequest {
   mode: 'quiz'
+  kind?: QuizKind // default 'rules'
   focus: Focus
   game: GameMove[]
+  /** kind "bestmove": the positions to quiz, chosen client-side from the analysis */
+  targets?: BestMoveTarget[]
   count?: number
   apiKey?: string
 }
@@ -148,6 +189,8 @@ export interface OverviewResponse {
 export interface AskExchange {
   q: string
   a: string
+  /** kept client-side to re-render the answer's board; not sent to the model */
+  graphics?: BoardAnnotations
 }
 
 export interface AskRequest {
@@ -166,6 +209,8 @@ export interface AskRequest {
 
 export interface AskResponse {
   answer: string
+  /** squares/arrows illustrating the answer, when a position was in context */
+  graphics?: BoardAnnotations
 }
 
 export interface ApiError {
