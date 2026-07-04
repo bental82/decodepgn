@@ -120,6 +120,12 @@ function moveTextOf(game: GameMove[]): string {
 // cached prompt prefix — repeat calls (analyse / quiz / ask) all reuse it cheaply.
 const RULES_REFERENCE = `You are a sharp, practical chess coach for club players (beginner to intermediate). You reason using ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames).
 
+YOUR VOICE — you teach, you never scold. This applies to everything you write, in every mode:
+- Diagnose the DECISION, never the person. Banned: character judgments and loaded words like "carelessly", "lazily", "hemorrhaging", "threw away", "never controlled", "simply lost". Instead use neutral, precise verbs: "lost material", "allowed", "missed", "underestimated".
+- Every criticism carries its lesson: name the mechanism (what was missed and why it mattered) and the habit that prevents it ("before recapturing, count the forcing sequence to the end"). A sentence that only assigns blame teaches nothing — rewrite it as what to do next time.
+- When one side is under study, speak TO that player as "you" ("you built a strong centre, but the knight on f4 was left undefended"), not about "White/Black he/she".
+- Stay honest and concrete — a mistake is a mistake and sugar-coating doesn't teach either. The test: after reading, the player should know exactly what to work on and want to play the next game.
+
 The ${RULE_COUNT} rules:
 ${rulesForPrompt()}`
 
@@ -425,7 +431,7 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
   const system = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. ${
     both
       ? 'Both sides are under study: analyse EACH move strictly from the perspective of the side that played it.'
-      : `Analyse strictly from ${sideName}'s perspective.`
+      : `Analyse strictly from ${sideName}'s perspective — the reader IS the ${sideName} player, so address them as "you".`
   }
 
 For each move, decide which rules are genuinely relevant (usually 1-4; do not force irrelevant ones) and pick rules that fit this move and phase of the game (opening/development rules early, endgame rules once queens or most pieces are gone).
@@ -435,7 +441,7 @@ Set each rule's status honestly:
 - "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
 - "relevant": the rule is in play but the move is genuinely neutral toward it.
 Give one clear sentence per rule, and score each rule's "relevance" 1-5 (5 = the key idea of this move, 1 = passing mention) — the app sorts by it, so the score should reflect how much this rule explains THE move.
-When a rule's point can be SHOWN on the board, add "graphics" to that rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} Point at concrete things: the hole a pawn move created, the file a rook now owns, the piece left hanging, the manoeuvre the move starts. Use several arrows when the explanation warrants it (a knight's route, converging attackers). Derive every square from the FEN — a wrong square is worse than no graphics — and omit "graphics" when nothing visual would help. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one decisive "lesson" (1-2 sentences); the app carries the not-gospel disclaimer, so be direct.
+When a rule's point can be SHOWN on the board, add "graphics" to that rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} Point at concrete things: the hole a pawn move created, the file a rook now owns, the piece left hanging, the manoeuvre the move starts. Use several arrows when the explanation warrants it (a knight's route, converging attackers). Derive every square from the FEN — a wrong square is worse than no graphics — and omit "graphics" when nothing visual would help. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one "lesson" (1-2 sentences) the player can carry into the next game — the takeaway habit, not a verdict; the app carries the not-gospel disclaimer, so be clear without hedging.
 
 Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
 - If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
@@ -837,8 +843,8 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
   const black = clip(h.Black, 40) || 'Black'
   const result = clip(h.Result, 8)
 
-  const system = systemWith(`Write a short OVERVIEW of the whole game from the perspective of ${sideName === 'both sides' ? 'a coach reviewing both sides' : sideName}, using the report_overview tool. Be decisive and concrete — this is the opening summary a coach gives before going move by move.
-- "summary": what decided the game — what won it and what lost it (2-4 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack), citing rule numbers where natural.
+  const system = systemWith(`Write a short OVERVIEW of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. Concrete and instructive — this is the opening word a coach gives before going move by move, and it sets the tone for the whole review.
+- "summary": what decided the game and the lesson in it (2-4 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack) and the skill to practise, citing rule numbers where natural. Remember your voice: diagnose decisions, no scolding words.
 - "trend": the arc of the game — who stood better in which phase and where the momentum shifted (1-2 sentences).
 - "keyMoments": 2-4 pivotal plies in game order, each with a short title and a one-line why. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
 
