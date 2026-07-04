@@ -271,29 +271,48 @@ export default function App() {
   }, [moves, focus, headers, apiKey])
 
   // Positions the best-move quiz can draw on: analysed moves of the studied
-  // side that carry an engine check or an AI alternative. Moves that clearly
-  // weren't ideal come first (that's the point of the quiz); best moves the
-  // player FOUND fill remaining slots as reinforcement.
+  // side that carry an engine check or an AI alternative. Missed better moves
+  // come first (that's the point of the quiz); strong moves the player FOUND
+  // fill a few remaining slots as reinforcement.
   const bestMoveTargets = useMemo<BestMoveTarget[]>(() => {
     const cands = moves
       .filter((m) => isStudied(m.color, focus))
       .map((m) => ({ m, r: results[m.ply] }))
       .filter((x): x is { m: ParsedMove; r: MoveResult } => !!x.r && (!!x.r.engine || !!x.r.alternative))
-    const notIdeal = cands.filter(
-      ({ r }) =>
-        (r.engine && !r.engine.isBest && r.engine.cpLoss >= 50) ||
-        (!r.engine && !!r.alternative) ||
-        r.soundness === 'dubious',
+    // A position only quizzes something if there was a real choice: skip
+    // automatic recaptures and (near-)forced positions — they teach nothing.
+    const isObvious = (m: ParsedMove) => {
+      const prev = moves[m.ply - 1]
+      if (prev && prev.san.includes('x') && m.san.includes('x') && m.to === prev.to) return true
+      try {
+        return new Chess(m.fenBefore).moves().length <= 2
+      } catch {
+        return true
+      }
+    }
+    // "Find the better move": every position where one clearly existed — real
+    // mistakes AND smaller inaccuracies, plus the AI's cleaner alternatives.
+    const missed = cands.filter(
+      ({ m, r }) =>
+        m.moveNumber >= 3 &&
+        !isObvious(m) &&
+        ((r.engine && !r.engine.isBest && r.engine.cpLoss >= 30) ||
+          (!r.engine && !!r.alternative) ||
+          r.soundness === 'dubious'),
     )
-    notIdeal.sort((a, b) => (b.r.engine?.cpLoss ?? 0) - (a.r.engine?.cpLoss ?? 0))
-    // Aim for 10 targets so the quiz always has a healthy length: the biggest
-    // mistakes first (they teach), then moves the player got RIGHT (they
-    // reinforce) — a couple of reinforcement slots are reserved when possible.
+    missed.sort((a, b) => (b.r.engine?.cpLoss ?? 0) - (a.r.engine?.cpLoss ?? 0))
+    // Reinforcement: only once out of the opening book — "what's the best
+    // first move?" is trivia, not training.
     const MAX = 10
     const found = cands.filter(
-      (c) => !notIdeal.includes(c) && c.r.engine && (c.r.engine.isBest || c.r.engine.cpLoss < 30),
+      (c) =>
+        !missed.includes(c) &&
+        c.m.moveNumber >= 8 &&
+        !isObvious(c.m) &&
+        !!c.r.engine &&
+        (c.r.engine.isBest || c.r.engine.cpLoss < 30),
     )
-    const picked = notIdeal.slice(0, found.length ? MAX - Math.min(3, found.length) : MAX)
+    const picked = missed.slice(0, found.length ? MAX - Math.min(3, found.length) : MAX)
     picked.push(...found.slice(0, MAX - picked.length))
     return picked
       .sort((a, b) => a.m.ply - b.m.ply)
