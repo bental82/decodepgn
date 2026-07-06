@@ -22,7 +22,10 @@ export interface SavedGame {
   pgn: string
   focus: Focus
   headers: Record<string, string>
+  /** last write (bumps on every analysis save) */
   savedAt: number
+  /** when the game was FIRST added — set once, never bumped */
+  addedAt?: number
   results: Record<number, MoveResult>
   quiz?: SavedQuiz
   overview?: GameOverview
@@ -91,6 +94,9 @@ export function removeGame(key: string) {
 }
 
 export function saveGame(game: SavedGame) {
+  // addedAt is stable: keep the first save's value across every later write
+  const prev = loadGame(game.key)
+  game = { ...game, addedAt: prev?.addedAt ?? game.addedAt ?? Date.now() }
   const write = () => localStorage.setItem(GAME_PREFIX + game.key, JSON.stringify(game))
   try {
     write()
