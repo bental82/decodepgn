@@ -96,9 +96,10 @@ a { color: var(--accent-ink); }
 .history h2 { font-size: 15px; margin-bottom: 8px; }
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .history-list li { display: flex; align-items: stretch; gap: 6px; }
-.history-row { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }
+.history-row { flex: 1; min-width: 0; position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 44px 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }
+.history-row .cc-res { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
 .history-row:hover { border-color: var(--accent); }
-.history-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-title { flex: 1; min-width: 0; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-meta { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .history-del { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 13px; }
 .history-del:hover { color: var(--bad); border-color: var(--line-2); }
