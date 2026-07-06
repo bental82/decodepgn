@@ -1045,7 +1045,6 @@ export default function App() {
             error={parseError}
             hasServerKey={hasServerKey}
           />
-          <IntroCard />
           <GameImport onPick={handleSubmit} />
           {historyItems.length > 0 ? (
             <div className="history card">
@@ -1410,26 +1409,3 @@ export default function App() {
   )
 }
 
-function IntroCard() {
-  return (
-    <div className="intro card">
-      <h2>What this does</h2>
-      <p>
-        Paste a game and pick a side. For each of your moves, Claude points out which of{' '}
-        <strong>{RULE_COUNT} classic strategic “rules of thumb”</strong> are relevant right then —
-        development, trades, pawn breaks, tension, king safety, sacrifices, endgames and more — and
-        whether the move follows, partly follows, or goes against each one, with a one-line reason and a
-        short lesson.
-      </p>
-      <ul>
-        <li>Click any of your moves to see the rules that apply there.</li>
-        <li>“By rule” shows where in the game each rule came up.</li>
-        <li>“The {RULE_COUNT} rules” is the full reference, always readable.</li>
-      </ul>
-      <p className="muted small">
-        The analysis runs through Claude. On a deployment with a server key it just works; otherwise add
-        your own Anthropic key in Settings (it stays in your browser).
-      </p>
-    </div>
-  )
-}
