@@ -25,7 +25,7 @@ async function hardRefresh() {
   window.location.replace(u.toString())
 }
 
-export default function Settings({ apiKey, hasServerKey, onSave, onClose }: SettingsProps) {
+export default function Settings({ apiKey, hasServerKey, serverBuild, onSave, onClose }: SettingsProps) {
   const [value, setValue] = useState(apiKey)
   const [refreshing, setRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -94,8 +94,15 @@ export default function Settings({ apiKey, hasServerKey, onSave, onClose }: Sett
         </div>
         <div className="settings-update">
           <span className="muted small">
-            App version: <code>{__BUILD_ID__}</code>. Seeing something stale? Force-load the newest
-            version — your saved games and key are kept.
+            App version: <code>{__BUILD_ID__}</code>
+            {serverBuild ? (
+              <>
+                {' '}
+                · server: <code>{serverBuild}</code>
+              </>
+            ) : null}
+            . Seeing something stale? Force-load the newest version — your saved games and key are
+            kept.
           </span>
           <button
             className="btn"

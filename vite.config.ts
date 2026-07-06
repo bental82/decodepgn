@@ -19,6 +19,7 @@ function devApi(): import('vite').Plugin {
           res.end(
             JSON.stringify({
               ok: true,
+              build: 'dev',
               hasServerKey: !!process.env.ANTHROPIC_API_KEY,
               model: mod.MODEL,
               runtime: process.version,
