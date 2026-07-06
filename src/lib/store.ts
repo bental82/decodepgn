@@ -2,7 +2,7 @@
 // by the move sequence + studied side, so re-loading the same PGN (or resuming
 // after a reload) restores every analysed move instead of re-asking Claude.
 
-import type { Focus, GameOverview, MoveResult, ParsedMove, QuizKind, QuizQuestion } from '../shared/types'
+import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizKind, QuizQuestion } from '../shared/types'
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
@@ -28,6 +28,8 @@ export interface SavedGame {
   overview?: GameOverview
   /** ply -> centipawns after that move, from White's perspective (eval bar) */
   evals?: Record<number, number>
+  /** which side is the user, when they flagged it */
+  me?: Color
 }
 
 function djb2(s: string): string {

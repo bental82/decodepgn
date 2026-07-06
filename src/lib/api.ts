@@ -5,6 +5,8 @@ import type {
   AnalyzeResponse,
   AskRequest,
   AskResponse,
+  MetaRequest,
+  MetaResponse,
   OverviewRequest,
   OverviewResponse,
   QuizRequest,
@@ -59,4 +61,8 @@ export function ask(req: AskRequest): Promise<AskResponse> {
 
 export function overview(req: OverviewRequest): Promise<OverviewResponse> {
   return postAnalyze<OverviewResponse>(req, 45_000)
+}
+
+export function meta(req: MetaRequest): Promise<MetaResponse> {
+  return postAnalyze<MetaResponse>(req)
 }

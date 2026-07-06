@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
-import { analyze, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
+import { analyze, meta as fetchMetaApi, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
 import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
 import { cloudDelete, cloudGet, cloudList, cloudSave, type CloudGameMeta } from '../lib/cloud'
 import {
@@ -14,10 +14,12 @@ import {
   type SavedQuiz,
 } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
+import { summarizeGame } from '../shared/meta'
 import { isStudied } from '../shared/types'
 import type {
   BestMoveTarget,
   BoardAnnotations,
+  Color,
   EngineEval,
   Focus,
   GameOverview,
@@ -32,8 +34,10 @@ import Board from './Board'
 import GameImport from './GameImport'
 import GameOverviewCard from './GameOverviewCard'
 import GameSummary from './GameSummary'
+import MetaCard, { type SavedMetaReport } from './MetaCard'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
+import PlayersModal from './PlayersModal'
 import PgnInput from './PgnInput'
 import Quiz from './Quiz'
 import RelevanceMap from './RelevanceMap'
@@ -42,6 +46,7 @@ import RulesReference from './RulesReference'
 import Settings from './Settings'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
+const META_KEY = 'decodepgn.meta.v1'
 type Tab = 'move' | 'quiz' | 'map' | 'rules'
 
 export default function App() {
@@ -60,6 +65,20 @@ export default function App() {
   const [ruleModalId, setRuleModalId] = useState<number | null>(null)
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(KEY_STORAGE) || '')
   const [showSettings, setShowSettings] = useState(false)
+  // Player-names / "which one is me" editor.
+  const [showPlayers, setShowPlayers] = useState(false)
+  // Which side the user flagged as themselves (persisted per game).
+  const [mySide, setMySide] = useState<Color | undefined>(undefined)
+  // Cross-game meta-analysis (persisted locally so the landing shows it).
+  const [metaReport, setMetaReport] = useState<SavedMetaReport | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(META_KEY) || 'null')
+    } catch {
+      return null
+    }
+  })
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaError, setMetaError] = useState<string | null>(null)
   const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
@@ -214,7 +233,8 @@ export default function App() {
       const key = gameKey(g.moves, f)
       storeRef.current = { key, pgn }
       const saved = loadGame(key)
-      setHeaders(g.headers)
+      // saved headers win: they carry the user's player-name edits
+      setHeaders(saved?.headers ?? g.headers)
       setMoves(g.moves)
       setFocus(f)
       setResults(saved?.results ?? {})
@@ -223,6 +243,7 @@ export default function App() {
       setQuizError(null)
       setGameOverview(saved?.overview ?? null)
       setEvals(saved?.evals ?? {})
+      setMySide(saved?.me)
       setOverviewLoading(false)
       setOverviewError(null)
       setJumpBack(null)
@@ -259,10 +280,11 @@ export default function App() {
       quiz: quizSaved ?? undefined,
       overview: gameOverview ?? undefined,
       evals: Object.keys(evals).length ? evals : undefined,
+      me: mySide,
     }
     saveGame(game)
     cloudSave(game)
-  }, [phase, results, focus, headers, quizSaved, gameOverview, evals])
+  }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide])
 
   const fetchOverview = useCallback(async () => {
     if (!moves.length) return
@@ -497,6 +519,34 @@ export default function App() {
     setJumpBack(null)
     setGfx({ kind: 'auto' })
     setHistory(listGames())
+  }
+
+  // Cross-game meta-analysis: digest every locally analysed game into compact
+  // summaries; the server merges the cloud archive on top and asks Claude for
+  // the patterns. The report persists locally until regenerated.
+  const generateMeta = async () => {
+    if (metaLoading) return
+    setMetaLoading(true)
+    setMetaError(null)
+    try {
+      const summaries = listGames()
+        .filter((g) => Object.keys(g.results).length > 0)
+        .map(summarizeGame)
+      const resp = await fetchMetaApi({ mode: 'meta', summaries, apiKey: apiKey.trim() || undefined })
+      const rep: SavedMetaReport = { ...resp.report, generatedAt: Date.now(), gamesCount: resp.gamesUsed }
+      try {
+        localStorage.setItem(META_KEY, JSON.stringify(rep))
+      } catch {
+        /* best-effort */
+      }
+      setMetaReport(rep)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not build the meta-analysis.'
+      setMetaError(msg)
+      if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
+    } finally {
+      setMetaLoading(false)
+    }
   }
 
   // Opening a rule shows a popup (with an Ask thread) so the user never loses
@@ -736,8 +786,24 @@ export default function App() {
         {phase === 'game' && (
           <div className="topbar-right">
             <div className="game-meta">
-              <strong>{headers.White ?? 'White'}</strong> vs <strong>{headers.Black ?? 'Black'}</strong>
+              <strong>
+                {headers.White ?? 'White'}
+                {mySide === 'w' ? ' (you)' : ''}
+              </strong>{' '}
+              vs{' '}
+              <strong>
+                {headers.Black ?? 'Black'}
+                {mySide === 'b' ? ' (you)' : ''}
+              </strong>
               <span className="studying"> · studying {colorName(focus)}</span>
+              <button
+                className="edit-names"
+                onClick={() => setShowPlayers(true)}
+                title="Edit player names / mark which one is you"
+                aria-label="Edit player names"
+              >
+                ✎
+              </button>
             </div>
             <button
               className="btn"
@@ -769,6 +835,22 @@ export default function App() {
 
       {phase === 'input' ? (
         <div className="landing">
+          <PgnInput
+            onSubmit={handleSubmit}
+            onOpenSettings={() => setShowSettings(true)}
+            error={parseError}
+            hasServerKey={hasServerKey}
+          />
+          <IntroCard />
+          <GameImport onPick={handleSubmit} />
+          <MetaCard
+            report={metaReport}
+            loading={metaLoading}
+            error={metaError}
+            available={historyItems.filter((g) => g.analysed > 0).length}
+            onGenerate={() => void generateMeta()}
+            onOpenRule={openRule}
+          />
           {historyItems.length > 0 ? (
             <div className="history card">
               <h2>Your analysed games</h2>
@@ -802,14 +884,6 @@ export default function App() {
               </ul>
             </div>
           ) : null}
-          <PgnInput
-            onSubmit={handleSubmit}
-            onOpenSettings={() => setShowSettings(true)}
-            error={parseError}
-            hasServerKey={hasServerKey}
-          />
-          <IntroCard />
-          <GameImport onPick={handleSubmit} />
         </div>
       ) : (
         <div className="workspace">
@@ -1069,6 +1143,20 @@ export default function App() {
           }}
           onOpenRule={openRule}
           onClose={() => setRuleModalId(null)}
+        />
+      )}
+
+      {showPlayers && phase === 'game' && (
+        <PlayersModal
+          white={headers.White ?? ''}
+          black={headers.Black ?? ''}
+          me={mySide ?? (focus !== 'both' ? focus : undefined)}
+          onSave={(w, b, me) => {
+            setHeaders((h) => ({ ...h, White: w, Black: b }))
+            setMySide(me)
+            setShowPlayers(false)
+          }}
+          onClose={() => setShowPlayers(false)}
         />
       )}
 

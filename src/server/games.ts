@@ -140,6 +140,13 @@ export async function putCloudGame(game: unknown): Promise<void> {
   })
 }
 
+/** Full saved-game payloads for the whole archive (for the meta-analysis). */
+export async function listCloudGameData(limit = 60): Promise<unknown[]> {
+  const resp = await sb(`games?select=data&order=saved_at.desc&limit=${limit}`)
+  const rows = (await resp.json()) as Array<{ data?: unknown }>
+  return Array.isArray(rows) ? rows.map((r) => r?.data).filter(Boolean) : []
+}
+
 export async function deleteCloudGame(key: string): Promise<void> {
   const k = typeof key === 'string' ? key.trim() : ''
   if (!k) throw new GamesError('Missing game key.')

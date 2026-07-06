@@ -220,6 +220,54 @@ export interface AskRequest {
   apiKey?: string
 }
 
+// ---- Meta analysis (patterns across ALL analysed games) ----
+
+/** Compact, pre-computed digest of one analysed game (built client- or server-side). */
+export interface MetaGameSummary {
+  key: string
+  white: string
+  black: string
+  /** which side the player flagged as themselves (falls back to the studied side) */
+  me?: Color
+  focus: Focus
+  result?: string // headers.Result, e.g. "1-0"
+  date?: string // headers.Date
+  opening: string // the first moves in SAN, straight from the PGN
+  analysed: number
+  ruleBroken: Array<{ id: number; n: number }> // most-broken rules (top 5)
+  ruleFollowed: Array<{ id: number; n: number }> // most-followed rules (top 5)
+  soundness: { sound: number; speculative: number; dubious: number }
+  engine?: { avgCpLoss: number; worst: number; blunders: number; checked: number }
+  lessons: string[] // lessons from the costliest moves (up to 3)
+}
+
+export interface MetaRequest {
+  mode: 'meta'
+  /** summaries of the games this browser has locally; the server merges the cloud archive */
+  summaries: MetaGameSummary[]
+  apiKey?: string
+}
+
+export interface MetaInsight {
+  title: string
+  detail: string
+  ruleIds?: number[]
+}
+
+export interface MetaReport {
+  profile: string
+  openings: string
+  recurringMistakes: MetaInsight[]
+  strengths: MetaInsight[]
+  priorities: MetaInsight[]
+}
+
+export interface MetaResponse {
+  report: MetaReport
+  /** how many games the report was built from (client + cloud archive) */
+  gamesUsed: number
+}
+
 export interface AskResponse {
   answer: string
   /** squares/arrows illustrating the answer, when a position was in context */
