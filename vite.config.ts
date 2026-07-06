@@ -53,7 +53,9 @@ function devApi(): import('vite').Plugin {
                 ? await mod.runAsk(body)
                 : body?.mode === 'overview'
                   ? await mod.runOverview(body)
-                  : await mod.runAnalyze(body)
+                  : body?.mode === 'meta'
+                    ? await mod.runMeta(body)
+                    : await mod.runAnalyze(body)
           res.setHeader('content-type', 'application/json')
           res.end(JSON.stringify(result))
         } catch (e: any) {

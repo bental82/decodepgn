@@ -481,3 +481,26 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .quiz-prompt { font-size: 16px; }
   .quiz-board { max-width: 300px; }
 }
+
+/* player-names editor (topbar ✎ + modal fields) */
+.edit-names { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 13px; }
+.edit-names:hover { color: var(--accent); }
+.player-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.player-field span { font-size: 12px; color: var(--muted); }
+.player-field input { width: 100%; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; font-size: 14px; }
+.player-me { margin: 6px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.player-me-label { font-size: 12px; color: var(--muted); }
+.player-me-opts { display: flex; gap: 16px; font-size: 14px; }
+.player-me-opts label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* cross-game meta-analysis card (landing) */
+.meta-card { grid-column: 1 / -1; }
+.meta-card h3 { font-size: 14px; margin: 14px 0 6px; color: var(--accent-ink); }
+.meta-profile { font-size: 14.5px; }
+.meta-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.meta-rules { margin-left: 8px; display: inline-flex; gap: 8px; }
+.meta-report p { margin: 4px 0; font-size: 14px; }
+
+/* the history can grow forever — cap it and scroll inside the card, so it
+   never pushes the PGN input around */
+.history-list { max-height: 300px; overflow-y: auto; }

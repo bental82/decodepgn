@@ -9,6 +9,8 @@
 import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
 import { stripToolLeak } from '../shared/types.js'
+import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
+import { cloudConfigured, listCloudGameData } from './games.js'
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
@@ -19,8 +21,13 @@ import type {
   AskResponse,
   BestMoveTarget,
   BoardAnnotations,
+  Color,
   EngineEval,
   GameMove,
+  MetaGameSummary,
+  MetaInsight,
+  MetaRequest,
+  MetaResponse,
   OverviewRequest,
   OverviewResponse,
   MoveAlternative,
@@ -960,4 +967,211 @@ When the context includes a position (FEN) and showing beats telling, also fill 
     if (gfx) out.graphics = gfx
   }
   return out
+}
+
+// ---- Meta analysis (patterns across ALL analysed games) ----
+
+const META_INSIGHT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string', description: 'A short, concrete label (3-8 words).' },
+    detail: {
+      type: 'string',
+      description:
+        '2-4 sentences: the pattern, the evidence (how many games / which openings), and — for mistakes and priorities — the habit that fixes it. Cite rule numbers like "rule 61".',
+    },
+    ruleIds: {
+      type: 'array',
+      items: { type: 'integer' },
+      description: `The rules of thumb involved (1-${RULE_COUNT}).`,
+    },
+  },
+  required: ['title', 'detail'],
+}
+
+const META_TOOL = {
+  name: 'report_meta',
+  description: "Report the cross-game meta-analysis of the player's habits.",
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      profile: {
+        type: 'string',
+        description:
+          "3-5 sentences: the player's style as the data shows it — attacking or positional, development habits, risk appetite, where in the game they are strongest and weakest, accuracy trend.",
+      },
+      openings: {
+        type: 'string',
+        description:
+          '2-4 sentences: what they actually play as White and as Black (name the openings from the move sequences), which lines score well or badly for them, and one concrete repertoire suggestion.',
+      },
+      recurringMistakes: {
+        type: 'array',
+        description: '3-5 patterns that repeat ACROSS games — not one-offs.',
+        items: META_INSIGHT_SCHEMA,
+      },
+      strengths: {
+        type: 'array',
+        description: '2-4 things they consistently do well, worth keeping on purpose.',
+        items: META_INSIGHT_SCHEMA,
+      },
+      priorities: {
+        type: 'array',
+        description:
+          'EXACTLY 3 training priorities, most impactful first — each a concrete habit or drill tied to the recurring mistakes.',
+        items: META_INSIGHT_SCHEMA,
+      },
+    },
+    required: ['profile', 'openings', 'recurringMistakes', 'strengths', 'priorities'],
+  },
+}
+
+const sideName = (c: Color) => (c === 'w' ? 'White' : 'Black')
+
+function sanitizeSummaries(raw: unknown): MetaGameSummary[] {
+  if (!Array.isArray(raw)) return []
+  const out: MetaGameSummary[] = []
+  for (const s of raw as MetaGameSummary[]) {
+    if (!s || typeof s.key !== 'string' || typeof s.opening !== 'string') continue
+    const pair = (arr: unknown) =>
+      (Array.isArray(arr) ? arr : [])
+        .filter((x) => Number.isInteger(x?.id) && x.id >= 1 && x.id <= RULE_COUNT)
+        .slice(0, 5)
+        .map((x) => ({ id: x.id as number, n: Math.max(1, intOr(x.n, 1)) }))
+    const snd = s.soundness ?? { sound: 0, speculative: 0, dubious: 0 }
+    const sum: MetaGameSummary = {
+      key: clip(s.key, 80),
+      white: clip(s.white, 40) || 'White',
+      black: clip(s.black, 40) || 'Black',
+      focus: s.focus === 'b' || s.focus === 'both' ? s.focus : 'w',
+      opening: clip(s.opening, 140),
+      analysed: Math.max(0, intOr(s.analysed, 0)),
+      ruleBroken: pair(s.ruleBroken),
+      ruleFollowed: pair(s.ruleFollowed),
+      soundness: {
+        sound: Math.max(0, intOr(snd.sound, 0)),
+        speculative: Math.max(0, intOr(snd.speculative, 0)),
+        dubious: Math.max(0, intOr(snd.dubious, 0)),
+      },
+      lessons: (Array.isArray(s.lessons) ? s.lessons : [])
+        .filter((l) => typeof l === 'string')
+        .slice(0, 3)
+        .map((l) => cleanClip(l, 220)),
+    }
+    if (s.me === 'w' || s.me === 'b') sum.me = s.me
+    if (typeof s.result === 'string') sum.result = clip(s.result, 8)
+    if (typeof s.date === 'string') sum.date = clip(s.date, 12)
+    const e = s.engine
+    if (e && Number.isFinite(e.avgCpLoss)) {
+      sum.engine = {
+        avgCpLoss: Math.max(0, intOr(e.avgCpLoss, 0)),
+        worst: Math.max(0, intOr(e.worst, 0)),
+        blunders: Math.max(0, intOr(e.blunders, 0)),
+        checked: Math.max(0, intOr(e.checked, 0)),
+      }
+    }
+    out.push(sum)
+    if (out.length >= 60) break
+  }
+  return out
+}
+
+function summaryLine(s: MetaGameSummary, i: number): string {
+  const who = s.me ? `you were ${sideName(s.me)}` : `studied ${s.focus === 'both' ? 'both sides' : sideName(s.focus as Color)}`
+  const rules = (arr: Array<{ id: number; n: number }>) =>
+    arr.map((r) => `#${r.id} x${r.n}`).join(', ') || 'none'
+  let line = `Game ${i + 1}: ${s.white} vs ${s.black} (${who}${s.result ? `, result ${s.result}` : ''}${s.date ? `, ${s.date}` : ''})
+  Opening: ${s.opening}
+  Analysed ${s.analysed} of your moves. Soundness: ${s.soundness.sound} sound / ${s.soundness.speculative} speculative / ${s.soundness.dubious} dubious.
+  Most-broken rules: ${rules(s.ruleBroken)}. Most-followed: ${rules(s.ruleFollowed)}.`
+  if (s.engine) {
+    line += `\n  Stockfish: average loss ${(s.engine.avgCpLoss / 100).toFixed(2)} pawns/move over ${s.engine.checked} checked moves, worst single loss ${(s.engine.worst / 100).toFixed(1)}, blunders (>=1.5): ${s.engine.blunders}.`
+  }
+  if (s.lessons.length) {
+    line += `\n  Lessons from the costliest moves: ${s.lessons.map((l) => `"${l}"`).join(' | ')}`
+  }
+  return line
+}
+
+export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
+  const apiKey = resolveKey(input)
+  const summaries = sanitizeSummaries(input.summaries)
+  // Merge the cloud archive: games analysed on other devices, or evicted from
+  // this browser's storage, still inform the patterns. Best-effort — the meta
+  // still runs from the client's games if the database is unreachable.
+  try {
+    if (cloudConfigured()) {
+      const seen = new Set(summaries.map((s) => s.key))
+      for (const data of await listCloudGameData()) {
+        const g = data as SummarizableGame
+        if (!g || typeof g.key !== 'string' || seen.has(g.key)) continue
+        if (!g.results || typeof g.results !== 'object') continue
+        seen.add(g.key)
+        summaries.push(...sanitizeSummaries([summarizeGame(g)]))
+        if (summaries.length >= 60) break
+      }
+    }
+  } catch {
+    /* cloud unavailable — proceed with what the client sent */
+  }
+  const withAnalysis = summaries.filter((s) => s.analysed > 0)
+  if (withAnalysis.length === 0) {
+    throw new AnalyzeError('No analysed games to review yet — analyse a game or two first.')
+  }
+
+  const system = systemWith(`You are reviewing this player's WHOLE recent history — ${withAnalysis.length} analysed game(s) — to surface the patterns no single game can show. Use the report_meta tool. Address the player as "you" throughout.
+
+Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context.
+
+What to produce:
+- "profile": their playing style as the DATA shows it — attacking or positional, fast or slow development, material-grabbing or safety-first, where in the game accuracy drops (opening, middlegame, conversions), and the overall trend across games.
+- "openings": what they actually play as White and as Black — NAME the openings from the move sequences (e.g. "Italian Game", "Caro-Kann") — which of their lines score well or badly, and one concrete repertoire suggestion.
+- "recurringMistakes": 3-5 patterns that appear in SEVERAL games, not one-offs. Each names the mechanism, cites the rules involved by number (e.g. "rule 61"), and states the evidence ("in 4 of 6 games, always in the late middlegame"). Diagnose decisions, never character.
+- "strengths": 2-4 things they consistently do well — rules repeatedly followed, phases with low centipawn loss — so they keep doing them on purpose.
+- "priorities": exactly 3 training priorities, most impactful first. Each is a concrete habit or drill ("before every recapture, count the forcing sequence to the end"), tied to the recurring mistakes, with rule numbers.
+
+Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`)
+
+  const user = `The player's analysed games:
+
+${withAnalysis.map(summaryLine).join('\n\n')}
+
+Write the meta-analysis.`
+
+  const data = (await callClaude(apiKey, system, user, {
+    maxTokens: 3000,
+    tool: META_TOOL,
+    toolName: 'report_meta',
+  })) as {
+    profile?: unknown
+    openings?: unknown
+    recurringMistakes?: unknown
+    strengths?: unknown
+    priorities?: unknown
+  }
+
+  const insights = (raw: unknown, max: number): MetaInsight[] =>
+    (Array.isArray(raw) ? raw : [])
+      .filter((x) => x && typeof x.title === 'string' && typeof x.detail === 'string')
+      .slice(0, max)
+      .map((x) => {
+        const out: MetaInsight = { title: cleanClip(x.title, 80), detail: cleanClip(x.detail, 600) }
+        const ids = (Array.isArray(x.ruleIds) ? x.ruleIds : []).filter(
+          (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= RULE_COUNT,
+        )
+        if (ids.length) out.ruleIds = ids.slice(0, 6)
+        return out
+      })
+
+  const report = {
+    profile: cleanClip(data.profile, 1200),
+    openings: cleanClip(data.openings, 900),
+    recurringMistakes: insights(data.recurringMistakes, 5),
+    strengths: insights(data.strengths, 4),
+    priorities: insights(data.priorities, 3),
+  }
+  if (!report.profile) throw new AnalyzeError('Claude did not return a meta-analysis.', 502)
+  return { report, gamesUsed: withAnalysis.length }
 }
