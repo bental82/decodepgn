@@ -2,7 +2,7 @@
 // on. Shared: the browser summarizes its local games, the server summarizes
 // the cloud archive — both must produce identical shapes.
 
-import { gameAccuracy } from './accuracy'
+import { gameAccuracy } from './accuracy.js'
 import type { Color, EngineEval, Focus, MetaGameSummary, MoveResult } from './types'
 
 /** The minimal saved-game shape needed (SavedGame satisfies it structurally). */
