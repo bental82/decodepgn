@@ -2,7 +2,8 @@
 // on. Shared: the browser summarizes its local games, the server summarizes
 // the cloud archive — both must produce identical shapes.
 
-import type { Color, Focus, MetaGameSummary, MoveResult } from './types'
+import { gameAccuracy } from './accuracy'
+import type { Color, EngineEval, Focus, MetaGameSummary, MoveResult } from './types'
 
 /** The minimal saved-game shape needed (SavedGame satisfies it structurally). */
 export interface SummarizableGame {
@@ -12,6 +13,7 @@ export interface SummarizableGame {
   headers: Record<string, string>
   results: Record<number, MoveResult>
   me?: Color
+  addedAt?: number
 }
 
 const top5 = (m: Map<number, number>) =>
@@ -37,6 +39,10 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
   let worst = 0
   let blunders = 0
   const lessons: Array<{ cp: number; text: string }> = []
+  // Accuracy is personal: when a game studied both sides, only the flagged
+  // player's own moves count towards it.
+  const meSide = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
+  const ownEvals: EngineEval[] = []
 
   for (const r of Object.values(g.results ?? {})) {
     for (const h of r.rules ?? []) {
@@ -49,6 +55,7 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
       checked++
       worst = Math.max(worst, r.engine.cpLoss)
       if (r.engine.cpLoss >= 150) blunders++
+      if (!meSide || (r.ply % 2 === 0 ? 'w' : 'b') === meSide) ownEvals.push(r.engine)
     }
     if (r.lesson) lessons.push({ cp: r.engine?.cpLoss ?? 0, text: r.lesson })
   }
@@ -68,10 +75,10 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
       .slice(0, 3)
       .map((l) => l.text),
   }
-  const me = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
-  if (me) out.me = me
+  if (meSide) out.me = meSide
   if (g.headers?.Result) out.result = g.headers.Result
   if (g.headers?.Date) out.date = g.headers.Date
+  if (Number.isFinite(g.addedAt)) out.addedAt = g.addedAt
   if (checked > 0) {
     out.engine = {
       avgCpLoss: Math.round(cpSum / checked),
@@ -79,6 +86,8 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
       blunders,
       checked,
     }
+    const acc = gameAccuracy(ownEvals)
+    if (acc != null) out.engine.accuracy = acc
   }
   return out
 }

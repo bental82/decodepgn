@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import AskBox from './AskBox'
 import type { MetaGameSummary, MetaInsight, MetaReport } from '../shared/types'
@@ -80,6 +80,22 @@ export default function MetaCard({
       localStorage.setItem(OPEN_KEY, v ? '0' : '1')
       return !v
     })
+  // Overall chess.com-style accuracy across the analysed games, weighted by
+  // how many moves the engine actually checked in each.
+  const acc = useMemo(() => {
+    let weight = 0
+    let sum = 0
+    let games = 0
+    for (const s of summaries) {
+      const a = s.engine?.accuracy
+      if (a == null) continue
+      const w = Math.max(1, s.engine?.checked ?? 1)
+      weight += w
+      sum += a * w
+      games++
+    }
+    return games ? { pct: Math.round((sum / weight) * 10) / 10, games } : null
+  }, [summaries])
   return (
     <div className="meta-card card">
       <button className="collapse-head" onClick={toggle} aria-expanded={open}>
@@ -93,6 +109,17 @@ export default function MetaCard({
         </div>
       ) : (
         <>
+          {acc ? (
+            <p
+              className="meta-acc"
+              title="Engine accuracy over your analysed games, on the familiar chess.com-style 0–100% scale, weighted by how many moves were checked in each game."
+            >
+              Accuracy across games: <strong>{acc.pct}%</strong>{' '}
+              <span className="muted small">
+                (engine-checked, {acc.games} game{acc.games === 1 ? '' : 's'})
+              </span>
+            </p>
+          ) : null}
           {report ? (
             <div className="meta-report">
               <p className="meta-profile">
@@ -102,6 +129,12 @@ export default function MetaCard({
               <p>
                 <RuleText text={report.openings} onOpenRule={onOpenRule} />
               </p>
+              {report.trends?.length ? (
+                <>
+                  <h3>Trends — your recent games</h3>
+                  <InsightList items={report.trends} onOpenRule={onOpenRule} />
+                </>
+              ) : null}
               {report.recurringMistakes.length > 0 && (
                 <>
                   <h3>Recurring mistakes</h3>

@@ -286,6 +286,11 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .snd-spec { background: var(--warn-bg); color: var(--warn); }
 .snd-dubious { background: var(--bad-bg); color: var(--bad); }
 
+/* chess.com-style accuracy % (game takeaways + meta card) */
+.acc-badge { background: var(--accent-weak); color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.meta-acc { margin: 0 0 4px; font-size: 14px; }
+.meta-acc strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+
 /* verdict row on the move card: soundness + engine check side by side */
 .verdicts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .verdicts .soundness { margin-bottom: 0; }
