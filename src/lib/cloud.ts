@@ -45,7 +45,7 @@ export async function cloudGet(key: string): Promise<SavedGame | null> {
 // game's upload is debounced: one PUT shortly after the last change.
 const pending = new Map<string, ReturnType<typeof setTimeout>>()
 
-export function cloudSave(game: SavedGame): void {
+export function cloudSave(game: SavedGame, onSynced?: (key: string) => void): void {
   const t = pending.get(game.key)
   if (t) clearTimeout(t)
   pending.set(
@@ -56,9 +56,13 @@ export function cloudSave(game: SavedGame): void {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(game),
-      }).catch(() => {
-        /* best-effort — the local copy is the source of truth for this session */
       })
+        .then((r) => {
+          if (r.ok) onSynced?.(game.key) // confirmed in the cloud
+        })
+        .catch(() => {
+          /* best-effort — the local copy is the source of truth for this session */
+        })
     }, 1500),
   )
 }
