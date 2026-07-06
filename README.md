@@ -119,6 +119,51 @@ the browser bundle.
 
 Get a key at [console.anthropic.com](https://console.anthropic.com/settings/keys).
 
+## Permanent storage (Supabase, optional)
+
+By default analysed games live in the browser's `localStorage` (per device,
+LRU-capped). Add a free Supabase project and they persist **permanently and
+across devices** — no login, no magic link: the app is single-user by design.
+The browser never talks to Supabase; the `/api/games` function holds the only
+credentials (service-role key), and the table has row-level security enabled
+with **no policies**, so nothing can reach it except your deployment.
+
+1. Create a project at [supabase.com](https://supabase.com) (free tier is fine).
+2. In the project's **SQL Editor**, run:
+
+   ```sql
+   create table public.games (
+     key        text primary key,                -- move-sequence hash + studied side (the app's game key)
+     pgn        text not null,
+     focus      text not null default 'w' check (focus in ('w','b','both')),
+     headers    jsonb not null default '{}'::jsonb,
+     data       jsonb not null,                  -- the whole saved game: results, quiz, overview, evals
+     analysed   int not null default 0,          -- how many moves are analysed (for the list)
+     has_quiz   boolean not null default false,
+     saved_at   timestamptz not null default now(),
+     updated_at timestamptz not null default now()
+   );
+
+   -- RLS on, NO policies: the anon key can do nothing; only the
+   -- service-role key (held by the serverless function) has access.
+   alter table public.games enable row level security;
+   ```
+
+3. In **Settings → API**, copy the **Project URL** and the **service_role**
+   key (the secret one — never the anon key for this setup).
+4. In Vercel (Project → Settings → Environment Variables) add:
+   - `SUPABASE_URL` = the project URL
+   - `SUPABASE_SERVICE_ROLE_KEY` = the service_role key
+
+   and redeploy. Locally, export the same two variables before `npm run dev`.
+
+Without these variables everything keeps working from `localStorage` exactly
+as before. With them: every save syncs to the cloud (debounced), the landing
+page lists cloud games from other devices (marked ☁), opening one pulls its
+full analysis down, and deleting removes it everywhere. Conflicts resolve
+last-write-wins per game. Note the same trust model as the rest of the app
+applies: anyone who can reach your deployment URL can use its endpoints.
+
 ## Notes & limits
 
 - Analysis runs when you open one of your moves. “Analyse all” fans out the whole

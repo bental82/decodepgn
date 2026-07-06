@@ -64,6 +64,55 @@ function devApi(): import('vite').Plugin {
         }
       }
       server.middlewares.use('/api/analyze', handler)
+
+      // /api/games (optional Supabase persistence) — mirrors api/games.ts.
+      const gamesHandler: Connect.NextHandleFunction = async (req, res) => {
+        res.setHeader('content-type', 'application/json')
+        try {
+          const store = await server.ssrLoadModule('/src/server/games.ts')
+          const url = new URL(req.url || '/', 'http://localhost')
+          const key = url.searchParams.get('key') || ''
+          if (req.method === 'GET') {
+            if (!store.cloudConfigured()) {
+              res.end(JSON.stringify({ enabled: false }))
+              return
+            }
+            if (key) {
+              res.end(JSON.stringify({ enabled: true, game: await store.getCloudGame(key) }))
+              return
+            }
+            res.end(JSON.stringify({ enabled: true, games: await store.listCloudGames() }))
+            return
+          }
+          if (req.method === 'POST' || req.method === 'PUT') {
+            const chunks: Buffer[] = []
+            let size = 0
+            for await (const c of req) {
+              size += (c as Buffer).length
+              if (size > 900 * 1024) {
+                res.statusCode = 413
+                res.end(JSON.stringify({ error: 'Game too large to sync.' }))
+                return
+              }
+              chunks.push(c as Buffer)
+            }
+            await store.putCloudGame(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+          if (req.method === 'DELETE') {
+            await store.deleteCloudGame(key)
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: 'Method not allowed' }))
+        } catch (e: any) {
+          res.statusCode = e?.name === 'GamesError' && typeof e.status === 'number' ? e.status : 500
+          res.end(JSON.stringify({ error: e?.message || 'Server error' }))
+        }
+      }
+      server.middlewares.use('/api/games', gamesHandler)
     },
   }
 }
