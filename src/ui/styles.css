@@ -46,7 +46,12 @@ a { color: var(--accent-ink); }
   padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 10;
 }
-.brand { display: flex; align-items: center; gap: 12px; }
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.brand:hover .logo { background: var(--accent); }
 .logo { font-size: 24px; width: 44px; height: 44px; display: grid; place-items: center; background: var(--accent-strong); color: #fff; border-radius: 12px; }
 .brand h1 { font-size: 20px; margin: 0; }
 .tagline { color: var(--muted); font-size: 13px; }
