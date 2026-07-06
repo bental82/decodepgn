@@ -217,6 +217,8 @@ export interface AskRequest {
   san?: string
   fen?: string
   ruleId?: number
+  /** cross-game questions ("Your play" card): digests of the analysed games */
+  summaries?: MetaGameSummary[]
   apiKey?: string
 }
 

@@ -929,6 +929,18 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
     const rule = RULES_BY_ID[rid as number]
     if (rule) contextLines.push(`Asked in the context of rule #${rule.id} "${rule.title}" — ${rule.detail}`)
   }
+  // Cross-game questions (the "Your play" card): ground the answer in the
+  // player's whole analysed history, cloud archive included.
+  if (Array.isArray(input.summaries)) {
+    const sums = await collectSummaries(input.summaries)
+    if (sums.length) {
+      contextLines.push(
+        `The question is about the player's play ACROSS games — address them as "you". Their analysed game history:\n${sums
+          .map(summaryLine)
+          .join('\n\n')}`,
+      )
+    }
+  }
   const context = contextLines.length ? `Context:\n${contextLines.join('\n')}\n\n` : ''
 
   const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences) using the answer_question tool, grounded in the ${RULE_COUNT} rules of thumb above. The user may ask follow-up questions — treat the conversation as one thread about the same position/rule unless they change the subject. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.
@@ -1095,12 +1107,13 @@ function summaryLine(s: MetaGameSummary, i: number): string {
   return line
 }
 
-export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
-  const apiKey = resolveKey(input)
-  const summaries = sanitizeSummaries(input.summaries)
-  // Merge the cloud archive: games analysed on other devices, or evicted from
-  // this browser's storage, still inform the patterns. Best-effort — the meta
-  // still runs from the client's games if the database is unreachable.
+/**
+ * Client digests + the cloud archive, deduped and sanitized — the data both
+ * the meta report and cross-game Ask questions run on. Cloud merge is
+ * best-effort: with the database unreachable, the client's games suffice.
+ */
+async function collectSummaries(raw: unknown): Promise<MetaGameSummary[]> {
+  const summaries = sanitizeSummaries(raw)
   try {
     if (cloudConfigured()) {
       const seen = new Set(summaries.map((s) => s.key))
@@ -1116,7 +1129,12 @@ export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
   } catch {
     /* cloud unavailable — proceed with what the client sent */
   }
-  const withAnalysis = summaries.filter((s) => s.analysed > 0)
+  return summaries.filter((s) => s.analysed > 0)
+}
+
+export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
+  const apiKey = resolveKey(input)
+  const withAnalysis = await collectSummaries(input.summaries)
   if (withAnalysis.length === 0) {
     throw new AnalyzeError('No analysed games to review yet — analyse a game or two first.')
   }

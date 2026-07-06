@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
-import type { MetaInsight, MetaReport } from '../shared/types'
+import AskBox from './AskBox'
+import type { MetaGameSummary, MetaInsight, MetaReport } from '../shared/types'
 import RuleText from './RuleText'
 
 export interface SavedMetaReport extends MetaReport {
@@ -16,6 +17,10 @@ interface Props {
   available: number
   onGenerate: () => void
   onOpenRule: (id: number) => void
+  /** digests of the analysed games — context for the Ask thread */
+  summaries: MetaGameSummary[]
+  apiKey: string
+  onNeedKey: () => void
 }
 
 function InsightList({
@@ -57,7 +62,17 @@ function InsightList({
 // archive). Lives on the landing page.
 const OPEN_KEY = 'decodepgn.metaOpen'
 
-export default function MetaCard({ report, loading, error, available, onGenerate, onOpenRule }: Props) {
+export default function MetaCard({
+  report,
+  loading,
+  error,
+  available,
+  onGenerate,
+  onOpenRule,
+  summaries,
+  apiKey,
+  onNeedKey,
+}: Props) {
   // Collapsed state survives reloads (like the game-overview card).
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_KEY) !== '0')
   const toggle = () =>
@@ -133,6 +148,16 @@ export default function MetaCard({ report, loading, error, available, onGenerate
             </>
           )}
           {error ? <div className="error small">{error}</div> : null}
+          {available > 0 ? (
+            <AskBox
+              context={{ summaries }}
+              apiKey={apiKey}
+              onNeedKey={onNeedKey}
+              label="Ask about your play"
+              placeholder="e.g. why do I keep losing material in the middlegame?"
+              onOpenRule={onOpenRule}
+            />
+          ) : null}
         </>
       )}
     </div>
