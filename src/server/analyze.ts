@@ -197,8 +197,15 @@ async function callClaude(
   }
   const message = (await resp.json()) as {
     content?: Array<{ type: string; input?: unknown; text?: string }>
+    stop_reason?: string
   }
   if (opts.tool) {
+    // A response cut off by max_tokens carries a PARTIAL tool input — early
+    // fields present, the rest silently missing. Fail loudly instead of
+    // returning a half-report that renders as mysteriously truncated output.
+    if (message.stop_reason === 'max_tokens') {
+      throw new AnalyzeError('The answer ran out of room mid-way. Please try again.', 502)
+    }
     const toolUse = message.content?.find((b) => b.type === 'tool_use')
     if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
       throw new AnalyzeError('Claude did not return structured output.', 502)
@@ -1182,8 +1189,11 @@ ${withAnalysis.map(summaryLine).join('\n\n')}
 ${recentN ? `\nGames ${withAnalysis.length - recentN + 1}-${withAnalysis.length} are the player's most recent — compare them with the earlier ones for the trends section.\n` : ''}
 Write the meta-analysis.`
 
+  // The full report (profile + openings + trends + mistakes + strengths +
+  // priorities) can genuinely run long — an undersized budget truncates the
+  // tool output and the report loses its later sections.
   const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 3000,
+    maxTokens: 6000,
     tool: META_TOOL,
     toolName: 'report_meta',
   })) as {
