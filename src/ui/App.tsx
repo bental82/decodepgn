@@ -142,11 +142,24 @@ export default function App() {
   }, [])
 
   // Pull the cloud game list once — games analysed on other devices (or before
-  // this browser's storage was cleared) show up in the history.
+  // this browser's storage was cleared) show up in the history. Then BACKFILL:
+  // any game this device has locally that the cloud is missing (analysed
+  // before the database existed, or on a device that was offline) is uploaded,
+  // lightly staggered so a big history doesn't burst the connection.
   useEffect(() => {
     let cancelled = false
     void cloudList().then((games) => {
-      if (!cancelled && games) setCloudGames(games)
+      if (cancelled || !games) return
+      setCloudGames(games)
+      const cloudSavedAt = new Map(games.map((c) => [c.key, c.savedAt]))
+      let wave = 0
+      for (const g of listGames()) {
+        const remote = cloudSavedAt.get(g.key)
+        if (remote !== undefined && remote >= g.savedAt) continue // already up to date
+        setTimeout(() => {
+          if (!cancelled) cloudSave(g)
+        }, wave++ * 1000)
+      }
     })
     return () => {
       cancelled = true
@@ -751,6 +764,9 @@ export default function App() {
   }
 
   const deleteSaved = (key: string) => {
+    const item = historyItems.find((h) => h.key === key)
+    const name = item ? `${item.headers.White ?? 'White'} vs ${item.headers.Black ?? 'Black'}` : 'this game'
+    if (!window.confirm(`Delete ${name} and its analysis everywhere (this device and the cloud)?`)) return
     removeGame(key)
     cloudDelete(key)
     setCloudGames((prev) => (prev ? prev.filter((c) => c.key !== key) : prev))
