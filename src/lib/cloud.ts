@@ -13,6 +13,7 @@ export interface CloudGameMeta {
   focus: Focus
   headers: Record<string, string>
   savedAt: number
+  addedAt?: number
   analysed: number
   hasQuiz: boolean
 }

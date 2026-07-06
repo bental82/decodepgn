@@ -642,9 +642,20 @@ export default function App() {
     focus: Focus
     headers: Record<string, string>
     savedAt: number
+    /** when the game happened: the PGN's Date header, else when it was added
+     * to the app — never when it was (re-)analysed */
+    date: number
     analysed: number
     hasQuiz: boolean
     cloudOnly: boolean
+  }
+  const gameDate = (h: Record<string, string>, addedAt?: number, savedAt?: number): number => {
+    const d = h?.Date
+    if (d && /^\d{4}\.\d{2}\.\d{2}$/.test(d)) {
+      const t = Date.parse(d.replace(/\./g, '-'))
+      if (Number.isFinite(t)) return t
+    }
+    return addedAt ?? savedAt ?? 0
   }
   const historyItems = useMemo<HistoryItem[]>(() => {
     const byKey = new Map<string, HistoryItem>()
@@ -655,6 +666,7 @@ export default function App() {
         focus: g.focus,
         headers: g.headers,
         savedAt: g.savedAt,
+        date: gameDate(g.headers, g.addedAt, g.savedAt),
         analysed: Object.keys(g.results).length,
         hasQuiz: !!g.quiz,
         cloudOnly: false,
@@ -663,7 +675,7 @@ export default function App() {
     for (const c of cloudGames ?? []) {
       const local = byKey.get(c.key)
       if (!local) {
-        byKey.set(c.key, { ...c, cloudOnly: true })
+        byKey.set(c.key, { ...c, date: gameDate(c.headers, c.addedAt, c.savedAt), cloudOnly: true })
       } else if (c.savedAt > local.savedAt) {
         byKey.set(c.key, {
           ...local,
@@ -673,7 +685,7 @@ export default function App() {
         })
       }
     }
-    return [...byKey.values()].sort((a, b) => b.savedAt - a.savedAt)
+    return [...byKey.values()].sort((a, b) => b.date - a.date)
   }, [history, cloudGames])
 
   // Open a saved game: when the cloud copy is the only one — or clearly newer
@@ -956,9 +968,12 @@ export default function App() {
                         {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
                         {g.cloudOnly ? ' · ☁' : ''} ·{' '}
-                        {new Date(g.savedAt).toLocaleDateString(undefined, {
+                        {new Date(g.date).toLocaleDateString(undefined, {
                           day: 'numeric',
                           month: 'short',
+                          ...(new Date(g.date).getFullYear() !== new Date().getFullYear()
+                            ? { year: 'numeric' }
+                            : {}),
                         })}
                       </span>
                     </button>

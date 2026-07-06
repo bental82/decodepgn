@@ -64,13 +64,14 @@ export interface CloudGameMeta {
   focus: Focus
   headers: Record<string, string>
   savedAt: number
+  addedAt?: number
   analysed: number
   hasQuiz: boolean
 }
 
 export async function listCloudGames(): Promise<CloudGameMeta[]> {
   const resp = await sb(
-    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at&order=saved_at.desc&limit=${LIST_LIMIT}`,
+    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt&order=saved_at.desc&limit=${LIST_LIMIT}`,
   )
   const rows = (await resp.json()) as Array<{
     key?: unknown
@@ -80,6 +81,7 @@ export async function listCloudGames(): Promise<CloudGameMeta[]> {
     analysed?: unknown
     has_quiz?: unknown
     saved_at?: unknown
+    added_at?: unknown
   }>
   if (!Array.isArray(rows)) return []
   return rows
@@ -91,6 +93,7 @@ export async function listCloudGames(): Promise<CloudGameMeta[]> {
       headers:
         r.headers && typeof r.headers === 'object' ? (r.headers as Record<string, string>) : {},
       savedAt: typeof r.saved_at === 'string' ? Date.parse(r.saved_at) || 0 : 0,
+      addedAt: Number(r.added_at) > 0 ? Number(r.added_at) : undefined,
       analysed: Number.isFinite(r.analysed) ? (r.analysed as number) : 0,
       hasQuiz: r.has_quiz === true,
     }))
