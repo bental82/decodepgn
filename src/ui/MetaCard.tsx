@@ -105,7 +105,8 @@ export default function MetaCard({
       {!open ? null : loading ? (
         <div className="loading-row">
           <span className="spinner" />
-          Reading all your games… (this looks at every analysed game)
+          Reading all your games… writing the full report takes a few minutes — leave this page
+          open.
         </div>
       ) : (
         <>

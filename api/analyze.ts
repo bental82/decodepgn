@@ -3,7 +3,9 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-export const config = { maxDuration: 60 }
+// The cross-game meta report generates thousands of tokens and needs minutes;
+// 300s is within the Fluid-compute limit on every Vercel plan (incl. Hobby).
+export const config = { maxDuration: 300 }
 
 const MAX_BODY_BYTES = 512 * 1024
 

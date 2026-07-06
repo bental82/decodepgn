@@ -147,6 +147,9 @@ interface ClaudeOpts {
   maxTokens: number
   tool?: unknown
   toolName?: string
+  /** wall-clock allowance for the Anthropic call (default 55s; long-form
+      reports like the cross-game meta need several minutes of generation) */
+  timeoutMs?: number
 }
 
 /** Single place that calls the Anthropic Messages API over HTTP and maps errors. */
@@ -173,7 +176,7 @@ async function callClaude(
         messages,
         ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'tool', name: opts.toolName } } : {}),
       }),
-      signal: AbortSignal.timeout(55_000),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
     })
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
@@ -1191,9 +1194,12 @@ Write the meta-analysis.`
 
   // The full report (profile + openings + trends + mistakes + strengths +
   // priorities) can genuinely run long — an undersized budget truncates the
-  // tool output and the report loses its later sections.
+  // tool output and the report loses its later sections, and generating those
+  // tokens takes real minutes, so this call gets a far longer wall-clock
+  // allowance than the interactive ones (the client + function match it).
   const data = (await callClaude(apiKey, system, user, {
     maxTokens: 6000,
+    timeoutMs: 280_000,
     tool: META_TOOL,
     toolName: 'report_meta',
   })) as {

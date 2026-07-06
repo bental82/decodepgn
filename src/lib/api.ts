@@ -13,9 +13,11 @@ import type {
   QuizResponse,
 } from '../shared/types'
 
-// Below the serverless function's maxDuration (60s) so the client aborts first
-// with a clear message rather than surfacing an opaque platform timeout.
+// Below the serverless function's maxDuration (300s) so the client aborts
+// first with a clear message rather than surfacing an opaque platform timeout.
+// Interactive calls stay tight; the long-form meta report gets minutes.
 const TIMEOUT_MS = 55_000
+const META_TIMEOUT_MS = 290_000
 
 async function postAnalyze<T>(body: object, timeoutMs = TIMEOUT_MS): Promise<T> {
   const ctrl = new AbortController()
@@ -77,5 +79,5 @@ export function overview(req: OverviewRequest): Promise<OverviewResponse> {
 }
 
 export function meta(req: MetaRequest): Promise<MetaResponse> {
-  return postAnalyze<MetaResponse>(req)
+  return postAnalyze<MetaResponse>(req, META_TIMEOUT_MS)
 }
