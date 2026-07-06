@@ -6,7 +6,7 @@ import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizKind, Quiz
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
-const MAX_GAMES = 12 // LRU cap so we never crowd localStorage
+const MAX_GAMES = 30 // LRU cap (quota-evict fallback below handles overflow)
 
 /** A generated quiz plus the player's progress through it. */
 export interface SavedQuiz {
