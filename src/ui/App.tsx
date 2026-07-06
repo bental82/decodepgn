@@ -89,6 +89,11 @@ export default function App() {
   // While set, we're checking the cloud for this game's saved analysis —
   // auto-analysis waits so a stored game is never re-analysed from scratch.
   const [restoringKey, setRestoringKey] = useState<string | null>(null)
+  // Keys with a CONFIRMED cloud upload this session (drives the ☁ marker).
+  const [syncedKeys, setSyncedKeys] = useState<Set<string>>(new Set())
+  const markSynced = useCallback((key: string) => {
+    setSyncedKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }, [])
   const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
@@ -157,7 +162,7 @@ export default function App() {
         const remote = cloudSavedAt.get(g.key)
         if (remote !== undefined && remote >= g.savedAt) continue // already up to date
         setTimeout(() => {
-          if (!cancelled) cloudSave(g)
+          if (!cancelled) cloudSave(g, markSynced)
         }, wave++ * 1000)
       }
     })
@@ -269,7 +274,7 @@ export default function App() {
           const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
           for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
           saveGame(merged)
-          cloudSave(merged)
+          cloudSave(merged, markSynced)
           setHistory(listGames())
         }
       } catch (e) {
@@ -374,7 +379,7 @@ export default function App() {
       me: mySide,
     }
     saveGame(game)
-    cloudSave(game)
+    cloudSave(game, markSynced)
   }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide])
 
   const fetchOverview = useCallback(async () => {
@@ -691,6 +696,8 @@ export default function App() {
     analysed: number
     hasQuiz: boolean
     cloudOnly: boolean
+    /** present in the cloud (listed there, or upload confirmed this session) */
+    inCloud: boolean
   }
   // Result from the player's own perspective (me flag, else the studied side).
   const resultFor = (
@@ -728,16 +735,19 @@ export default function App() {
         analysed: Object.keys(g.results).length,
         hasQuiz: !!g.quiz,
         cloudOnly: false,
+        inCloud: syncedKeys.has(g.key),
       })
     }
     for (const c of cloudGames ?? []) {
       const local = byKey.get(c.key)
+      if (local) local.inCloud = true
       if (!local) {
         byKey.set(c.key, {
           ...c,
           date: gameDate(c.headers, c.addedAt, c.savedAt),
           result: resultFor(c.headers, undefined, c.focus),
           cloudOnly: true,
+          inCloud: true,
         })
       } else if (c.savedAt > local.savedAt) {
         byKey.set(c.key, {
@@ -749,7 +759,7 @@ export default function App() {
       }
     }
     return [...byKey.values()].sort((a, b) => b.date - a.date)
-  }, [history, cloudGames])
+  }, [history, cloudGames, syncedKeys])
 
   // Open a saved game: when the cloud copy is the only one — or clearly newer
   // than this browser's — pull it down first so the analysis comes with it.
@@ -1030,10 +1040,10 @@ export default function App() {
                         {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
                       </span>
                       <span className="history-meta">
-                        as {colorName(g.focus)} · {g.analysed} analysed
+                        studied {colorName(g.focus)} · {g.analysed} analysed
                         {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
-                        {g.cloudOnly ? ' · ☁' : ''} ·{' '}
+                        {g.inCloud || g.cloudOnly ? ' · ☁' : ''} ·{' '}
                         {new Date(g.date).toLocaleDateString(undefined, {
                           day: 'numeric',
                           month: 'short',
