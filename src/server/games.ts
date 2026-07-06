@@ -10,6 +10,9 @@
 import type { Focus } from '../shared/types'
 
 const LIST_LIMIT = 100
+// The cross-game meta report lives in a reserved row of the same table
+// (excluded from every game listing) — no extra schema needed.
+const META_ROW_KEY = '__meta__'
 
 export class GamesError extends Error {
   status: number
@@ -71,7 +74,7 @@ export interface CloudGameMeta {
 
 export async function listCloudGames(): Promise<CloudGameMeta[]> {
   const resp = await sb(
-    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt&order=saved_at.desc&limit=${LIST_LIMIT}`,
+    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
   )
   const rows = (await resp.json()) as Array<{
     key?: unknown
@@ -145,9 +148,36 @@ export async function putCloudGame(game: unknown): Promise<void> {
 
 /** Full saved-game payloads for the whole archive (for the meta-analysis). */
 export async function listCloudGameData(limit = 60): Promise<unknown[]> {
-  const resp = await sb(`games?select=data&order=saved_at.desc&limit=${limit}`)
+  const resp = await sb(`games?select=data&key=neq.__meta__&order=saved_at.desc&limit=${limit}`)
   const rows = (await resp.json()) as Array<{ data?: unknown }>
   return Array.isArray(rows) ? rows.map((r) => r?.data).filter(Boolean) : []
+}
+
+/** The saved cross-game report (whatever the client stored), or null. */
+export async function getCloudMeta(): Promise<unknown | null> {
+  const resp = await sb(`games?key=eq.${META_ROW_KEY}&select=data&limit=1`)
+  const rows = (await resp.json()) as Array<{ data?: unknown }>
+  return Array.isArray(rows) && rows[0] ? (rows[0].data ?? null) : null
+}
+
+export async function putCloudMeta(report: unknown): Promise<void> {
+  if (!report || typeof report !== 'object') throw new GamesError('Malformed report.')
+  const row = {
+    key: META_ROW_KEY,
+    pgn: '-',
+    focus: 'w',
+    headers: {},
+    data: report,
+    analysed: 0,
+    has_quiz: false,
+    saved_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+  await sb('games?on_conflict=key', {
+    method: 'POST',
+    headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(row),
+  })
 }
 
 export async function deleteCloudGame(key: string): Promise<void> {
