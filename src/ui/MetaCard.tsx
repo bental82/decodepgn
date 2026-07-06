@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import type { MetaInsight, MetaReport } from '../shared/types'
 import RuleText from './RuleText'
@@ -54,11 +55,23 @@ function InsightList({
 // Cross-game coaching: openings, recurring mistakes, strengths and training
 // priorities, generated from EVERY analysed game (this device + the cloud
 // archive). Lives on the landing page.
+const OPEN_KEY = 'decodepgn.metaOpen'
+
 export default function MetaCard({ report, loading, error, available, onGenerate, onOpenRule }: Props) {
+  // Collapsed state survives reloads (like the game-overview card).
+  const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_KEY) !== '0')
+  const toggle = () =>
+    setOpen((v) => {
+      localStorage.setItem(OPEN_KEY, v ? '0' : '1')
+      return !v
+    })
   return (
     <div className="meta-card card">
-      <h2>Your play, across games</h2>
-      {loading ? (
+      <button className="collapse-head" onClick={toggle} aria-expanded={open}>
+        <h2>Your play, across games</h2>
+        <span className="collapse-chevron">{open ? '▾' : '▸'}</span>
+      </button>
+      {!open ? null : loading ? (
         <div className="loading-row">
           <span className="spinner" />
           Reading all your games… (this looks at every analysed game)

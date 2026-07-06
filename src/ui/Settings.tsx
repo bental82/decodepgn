@@ -40,7 +40,14 @@ export default function Settings({ apiKey, hasServerKey, onSave, onClose }: Sett
   }, [onClose])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        // close only when the PRESS starts on the backdrop: selecting text
+        // inside the dialog and releasing outside must not close it
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div
         className="modal"
         role="dialog"

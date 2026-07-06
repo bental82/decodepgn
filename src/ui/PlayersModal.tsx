@@ -30,7 +30,14 @@ export default function PlayersModal({ white, black, me, onSave, onClose }: Prop
   const save = () => onSave(w.trim() || 'White', b.trim() || 'Black', mine)
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        // close only when the PRESS starts on the backdrop: selecting text
+        // inside the dialog and releasing outside must not close it
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div
         className="modal"
         role="dialog"
