@@ -623,17 +623,22 @@ export default function App() {
     setHistory(listGames())
   }
 
-  // Cross-game meta-analysis: digest every locally analysed game into compact
-  // summaries; the server merges the cloud archive on top and asks Claude for
-  // the patterns. The report persists locally until regenerated.
+  // Digests of every locally analysed game — the meta report and the
+  // cross-game Ask box both run on these (the server adds the cloud archive).
+  const metaSummaries = useMemo(
+    () =>
+      history.filter((g) => Object.keys(g.results).length > 0).map(summarizeGame),
+    [history],
+  )
+
+  // Cross-game meta-analysis: the server merges the cloud archive on top and
+  // asks Claude for the patterns. The report persists locally until regenerated.
   const generateMeta = async () => {
     if (metaLoading) return
     setMetaLoading(true)
     setMetaError(null)
     try {
-      const summaries = listGames()
-        .filter((g) => Object.keys(g.results).length > 0)
-        .map(summarizeGame)
+      const summaries = metaSummaries
       const resp = await fetchMetaApi({ mode: 'meta', summaries, apiKey: apiKey.trim() || undefined })
       const rep: SavedMetaReport = { ...resp.report, generatedAt: Date.now(), gamesCount: resp.gamesUsed }
       try {
@@ -1051,6 +1056,9 @@ export default function App() {
             available={historyItems.filter((g) => g.analysed > 0).length}
             onGenerate={() => void generateMeta()}
             onOpenRule={openRule}
+            summaries={metaSummaries}
+            apiKey={apiKey}
+            onNeedKey={() => setShowSettings(true)}
           />
         </div>
       ) : (

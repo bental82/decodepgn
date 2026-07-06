@@ -5,6 +5,7 @@ import type {
   BoardAnnotations,
   Focus,
   GameMove,
+  MetaGameSummary,
   MoveResult,
   ParsedMove,
   QuizKind,
@@ -85,6 +86,8 @@ export interface AskContext {
   san?: string
   fen?: string
   ruleId?: number
+  /** cross-game questions: digests of every analysed game */
+  summaries?: MetaGameSummary[]
 }
 
 export interface AskBoxProps {
