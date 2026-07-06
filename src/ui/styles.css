@@ -509,3 +509,13 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 /* the history can grow forever — cap it and scroll inside the card, so it
    never pushes the PGN input around */
 .history-list { max-height: 300px; overflow-y: auto; }
+
+/* collapsible landing cards (history + cross-game analysis) */
+.collapse-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; background: none; border: none; padding: 0; margin: 0;
+  cursor: pointer; font: inherit; color: inherit; text-align: left;
+}
+.collapse-head h2 { margin: 0; }
+.collapse-chevron { color: var(--accent-ink); font-size: 13px; }
+.collapse-head[aria-expanded='true'] { margin-bottom: 8px; }

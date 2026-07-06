@@ -29,7 +29,14 @@ export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onOpe
   if (!rule) return null
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        // close only when the PRESS starts on the backdrop: selecting text
+        // inside the dialog and releasing outside must not close it
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div
         className="modal rule-modal"
         role="dialog"

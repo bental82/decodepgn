@@ -79,6 +79,10 @@ export default function App() {
   })
   const [metaLoading, setMetaLoading] = useState(false)
   const [metaError, setMetaError] = useState<string | null>(null)
+  // Landing history card collapsed state (survives reloads).
+  const [histOpen, setHistOpen] = useState<boolean>(
+    () => localStorage.getItem('decodepgn.historyOpen') !== '0',
+  )
   // Game keys with an analyse-all run still going (survives leaving the game
   // view; the landing list shows a live badge for them).
   const [bgAnalysing, setBgAnalysing] = useState<Set<string>>(new Set())
@@ -292,7 +296,9 @@ export default function App() {
       setQuizError(null)
       setGameOverview(saved?.overview ?? null)
       setEvals(saved?.evals ?? {})
-      setMySide(saved?.me)
+      // The studied side IS the user unless they said otherwise; when both
+      // sides are studied we can't guess — ask right away.
+      setMySide(saved?.me ?? (f !== 'both' ? f : undefined))
       setOverviewLoading(false)
       setOverviewError(null)
       setJumpBack(null)
@@ -306,6 +312,7 @@ export default function App() {
       setSelectedPly(first)
       setTab('move')
       setPhase('game')
+      if (f === 'both' && !saved?.me) setShowPlayers(true)
       return true
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'Could not parse that PGN.')
@@ -921,17 +928,22 @@ export default function App() {
           />
           <IntroCard />
           <GameImport onPick={handleSubmit} />
-          <MetaCard
-            report={metaReport}
-            loading={metaLoading}
-            error={metaError}
-            available={historyItems.filter((g) => g.analysed > 0).length}
-            onGenerate={() => void generateMeta()}
-            onOpenRule={openRule}
-          />
           {historyItems.length > 0 ? (
             <div className="history card">
-              <h2>Your analysed games</h2>
+              <button
+                className="collapse-head"
+                onClick={() =>
+                  setHistOpen((v) => {
+                    localStorage.setItem('decodepgn.historyOpen', v ? '0' : '1')
+                    return !v
+                  })
+                }
+                aria-expanded={histOpen}
+              >
+                <h2>Your analysed games ({historyItems.length})</h2>
+                <span className="collapse-chevron">{histOpen ? '▾' : '▸'}</span>
+              </button>
+              {histOpen ? (
               <ul className="history-list">
                 {historyItems.map((g) => (
                   <li key={g.key}>
@@ -961,8 +973,17 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+              ) : null}
             </div>
           ) : null}
+          <MetaCard
+            report={metaReport}
+            loading={metaLoading}
+            error={metaError}
+            available={historyItems.filter((g) => g.analysed > 0).length}
+            onGenerate={() => void generateMeta()}
+            onOpenRule={openRule}
+          />
         </div>
       ) : (
         <div className="workspace">
