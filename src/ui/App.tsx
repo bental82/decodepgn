@@ -86,6 +86,9 @@ export default function App() {
   // Game keys with an analyse-all run still going (survives leaving the game
   // view; the landing list shows a live badge for them).
   const [bgAnalysing, setBgAnalysing] = useState<Set<string>>(new Set())
+  // While set, we're checking the cloud for this game's saved analysis —
+  // auto-analysis waits so a stored game is never re-analysed from scratch.
+  const [restoringKey, setRestoringKey] = useState<string | null>(null)
   const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
@@ -313,6 +316,25 @@ export default function App() {
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
+      if (!saved && (cloudGames === null || cloudGames.some((c) => c.key === key))) {
+        setRestoringKey(key)
+        const gen = genRef.current
+        void cloudGet(key)
+          .then((remote) => {
+            if (genRef.current !== gen) return
+            if (remote && remote.key === key) {
+              saveGame(remote)
+              setResults(remote.results ?? {})
+              setQuizSaved(remote.quiz ?? null)
+              setGameOverview(remote.overview ?? null)
+              setEvals(remote.evals ?? {})
+              setMySide(remote.me ?? (f !== 'both' ? f : undefined))
+              setHeaders(remote.headers ?? g.headers)
+              setHistory(listGames())
+            }
+          })
+          .finally(() => setRestoringKey((k) => (k === key ? null : k)))
+      }
       return true
     } catch (e) {
       setParseError(e instanceof Error ? e.message : 'Could not parse that PGN.')
@@ -458,13 +480,14 @@ export default function App() {
   // loaded game (restored games already have it and skip the call).
   useEffect(() => {
     if (phase !== 'game' || gameOverview || overviewLoading || overviewError) return
+    if (restoringKey) return // the restored save carries its overview
     void fetchOverview()
-  }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview])
+  }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview, restoringKey])
 
   // Auto-analyse the selected move when it belongs to the studied colour and
   // hasn't been analysed (or errored) yet.
   useEffect(() => {
-    if (phase !== 'game') return
+    if (phase !== 'game' || restoringKey) return
     const m = moves[selectedPly]
     if (!m || !isStudied(m.color, focus)) return
     if (
@@ -475,7 +498,7 @@ export default function App() {
     )
       return
     void analyzePlies(moves, focus, [selectedPly])
-  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies])
+  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey])
 
   const handleAnalyzeAll = async (force = false) => {
     const plies = moves
@@ -538,12 +561,13 @@ export default function App() {
   const autoRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (phase !== 'game' || moves.length === 0) return
+    if (restoringKey) return // the cloud may have this analysis — don't redo it
     const key = storeRef.current?.key ?? ''
     if (autoRanRef.current === key) return
     autoRanRef.current = key
     void handleAnalyzeAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, moves])
+  }, [phase, moves, restoringKey])
 
   // Background Stockfish sweep: one eval per position so the eval bar covers
   // the whole game. Shares the engine's FEN cache with the per-move checks.
@@ -645,9 +669,24 @@ export default function App() {
     /** when the game happened: the PGN's Date header, else when it was added
      * to the app — never when it was (re-)analysed */
     date: number
+    result?: 'won' | 'lost' | 'draw'
     analysed: number
     hasQuiz: boolean
     cloudOnly: boolean
+  }
+  // Result from the player's own perspective (me flag, else the studied side).
+  const resultFor = (
+    h: Record<string, string>,
+    me: Color | undefined,
+    focus: Focus,
+  ): 'won' | 'lost' | 'draw' | undefined => {
+    const r = h?.Result
+    if (r === '1/2-1/2') return 'draw'
+    const side = me ?? (focus !== 'both' ? focus : undefined)
+    if (!side) return undefined
+    if (r === '1-0') return side === 'w' ? 'won' : 'lost'
+    if (r === '0-1') return side === 'b' ? 'won' : 'lost'
+    return undefined
   }
   const gameDate = (h: Record<string, string>, addedAt?: number, savedAt?: number): number => {
     const d = h?.Date
@@ -667,6 +706,7 @@ export default function App() {
         headers: g.headers,
         savedAt: g.savedAt,
         date: gameDate(g.headers, g.addedAt, g.savedAt),
+        result: resultFor(g.headers, g.me, g.focus),
         analysed: Object.keys(g.results).length,
         hasQuiz: !!g.quiz,
         cloudOnly: false,
@@ -675,7 +715,12 @@ export default function App() {
     for (const c of cloudGames ?? []) {
       const local = byKey.get(c.key)
       if (!local) {
-        byKey.set(c.key, { ...c, date: gameDate(c.headers, c.addedAt, c.savedAt), cloudOnly: true })
+        byKey.set(c.key, {
+          ...c,
+          date: gameDate(c.headers, c.addedAt, c.savedAt),
+          result: resultFor(c.headers, undefined, c.focus),
+          cloudOnly: true,
+        })
       } else if (c.savedAt > local.savedAt) {
         byKey.set(c.key, {
           ...local,
@@ -960,6 +1005,14 @@ export default function App() {
                 {historyItems.map((g) => (
                   <li key={g.key}>
                     <button className="history-row" onClick={() => void openSaved(g)}>
+                      {g.result ? (
+                        <span
+                          className={'cc-res r-' + g.result}
+                          title={g.result === 'won' ? 'You won' : g.result === 'lost' ? 'You lost' : 'Draw'}
+                        >
+                          {g.result === 'won' ? 'W' : g.result === 'lost' ? 'L' : '='}
+                        </span>
+                      ) : null}
                       <span className="history-title">
                         {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
                       </span>

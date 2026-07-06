@@ -20,7 +20,7 @@ export interface CloudGameMeta {
 
 async function fetchJson(url: string, init?: RequestInit): Promise<any | null> {
   try {
-    const r = await fetch(url, init)
+    const r = await fetch(url, { signal: AbortSignal.timeout(10_000), ...init })
     if (!r.ok) return null
     return await r.json()
   } catch {
