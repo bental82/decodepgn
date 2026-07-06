@@ -3,7 +3,15 @@ import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, meta as fetchMetaApi, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
 import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
-import { cloudDelete, cloudGet, cloudList, cloudSave, type CloudGameMeta } from '../lib/cloud'
+import {
+  cloudDelete,
+  cloudGet,
+  cloudGetMeta,
+  cloudList,
+  cloudSave,
+  cloudSaveMeta,
+  type CloudGameMeta,
+} from '../lib/cloud'
 import {
   gameKey,
   listGames,
@@ -165,6 +173,28 @@ export default function App() {
           if (!cancelled) cloudSave(g, markSynced)
         }, wave++ * 1000)
       }
+      // The meta report syncs the same way (a non-null list means the cloud is
+      // on): adopt the cloud copy when it's newer than this browser's, and
+      // backfill a local report generated before cloud sync existed.
+      void cloudGetMeta().then((remoteMeta) => {
+        if (cancelled) return
+        let localMeta: SavedMetaReport | null = null
+        try {
+          localMeta = JSON.parse(localStorage.getItem(META_KEY) || 'null')
+        } catch {
+          /* unreadable — treat as absent */
+        }
+        if (remoteMeta && (!localMeta || remoteMeta.generatedAt > localMeta.generatedAt)) {
+          try {
+            localStorage.setItem(META_KEY, JSON.stringify(remoteMeta))
+          } catch {
+            /* best-effort */
+          }
+          setMetaReport(remoteMeta)
+        } else if (localMeta && (!remoteMeta || localMeta.generatedAt > remoteMeta.generatedAt)) {
+          cloudSaveMeta(localMeta)
+        }
+      })
     })
     return () => {
       cancelled = true
@@ -664,6 +694,7 @@ export default function App() {
       } catch {
         /* best-effort */
       }
+      cloudSaveMeta(rep) // follows the user across devices, like the games
       setMetaReport(rep)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not build the meta-analysis.'
@@ -1040,7 +1071,7 @@ export default function App() {
                         {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
                       </span>
                       <span className="history-meta">
-                        studied {colorName(g.focus)} · {g.analysed} analysed
+                        as {colorName(g.focus)} · {g.analysed} analysed
                         {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
                         {g.inCloud || g.cloudOnly ? ' · ☁' : ''} ·{' '}

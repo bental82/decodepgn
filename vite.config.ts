@@ -74,9 +74,14 @@ function devApi(): import('vite').Plugin {
           const store = await server.ssrLoadModule('/src/server/games.ts')
           const url = new URL(req.url || '/', 'http://localhost')
           const key = url.searchParams.get('key') || ''
+          const wantsMeta = url.searchParams.get('meta') === '1'
           if (req.method === 'GET') {
             if (!store.cloudConfigured()) {
               res.end(JSON.stringify({ enabled: false }))
+              return
+            }
+            if (wantsMeta) {
+              res.end(JSON.stringify({ enabled: true, meta: await store.getCloudMeta() }))
               return
             }
             if (key) {
@@ -98,7 +103,9 @@ function devApi(): import('vite').Plugin {
               }
               chunks.push(c as Buffer)
             }
-            await store.putCloudGame(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+            if (wantsMeta) await store.putCloudMeta(body)
+            else await store.putCloudGame(body)
             res.end(JSON.stringify({ ok: true }))
             return
           }

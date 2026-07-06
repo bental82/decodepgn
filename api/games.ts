@@ -15,10 +15,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // (same pattern as api/analyze.ts).
     const store = await import('../src/server/games.js')
     const key = typeof req.query.key === 'string' ? req.query.key : ''
+    const wantsMeta = req.query.meta === '1'
 
     if (req.method === 'GET') {
       if (!store.cloudConfigured()) {
         res.status(200).json({ enabled: false })
+        return
+      }
+      if (wantsMeta) {
+        res.status(200).json({ enabled: true, meta: await store.getCloudMeta() })
         return
       }
       if (key) {
@@ -36,7 +41,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return
       }
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
-      await store.putCloudGame(body)
+      if (wantsMeta) {
+        await store.putCloudMeta(body)
+      } else {
+        await store.putCloudGame(body)
+      }
       res.status(200).json({ ok: true })
       return
     }

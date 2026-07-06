@@ -6,6 +6,7 @@
 
 import type { SavedGame } from './store'
 import type { Focus } from '../shared/types'
+import type { SavedMetaReport } from '../ui/MetaCard'
 
 export interface CloudGameMeta {
   key: string
@@ -65,6 +66,28 @@ export function cloudSave(game: SavedGame, onSynced?: (key: string) => void): vo
         })
     }, 1500),
   )
+}
+
+/**
+ * The cross-game meta report ("Your play, across games"), or null when the
+ * cloud has none / the feature is off. Stored as a reserved row so it follows
+ * the user across devices like the games do.
+ */
+export async function cloudGetMeta(): Promise<SavedMetaReport | null> {
+  const d = await fetchJson('/api/games?meta=1')
+  const m = d?.enabled === true ? d.meta : null
+  return m && typeof m === 'object' && typeof m.generatedAt === 'number' ? (m as SavedMetaReport) : null
+}
+
+/** Fire-and-forget upload of a freshly generated meta report. */
+export function cloudSaveMeta(report: SavedMetaReport): void {
+  void fetch('/api/games?meta=1', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(report),
+  }).catch(() => {
+    /* best-effort — the local copy still works on this device */
+  })
 }
 
 export function cloudDelete(key: string): void {
