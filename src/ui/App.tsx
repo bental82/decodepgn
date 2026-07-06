@@ -3,6 +3,7 @@ import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
 import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
+import { cloudDelete, cloudGet, cloudList, cloudSave, type CloudGameMeta } from '../lib/cloud'
 import {
   gameKey,
   listGames,
@@ -68,6 +69,9 @@ export default function App() {
   // Identity of the current game in local storage, for persisting analysis.
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
   const [history, setHistory] = useState<SavedGame[]>(() => listGames())
+  // Games saved in the cloud (Supabase via /api/games); null while loading or
+  // when the deployment has no database configured.
+  const [cloudGames, setCloudGames] = useState<CloudGameMeta[] | null>(null)
   // The current game's generated quiz (persisted alongside the analysis).
   // Owned here — NOT in the Quiz tab — so generation keeps running and nothing
   // is lost when the user switches tabs mid-way.
@@ -103,6 +107,18 @@ export default function App() {
         if (!cancelled && d && typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
       })
       .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Pull the cloud game list once — games analysed on other devices (or before
+  // this browser's storage was cleared) show up in the history.
+  useEffect(() => {
+    let cancelled = false
+    void cloudList().then((games) => {
+      if (!cancelled && games) setCloudGames(games)
+    })
     return () => {
       cancelled = true
     }
@@ -228,11 +244,12 @@ export default function App() {
   }
 
   // Persist the analysis (PGN + per-move results), the quiz, and the overview,
-  // so a reload or revisit of the same game restores everything.
+  // so a reload or revisit of the same game restores everything. The same
+  // object mirrors to the cloud (debounced, best-effort).
   useEffect(() => {
     if (phase !== 'game' || !storeRef.current) return
     if (Object.keys(results).length === 0 && !quizSaved && !gameOverview) return
-    saveGame({
+    const game: SavedGame = {
       key: storeRef.current.key,
       pgn: storeRef.current.pgn,
       focus,
@@ -242,7 +259,9 @@ export default function App() {
       quiz: quizSaved ?? undefined,
       overview: gameOverview ?? undefined,
       evals: Object.keys(evals).length ? evals : undefined,
-    })
+    }
+    saveGame(game)
+    cloudSave(game)
   }, [phase, results, focus, headers, quizSaved, gameOverview, evals])
 
   const fetchOverview = useCallback(async () => {
@@ -486,6 +505,68 @@ export default function App() {
     setRuleModalId(id)
   }
 
+  // The landing history merges this browser's saves with the cloud list:
+  // local games as-is, cloud games from other devices marked ☁, and when both
+  // exist the newer save wins the metadata.
+  interface HistoryItem {
+    key: string
+    pgn: string
+    focus: Focus
+    headers: Record<string, string>
+    savedAt: number
+    analysed: number
+    hasQuiz: boolean
+    cloudOnly: boolean
+  }
+  const historyItems = useMemo<HistoryItem[]>(() => {
+    const byKey = new Map<string, HistoryItem>()
+    for (const g of history) {
+      byKey.set(g.key, {
+        key: g.key,
+        pgn: g.pgn,
+        focus: g.focus,
+        headers: g.headers,
+        savedAt: g.savedAt,
+        analysed: Object.keys(g.results).length,
+        hasQuiz: !!g.quiz,
+        cloudOnly: false,
+      })
+    }
+    for (const c of cloudGames ?? []) {
+      const local = byKey.get(c.key)
+      if (!local) {
+        byKey.set(c.key, { ...c, cloudOnly: true })
+      } else if (c.savedAt > local.savedAt) {
+        byKey.set(c.key, {
+          ...local,
+          savedAt: c.savedAt,
+          analysed: Math.max(local.analysed, c.analysed),
+          hasQuiz: local.hasQuiz || c.hasQuiz,
+        })
+      }
+    }
+    return [...byKey.values()].sort((a, b) => b.savedAt - a.savedAt)
+  }, [history, cloudGames])
+
+  // Open a saved game: when the cloud copy is the only one — or clearly newer
+  // than this browser's — pull it down first so the analysis comes with it.
+  const openSaved = async (item: HistoryItem) => {
+    const local = loadGame(item.key)
+    const cloud = (cloudGames ?? []).find((c) => c.key === item.key)
+    if (!local || (cloud && cloud.savedAt > local.savedAt)) {
+      const remote = await cloudGet(item.key)
+      if (remote) saveGame(remote)
+    }
+    handleSubmit(item.pgn, item.focus)
+  }
+
+  const deleteSaved = (key: string) => {
+    removeGame(key)
+    cloudDelete(key)
+    setCloudGames((prev) => (prev ? prev.filter((c) => c.key !== key) : prev))
+    setHistory(listGames())
+  }
+
   // keyboard navigation through the move list
   useEffect(() => {
     if (phase !== 'game') return
@@ -688,19 +769,20 @@ export default function App() {
 
       {phase === 'input' ? (
         <div className="landing">
-          {history.length > 0 ? (
+          {historyItems.length > 0 ? (
             <div className="history card">
               <h2>Your analysed games</h2>
               <ul className="history-list">
-                {history.map((g) => (
+                {historyItems.map((g) => (
                   <li key={g.key}>
-                    <button className="history-row" onClick={() => handleSubmit(g.pgn, g.focus)}>
+                    <button className="history-row" onClick={() => void openSaved(g)}>
                       <span className="history-title">
                         {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
                       </span>
                       <span className="history-meta">
-                        as {colorName(g.focus)} · {Object.keys(g.results).length} analysed
-                        {g.quiz ? ' · quiz' : ''} ·{' '}
+                        as {colorName(g.focus)} · {g.analysed} analysed
+                        {g.hasQuiz ? ' · quiz' : ''}
+                        {g.cloudOnly ? ' · ☁' : ''} ·{' '}
                         {new Date(g.savedAt).toLocaleDateString(undefined, {
                           day: 'numeric',
                           month: 'short',
@@ -710,11 +792,8 @@ export default function App() {
                     <button
                       className="history-del"
                       aria-label="Delete this saved analysis"
-                      title="Delete this saved analysis"
-                      onClick={() => {
-                        removeGame(g.key)
-                        setHistory(listGames())
-                      }}
+                      title="Delete this saved analysis (here and in the cloud)"
+                      onClick={() => deleteSaved(g.key)}
                     >
                       ✕
                     </button>
