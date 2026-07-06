@@ -234,12 +234,21 @@ export interface MetaGameSummary {
   focus: Focus
   result?: string // headers.Result, e.g. "1-0"
   date?: string // headers.Date
+  /** when the game entered the app (ms epoch) — orders games with no PGN date */
+  addedAt?: number
   opening: string // the first moves in SAN, straight from the PGN
   analysed: number
   ruleBroken: Array<{ id: number; n: number }> // most-broken rules (top 5)
   ruleFollowed: Array<{ id: number; n: number }> // most-followed rules (top 5)
   soundness: { sound: number; speculative: number; dubious: number }
-  engine?: { avgCpLoss: number; worst: number; blunders: number; checked: number }
+  engine?: {
+    avgCpLoss: number
+    worst: number
+    blunders: number
+    checked: number
+    /** chess.com-style game accuracy % for the player's own moves (one decimal) */
+    accuracy?: number
+  }
   lessons: string[] // lessons from the costliest moves (up to 3)
 }
 
@@ -259,6 +268,8 @@ export interface MetaInsight {
 export interface MetaReport {
   profile: string
   openings: string
+  /** recent games vs the rest: accuracy direction, fading/persisting mistakes (absent on older saved reports) */
+  trends?: MetaInsight[]
   recurringMistakes: MetaInsight[]
   strengths: MetaInsight[]
   priorities: MetaInsight[]

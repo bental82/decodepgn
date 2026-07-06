@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
+import { gameAccuracy } from '../shared/accuracy'
 import { RULES_BY_ID } from '../shared/rules'
-import type { Soundness } from '../shared/types'
+import type { Color, EngineEval, Soundness } from '../shared/types'
 import { isStudied } from '../shared/types'
 import type { GameSummaryProps } from './contract'
 import { colorName } from './contract'
@@ -33,6 +34,18 @@ export default function GameSummary({ moves, focus, results, onPickRule }: GameS
     }
     return { broke: top3(brokeRec), followed: top3(followedRec), sound: soundCount, analysed: analysedN }
   }, [results])
+
+  // Chess.com-style accuracy % per side, from the engine-checked moves.
+  const accuracy = useMemo(() => {
+    const forSide = (c: Color) => {
+      const evals: EngineEval[] = []
+      for (const r of Object.values(results)) {
+        if (r.engine && moves[r.ply]?.color === c) evals.push(r.engine)
+      }
+      return gameAccuracy(evals)
+    }
+    return { w: forSide('w'), b: forSide('b') }
+  }, [results, moves])
 
   const totalFocus = moves.filter((m) => isStudied(m.color, focus)).length
 
@@ -88,6 +101,20 @@ export default function GameSummary({ moves, focus, results, onPickRule }: GameS
         <span className="badge snd-spec">◆ {sound.speculative} speculative</span>
         <span className="badge snd-dubious">▲ {sound.dubious} dubious</span>
       </div>
+      {accuracy.w != null || accuracy.b != null ? (
+        <div
+          className="summary-sound"
+          title="Engine accuracy over the checked moves, on the familiar chess.com-style 0–100% scale — 100% means every move matched Stockfish's choice."
+        >
+          <span className="summary-sound-label">Accuracy</span>
+          {accuracy.w != null ? (
+            <span className="badge acc-badge">{focus === 'both' ? `White ${accuracy.w}` : accuracy.w}%</span>
+          ) : null}
+          {accuracy.b != null ? (
+            <span className="badge acc-badge">{focus === 'both' ? `Black ${accuracy.b}` : accuracy.b}%</span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

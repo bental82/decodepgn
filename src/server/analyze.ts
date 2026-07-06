@@ -1019,6 +1019,12 @@ const META_TOOL = {
         description:
           '2-4 sentences: what they actually play as White and as Black (name the openings from the move sequences), which lines score well or badly for them, and one concrete repertoire suggestion.',
       },
+      trends: {
+        type: 'array',
+        description:
+          '2-4 trend observations comparing the MOST RECENT games with the earlier ones: accuracy rising or falling (quote the percentages), recurring mistakes fading or persisting, opening shifts, results. With under ~4 games, return ONE item saying the sample is too small to call a trend yet.',
+        items: META_INSIGHT_SCHEMA,
+      },
       recurringMistakes: {
         type: 'array',
         description: '3-5 patterns that repeat ACROSS games — not one-offs.',
@@ -1036,7 +1042,7 @@ const META_TOOL = {
         items: META_INSIGHT_SCHEMA,
       },
     },
-    required: ['profile', 'openings', 'recurringMistakes', 'strengths', 'priorities'],
+    required: ['profile', 'openings', 'trends', 'recurringMistakes', 'strengths', 'priorities'],
   },
 }
 
@@ -1075,6 +1081,7 @@ function sanitizeSummaries(raw: unknown): MetaGameSummary[] {
     if (s.me === 'w' || s.me === 'b') sum.me = s.me
     if (typeof s.result === 'string') sum.result = clip(s.result, 8)
     if (typeof s.date === 'string') sum.date = clip(s.date, 12)
+    if (Number.isFinite(s.addedAt)) sum.addedAt = s.addedAt
     const e = s.engine
     if (e && Number.isFinite(e.avgCpLoss)) {
       sum.engine = {
@@ -1082,6 +1089,9 @@ function sanitizeSummaries(raw: unknown): MetaGameSummary[] {
         worst: Math.max(0, intOr(e.worst, 0)),
         blunders: Math.max(0, intOr(e.blunders, 0)),
         checked: Math.max(0, intOr(e.checked, 0)),
+      }
+      if (Number.isFinite(e.accuracy)) {
+        sum.engine.accuracy = Math.max(0, Math.min(100, Math.round((e.accuracy as number) * 10) / 10))
       }
     }
     out.push(sum)
@@ -1099,7 +1109,7 @@ function summaryLine(s: MetaGameSummary, i: number): string {
   Analysed ${s.analysed} of your moves. Soundness: ${s.soundness.sound} sound / ${s.soundness.speculative} speculative / ${s.soundness.dubious} dubious.
   Most-broken rules: ${rules(s.ruleBroken)}. Most-followed: ${rules(s.ruleFollowed)}.`
   if (s.engine) {
-    line += `\n  Stockfish: average loss ${(s.engine.avgCpLoss / 100).toFixed(2)} pawns/move over ${s.engine.checked} checked moves, worst single loss ${(s.engine.worst / 100).toFixed(1)}, blunders (>=1.5): ${s.engine.blunders}.`
+    line += `\n  Stockfish: ${s.engine.accuracy != null ? `accuracy ${s.engine.accuracy}%, ` : ''}average loss ${(s.engine.avgCpLoss / 100).toFixed(2)} pawns/move over ${s.engine.checked} checked moves, worst single loss ${(s.engine.worst / 100).toFixed(1)}, blunders (>=1.5): ${s.engine.blunders}.`
   }
   if (s.lessons.length) {
     line += `\n  Lessons from the costliest moves: ${s.lessons.map((l) => `"${l}"`).join(' | ')}`
@@ -1139,23 +1149,37 @@ export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
     throw new AnalyzeError('No analysed games to review yet — analyse a game or two first.')
   }
 
+  // Oldest first, so "the last N games" genuinely means the player's most
+  // recent play — that ordering is what the trends section reads.
+  const stampOf = (s: MetaGameSummary): number => {
+    if (s.date && /^\d{4}\.\d{2}\.\d{2}$/.test(s.date)) {
+      const t = Date.parse(s.date.replace(/\./g, '-'))
+      if (Number.isFinite(t)) return t
+    }
+    return s.addedAt ?? 0
+  }
+  withAnalysis.sort((a, b) => stampOf(a) - stampOf(b))
+  const recentN =
+    withAnalysis.length >= 4 ? Math.min(5, Math.max(2, Math.round(withAnalysis.length / 3))) : 0
+
   const system = systemWith(`You are reviewing this player's WHOLE recent history — ${withAnalysis.length} analysed game(s) — to surface the patterns no single game can show. Use the report_meta tool. Address the player as "you" throughout.
 
-Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context.
+Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (a chess.com-style accuracy %, average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context. Games are listed OLDEST FIRST.
 
 What to produce:
 - "profile": their playing style as the DATA shows it — attacking or positional, fast or slow development, material-grabbing or safety-first, where in the game accuracy drops (opening, middlegame, conversions), and the overall trend across games.
 - "openings": what they actually play as White and as Black — NAME the openings from the move sequences (e.g. "Italian Game", "Caro-Kann") — which of their lines score well or badly, and one concrete repertoire suggestion.
+- "trends": 2-4 observations comparing the MOST RECENT games with the earlier ones: is accuracy rising or falling (quote the percentages), which recurring mistakes are fading and which persist, opening shifts, results. With under ~4 games, return one item saying the sample is too small to call a trend yet — never invent a direction.
 - "recurringMistakes": 3-5 patterns that appear in SEVERAL games, not one-offs. Each names the mechanism, cites the rules involved by number (e.g. "rule 61"), and states the evidence ("in 4 of 6 games, always in the late middlegame"). Diagnose decisions, never character.
 - "strengths": 2-4 things they consistently do well — rules repeatedly followed, phases with low centipawn loss — so they keep doing them on purpose.
 - "priorities": exactly 3 training priorities, most impactful first. Each is a concrete habit or drill ("before every recapture, count the forcing sequence to the end"), tied to the recurring mistakes, with rule numbers.
 
 Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`)
 
-  const user = `The player's analysed games:
+  const user = `The player's analysed games, oldest first:
 
 ${withAnalysis.map(summaryLine).join('\n\n')}
-
+${recentN ? `\nGames ${withAnalysis.length - recentN + 1}-${withAnalysis.length} are the player's most recent — compare them with the earlier ones for the trends section.\n` : ''}
 Write the meta-analysis.`
 
   const data = (await callClaude(apiKey, system, user, {
@@ -1165,6 +1189,7 @@ Write the meta-analysis.`
   })) as {
     profile?: unknown
     openings?: unknown
+    trends?: unknown
     recurringMistakes?: unknown
     strengths?: unknown
     priorities?: unknown
@@ -1186,6 +1211,7 @@ Write the meta-analysis.`
   const report = {
     profile: cleanClip(data.profile, 1200),
     openings: cleanClip(data.openings, 900),
+    trends: insights(data.trends, 4),
     recurringMistakes: insights(data.recurringMistakes, 5),
     strengths: insights(data.strengths, 4),
     priorities: insights(data.priorities, 3),
