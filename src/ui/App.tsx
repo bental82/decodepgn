@@ -1005,14 +1005,6 @@ export default function App() {
                 {historyItems.map((g) => (
                   <li key={g.key}>
                     <button className="history-row" onClick={() => void openSaved(g)}>
-                      {g.result ? (
-                        <span
-                          className={'cc-res r-' + g.result}
-                          title={g.result === 'won' ? 'You won' : g.result === 'lost' ? 'You lost' : 'Draw'}
-                        >
-                          {g.result === 'won' ? 'W' : g.result === 'lost' ? 'L' : '='}
-                        </span>
-                      ) : null}
                       <span className="history-title">
                         {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
                       </span>
@@ -1029,6 +1021,14 @@ export default function App() {
                             : {}),
                         })}
                       </span>
+                      {g.result ? (
+                        <span
+                          className={'cc-res r-' + g.result}
+                          title={g.result === 'won' ? 'You won' : g.result === 'lost' ? 'You lost' : 'Draw'}
+                        >
+                          {g.result === 'won' ? 'W' : g.result === 'lost' ? 'L' : '='}
+                        </span>
+                      ) : null}
                     </button>
                     <button
                       className="history-del"
