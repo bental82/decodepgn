@@ -19,32 +19,45 @@ const TIMEOUT_MS = 55_000
 
 async function postAnalyze<T>(body: object, timeoutMs = TIMEOUT_MS): Promise<T> {
   const ctrl = new AbortController()
+  // The timer stays armed until the BODY is read, not just the headers:
+  // a response whose body stalls mid-flight would otherwise hang forever
+  // (fetch resolves on headers; only the signal can cancel the body read).
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  let res: Response
   try {
-    res = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    })
-  } catch (e) {
-    if (ctrl.signal.aborted) throw new Error('The request timed out. Try again in a moment.')
-    throw new Error('Could not reach the service. Check your connection and try again.')
+    let res: Response
+    try {
+      res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      })
+    } catch {
+      if (ctrl.signal.aborted) throw new Error('The request timed out. Try again in a moment.')
+      throw new Error('Could not reach the service. Check your connection and try again.')
+    }
+    if (!res.ok) {
+      let message = `Request failed (${res.status}).`
+      try {
+        const errBody = await res.json()
+        if (errBody && typeof errBody.error === 'string') message = errBody.error
+      } catch {
+        /* ignore parse errors */
+      }
+      throw new Error(message)
+    }
+    try {
+      return (await res.json()) as T
+    } catch {
+      throw new Error(
+        ctrl.signal.aborted
+          ? 'The request timed out. Try again in a moment.'
+          : 'The service returned an unreadable response. Try again.',
+      )
+    }
   } finally {
     clearTimeout(timer)
   }
-  if (!res.ok) {
-    let message = `Request failed (${res.status}).`
-    try {
-      const body = await res.json()
-      if (body && typeof body.error === 'string') message = body.error
-    } catch {
-      /* ignore parse errors */
-    }
-    throw new Error(message)
-  }
-  return (await res.json()) as T
 }
 
 export function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {

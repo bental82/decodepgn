@@ -79,6 +79,9 @@ export default function App() {
   })
   const [metaLoading, setMetaLoading] = useState(false)
   const [metaError, setMetaError] = useState<string | null>(null)
+  // Game keys with an analyse-all run still going (survives leaving the game
+  // view; the landing list shows a live badge for them).
+  const [bgAnalysing, setBgAnalysing] = useState<Set<string>>(new Set())
   const [hasServerKey, setHasServerKey] = useState(false)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
@@ -147,12 +150,32 @@ export default function App() {
   // engine checks on re-analysis without re-creating itself on every result).
   const resultsRef = useRef(results)
   resultsRef.current = results
+  // Latest headers, for background writes after the user leaves the game view.
+  const headersRef = useRef(headers)
+  headersRef.current = headers
+
+  interface AnalysisRun {
+    gen: number
+    key: string
+    pgn: string
+    headers: Record<string, string>
+  }
 
   const analyzePlies = useCallback(
-    async (mvs: ParsedMove[], f: Focus, plies: number[]) => {
+    async (mvs: ParsedMove[], f: Focus, plies: number[], run?: AnalysisRun) => {
       const targets = plies.filter((ply) => mvs[ply] && isStudied(mvs[ply].color, f))
       if (!targets.length) return
-      const gen = genRef.current
+      // The run context is captured when the RUN starts (game on screen), not
+      // when this batch starts: an analyse-all keeps dispatching batches after
+      // the user leaves, and by then genRef/storeRef describe a different view.
+      // Without this, late batches would write into the wrong place.
+      const origin = run ?? {
+        gen: genRef.current,
+        key: storeRef.current?.key ?? '',
+        pgn: storeRef.current?.pgn ?? '',
+        headers: headersRef.current,
+      }
+      const gen = origin.gen
       setLoadingPlies((prev) => new Set([...prev, ...targets]))
       setErrorByPly((prev) => {
         const c = { ...prev }
@@ -179,7 +202,6 @@ export default function App() {
         }
         if (pending.length > 0 && (await engineAvailable())) {
           for (const t of pending) {
-            if (genRef.current !== gen) return
             const pm = mvs[t.ply]
             const ev = await evaluateMove(pm)
             if (ev) {
@@ -188,23 +210,50 @@ export default function App() {
             }
           }
         }
-        const resp = await analyze({
+        const req = {
           focus: f,
           game: toGameMoves(mvs),
           targets: targetObjs,
           apiKey: apiKey.trim() || undefined,
+        }
+        // One retry: a transient stall (or a response that never finishes
+        // arriving) costs one timeout instead of losing the whole batch.
+        const resp = await analyze(req).catch(async () => {
+          await new Promise((r) => setTimeout(r, 2000))
+          return analyze(req)
         })
-        if (genRef.current !== gen) return
         const returned = new Set(resp.results.map((r) => r.ply))
-        setResults((prev) => {
-          const c = { ...prev }
-          for (const r of resp.results) c[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
-          // targets Claude skipped: record an empty result so we don't loop forever
-          for (const p of targets) if (!returned.has(p) && !c[p]) c[p] = { ply: p, rules: [], lesson: '' }
-          return c
-        })
+        if (genRef.current === gen) {
+          // still looking at this game — update the view (persistence follows
+          // via the save effect)
+          setResults((prev) => {
+            const c = { ...prev }
+            for (const r of resp.results) c[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
+            // targets Claude skipped: record an empty result so we don't loop forever
+            for (const p of targets) if (!returned.has(p) && !c[p]) c[p] = { ply: p, rules: [], lesson: '' }
+            return c
+          })
+        } else if (origin.key) {
+          // the user moved on — merge the batch straight into the game's save
+          // (unless they deleted it meanwhile) and refresh the landing list
+          const saved =
+            loadGame(origin.key) ??
+            ({
+              key: origin.key,
+              pgn: origin.pgn,
+              focus: f,
+              headers: origin.headers,
+              savedAt: Date.now(),
+              results: {},
+            } as SavedGame)
+          const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
+          for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
+          saveGame(merged)
+          cloudSave(merged)
+          setHistory(listGames())
+        }
       } catch (e) {
-        if (genRef.current !== gen) return
+        if (genRef.current !== gen) return // background batch failed — retry next open
         const msg = e instanceof Error ? e.message : 'Analysis failed.'
         setErrorByPly((prev) => {
           const c = { ...prev }
@@ -427,28 +476,50 @@ export default function App() {
       .map((m) => m.ply)
     if (!plies.length) return
     const gen = genRef.current
+    const runKey = storeRef.current?.key
+    const run: AnalysisRun = {
+      gen,
+      key: runKey ?? '',
+      pgn: storeRef.current?.pgn ?? '',
+      headers: headersRef.current,
+    }
     const BATCH = 6
     const CONCURRENCY = 3
     const batches: number[][] = []
     for (let i = 0; i < plies.length; i += BATCH) batches.push(plies.slice(i, i + BATCH))
     setQueuedPlies(new Set(plies))
     setAllProgress({ done: 0, total: plies.length })
+    if (runKey) setBgAnalysing((prev) => new Set(prev).add(runKey))
     let done = 0
     let next = 0
+    // The run is NOT tied to the game staying on screen: leaving to the main
+    // screen (or opening another game) lets the batches finish in the
+    // background — analyzePlies writes them straight to this game's save.
+    // Only the on-screen indicators are gen-guarded.
     const worker = async () => {
-      while (next < batches.length && genRef.current === gen) {
+      while (next < batches.length) {
         const chunk = batches[next++]
-        setQueuedPlies((prev) => {
-          const c = new Set(prev)
-          chunk.forEach((p) => c.delete(p)) // no longer queued — now in flight
-          return c
-        })
-        await analyzePlies(moves, focus, chunk)
+        if (genRef.current === gen) {
+          setQueuedPlies((prev) => {
+            const c = new Set(prev)
+            chunk.forEach((p) => c.delete(p)) // no longer queued — now in flight
+            return c
+          })
+        }
+        await analyzePlies(moves, focus, chunk, run)
         done += chunk.length
         if (genRef.current === gen) setAllProgress({ done: Math.min(plies.length, done), total: plies.length })
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+    if (runKey) {
+      setBgAnalysing((prev) => {
+        const c = new Set(prev)
+        c.delete(runKey)
+        return c
+      })
+    }
+    setHistory(listGames())
     if (genRef.current === gen) {
       setAllProgress(null)
       setQueuedPlies(new Set())
@@ -776,13 +847,20 @@ export default function App() {
     <div className="app">
       <PieceSprite />
       <header className="topbar">
-        <div className="brand">
+        <button
+          className="brand"
+          onClick={() => {
+            if (phase === 'game') reset()
+          }}
+          title="Back to the start screen"
+          aria-label="DecodePGN — back to the start screen"
+        >
           <span className="logo">♟</span>
           <div>
             <h1>DecodePGN</h1>
             <span className="tagline">which rules of thumb apply, move by move</span>
           </div>
-        </div>
+        </button>
         {phase === 'game' && (
           <div className="topbar-right">
             <div className="game-meta">
@@ -863,6 +941,7 @@ export default function App() {
                       </span>
                       <span className="history-meta">
                         as {colorName(g.focus)} · {g.analysed} analysed
+                        {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
                         {g.cloudOnly ? ' · ☁' : ''} ·{' '}
                         {new Date(g.savedAt).toLocaleDateString(undefined, {
