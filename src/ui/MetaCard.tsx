@@ -130,12 +130,6 @@ export default function MetaCard({
               <p>
                 <RuleText text={report.openings} onOpenRule={onOpenRule} />
               </p>
-              {report.trends?.length ? (
-                <>
-                  <h3>Trends — your recent games</h3>
-                  <InsightList items={report.trends} onOpenRule={onOpenRule} />
-                </>
-              ) : null}
               {report.recurringMistakes.length > 0 && (
                 <>
                   <h3>Recurring mistakes</h3>
@@ -148,6 +142,12 @@ export default function MetaCard({
                   <InsightList items={report.strengths} onOpenRule={onOpenRule} />
                 </>
               )}
+              {report.trends?.length ? (
+                <>
+                  <h3>Trends — your recent games</h3>
+                  <InsightList items={report.trends} onOpenRule={onOpenRule} />
+                </>
+              ) : null}
               {report.priorities.length > 0 && (
                 <>
                   <h3>Work on next</h3>
