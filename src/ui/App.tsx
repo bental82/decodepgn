@@ -103,6 +103,7 @@ export default function App() {
     setSyncedKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
   }, [])
   const [hasServerKey, setHasServerKey] = useState(false)
+  const [serverBuild, setServerBuild] = useState<string | undefined>(undefined)
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
   const [queuedPlies, setQueuedPlies] = useState<Set<number>>(new Set())
@@ -140,13 +141,16 @@ export default function App() {
   const [overviewError, setOverviewError] = useState<string | null>(null)
 
   // Learn whether the deployment has its own key, so we can be honest about
-  // whether the user needs to bring one.
+  // whether the user needs to bring one. Also remember the API's build marker
+  // (shown in Settings) so "what's actually live?" is answerable at a glance.
   useEffect(() => {
     let cancelled = false
     fetch('/api/analyze', { method: 'GET' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled && d && typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
+        if (cancelled || !d) return
+        if (typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
+        if (typeof d.build === 'string') setServerBuild(d.build)
       })
       .catch(() => {})
     return () => {
@@ -1396,6 +1400,7 @@ export default function App() {
         <Settings
           apiKey={apiKey}
           hasServerKey={hasServerKey}
+          serverBuild={serverBuild}
           onSave={saveKey}
           onClose={() => setShowSettings(false)}
         />

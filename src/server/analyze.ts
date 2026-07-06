@@ -1012,9 +1012,13 @@ const META_INSIGHT_SCHEMA = {
   required: ['title', 'detail'],
 }
 
-const META_TOOL = {
-  name: 'report_meta',
-  description: "Report the cross-game meta-analysis of the player's habits.",
+// The report is generated as TWO parallel Claude calls (style/trends and
+// coaching). One call writing every section is thousands of tokens — slow
+// enough to brush serverless time limits, and a truncation used to surface as
+// a report that silently "stopped" after the first sections.
+const META_CORE_TOOL = {
+  name: 'report_meta_core',
+  description: "Report the style, openings and trends part of the player's cross-game review.",
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -1035,6 +1039,18 @@ const META_TOOL = {
           '2-4 trend observations comparing the MOST RECENT games with the earlier ones: accuracy rising or falling (quote the percentages), recurring mistakes fading or persisting, opening shifts, results. With under ~4 games, return ONE item saying the sample is too small to call a trend yet.',
         items: META_INSIGHT_SCHEMA,
       },
+    },
+    required: ['profile', 'openings', 'trends'],
+  },
+}
+
+const META_COACH_TOOL = {
+  name: 'report_meta_coaching',
+  description: "Report the mistakes, strengths and priorities part of the player's cross-game review.",
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
       recurringMistakes: {
         type: 'array',
         description: '3-5 patterns that repeat ACROSS games — not one-offs.',
@@ -1052,7 +1068,7 @@ const META_TOOL = {
         items: META_INSIGHT_SCHEMA,
       },
     },
-    required: ['profile', 'openings', 'trends', 'recurringMistakes', 'strengths', 'priorities'],
+    required: ['recurringMistakes', 'strengths', 'priorities'],
   },
 }
 
@@ -1172,44 +1188,52 @@ export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
   const recentN =
     withAnalysis.length >= 4 ? Math.min(5, Math.max(2, Math.round(withAnalysis.length / 3))) : 0
 
-  const system = systemWith(`You are reviewing this player's WHOLE recent history — ${withAnalysis.length} analysed game(s) — to surface the patterns no single game can show. Use the report_meta tool. Address the player as "you" throughout.
+  const intro = `You are reviewing this player's WHOLE recent history — ${withAnalysis.length} analysed game(s) — to surface the patterns no single game can show. Address the player as "you" throughout.
 
 Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (a chess.com-style accuracy %, average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context. Games are listed OLDEST FIRST.
 
-What to produce:
+Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`
+
+  const coreSystem = systemWith(`${intro}
+
+Use the report_meta_core tool. What to produce:
 - "profile": their playing style as the DATA shows it — attacking or positional, fast or slow development, material-grabbing or safety-first, where in the game accuracy drops (opening, middlegame, conversions), and the overall trend across games.
 - "openings": what they actually play as White and as Black — NAME the openings from the move sequences (e.g. "Italian Game", "Caro-Kann") — which of their lines score well or badly, and one concrete repertoire suggestion.
-- "trends": 2-4 observations comparing the MOST RECENT games with the earlier ones: is accuracy rising or falling (quote the percentages), which recurring mistakes are fading and which persist, opening shifts, results. With under ~4 games, return one item saying the sample is too small to call a trend yet — never invent a direction.
+- "trends": 2-4 observations comparing the MOST RECENT games with the earlier ones: is accuracy rising or falling (quote the percentages), which recurring mistakes are fading and which persist, opening shifts, results. With under ~4 games, return one item saying the sample is too small to call a trend yet — never invent a direction.`)
+
+  const coachSystem = systemWith(`${intro}
+
+Use the report_meta_coaching tool. What to produce:
 - "recurringMistakes": 3-5 patterns that appear in SEVERAL games, not one-offs. Each names the mechanism, cites the rules involved by number (e.g. "rule 61"), and states the evidence ("in 4 of 6 games, always in the late middlegame"). Diagnose decisions, never character.
 - "strengths": 2-4 things they consistently do well — rules repeatedly followed, phases with low centipawn loss — so they keep doing them on purpose.
-- "priorities": exactly 3 training priorities, most impactful first. Each is a concrete habit or drill ("before every recapture, count the forcing sequence to the end"), tied to the recurring mistakes, with rule numbers.
-
-Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`)
+- "priorities": exactly 3 training priorities, most impactful first. Each is a concrete habit or drill ("before every recapture, count the forcing sequence to the end"), tied to the recurring mistakes, with rule numbers.`)
 
   const user = `The player's analysed games, oldest first:
 
 ${withAnalysis.map(summaryLine).join('\n\n')}
 ${recentN ? `\nGames ${withAnalysis.length - recentN + 1}-${withAnalysis.length} are the player's most recent — compare them with the earlier ones for the trends section.\n` : ''}
-Write the meta-analysis.`
+Write your part of the meta-analysis.`
 
-  // The full report (profile + openings + trends + mistakes + strengths +
-  // priorities) can genuinely run long — an undersized budget truncates the
-  // tool output and the report loses its later sections, and generating those
-  // tokens takes real minutes, so this call gets a far longer wall-clock
-  // allowance than the interactive ones (the client + function match it).
-  const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 6000,
-    timeoutMs: 280_000,
-    tool: META_TOOL,
-    toolName: 'report_meta',
-  })) as {
-    profile?: unknown
-    openings?: unknown
-    trends?: unknown
-    recurringMistakes?: unknown
-    strengths?: unknown
-    priorities?: unknown
-  }
+  // Two parallel calls, each roughly half the output: the wall-clock is the
+  // slower call, not the sum, and each stays comfortably inside serverless
+  // time limits that a single full-report generation used to brush against.
+  const [core, coach] = (await Promise.all([
+    callClaude(apiKey, coreSystem, user, {
+      maxTokens: 3000,
+      timeoutMs: 280_000,
+      tool: META_CORE_TOOL,
+      toolName: 'report_meta_core',
+    }),
+    callClaude(apiKey, coachSystem, user, {
+      maxTokens: 3500,
+      timeoutMs: 280_000,
+      tool: META_COACH_TOOL,
+      toolName: 'report_meta_coaching',
+    }),
+  ])) as [
+    { profile?: unknown; openings?: unknown; trends?: unknown },
+    { recurringMistakes?: unknown; strengths?: unknown; priorities?: unknown },
+  ]
 
   const insights = (raw: unknown, max: number): MetaInsight[] =>
     (Array.isArray(raw) ? raw : [])
@@ -1225,13 +1249,24 @@ Write the meta-analysis.`
       })
 
   const report = {
-    profile: cleanClip(data.profile, 1200),
-    openings: cleanClip(data.openings, 900),
-    trends: insights(data.trends, 4),
-    recurringMistakes: insights(data.recurringMistakes, 5),
-    strengths: insights(data.strengths, 4),
-    priorities: insights(data.priorities, 3),
+    profile: cleanClip(core.profile, 1200),
+    openings: cleanClip(core.openings, 900),
+    trends: insights(core.trends, 4),
+    recurringMistakes: insights(coach.recurringMistakes, 5),
+    strengths: insights(coach.strengths, 4),
+    priorities: insights(coach.priorities, 3),
   }
-  if (!report.profile) throw new AnalyzeError('Claude did not return a meta-analysis.', 502)
+  // Never hand back a partial report: a report missing whole sections reads
+  // as "it stopped after the openings paragraph" with no visible error.
+  if (
+    !report.profile ||
+    !report.openings ||
+    !report.trends.length ||
+    !report.recurringMistakes.length ||
+    !report.strengths.length ||
+    !report.priorities.length
+  ) {
+    throw new AnalyzeError('The report came back incomplete. Please try regenerating.', 502)
+  }
   return { report, gamesUsed: withAnalysis.length }
 }

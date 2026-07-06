@@ -121,6 +121,8 @@ export interface GameSummaryProps {
 export interface SettingsProps {
   apiKey: string
   hasServerKey: boolean
+  /** the deployed API's build marker (from GET /api/analyze) — shows what's live */
+  serverBuild?: string
   onSave: (key: string) => void
   onClose: () => void
 }
