@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import AskBox from './AskBox'
+import RuleText from './RuleText'
 
 interface Props {
   ruleId: number
@@ -55,7 +56,9 @@ export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onOpe
         <h2 id="rule-modal-title" className="rule-modal-title">
           <span className="rule-num">#{rule.id}</span> {rule.title}
         </h2>
-        <p className="rule-modal-detail">{rule.detail}</p>
+        <p className="rule-modal-detail">
+          {onOpenRule ? <RuleText text={rule.detail} onOpenRule={onOpenRule} /> : rule.detail}
+        </p>
         <AskBox
           key={ruleId}
           context={{ ruleId }}
