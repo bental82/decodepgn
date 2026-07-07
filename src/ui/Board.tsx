@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import type { AnnoColor, BoardAnnotations } from '../shared/types'
 import type { BoardProps, Orientation } from './contract'
 
@@ -8,6 +9,14 @@ interface SquareCell {
 
 const files = 'abcdefgh'
 const ANNO_COLORS = new Set<string>(['green', 'red', 'yellow', 'blue'])
+
+/** Grid column/row (0-7) of a square as rendered, respecting orientation. */
+function squareOffset(sq: string, orientation: Orientation): { col: number; row: number } | null {
+  const f = files.indexOf(sq[0])
+  const r = parseInt(sq[1], 10)
+  if (f < 0 || !(r >= 1 && r <= 8)) return null
+  return orientation === 'b' ? { col: 7 - f, row: r - 1 } : { col: f, row: 8 - r }
+}
 
 /** Centre of a square in the 8x8 SVG overlay space, respecting orientation. */
 function squareCenter(sq: string, orientation: Orientation): { x: number; y: number } | null {
@@ -58,7 +67,15 @@ function tintMap(annotations?: BoardAnnotations): Map<string, AnnoColor> {
 // Pieces are the classic cburnett SVG set. The sprite is inlined once by
 // <PieceSprite>; here we reference each piece by its same-document id
 // (#wk, #bq, …) via <use>, which gives crisp vector pieces at any size.
-export default function Board({ fen, orientation, lastMove, caption, annotations }: BoardProps) {
+interface Slide {
+  key: string
+  from: string
+  to: string
+  piece: { type: string; white: boolean }
+  go: boolean
+}
+
+export default function Board({ fen, orientation, lastMove, caption, annotations, anim }: BoardProps) {
   const placement = fen.split(' ')[0]
   const rows = placement.split('/')
 
@@ -85,6 +102,38 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   const tints = tintMap(annotations)
   const arrows = (annotations?.arrows ?? []).filter((a) => a && ANNO_COLORS.has(a.color))
 
+  // Move-navigation glide: the piece now standing on anim.to slides in from
+  // anim.from, so the eye instantly sees WHICH piece just moved (or un-moved).
+  // The animation is keyed to position+move; it expires on its own timer and
+  // is never cancelled by unrelated re-renders mid-flight.
+  const [slide, setSlide] = useState<Slide | null>(null)
+  const slideKey = anim ? `${anim.from}>${anim.to}|${placement}` : ''
+  const startedRef = useRef('')
+  useEffect(() => {
+    if (!anim || !slideKey || startedRef.current === slideKey) return
+    startedRef.current = slideKey
+    const piece = cells.find((c) => c.square === anim.to)?.piece
+    if (!piece || !squareOffset(anim.from, orientation) || !squareOffset(anim.to, orientation)) return
+    setSlide({ key: slideKey, from: anim.from, to: anim.to, piece, go: false })
+    // two frames: paint at the origin square first, then transition to target
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() =>
+        setSlide((cur) => (cur && cur.key === slideKey ? { ...cur, go: true } : cur)),
+      )
+    })
+    const timer = setTimeout(
+      () => setSlide((cur) => (cur && cur.key === slideKey ? null : cur)),
+      260,
+    )
+    return () => {
+      cancelAnimationFrame(raf1)
+      if (raf2) cancelAnimationFrame(raf2)
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideKey])
+
   return (
     <div className="board-wrap">
       {caption && <div className="board-caption">{caption}</div>}
@@ -109,13 +158,36 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
               {showRank && <span className="coord rank">{rankNum}</span>}
               {showFile && <span className="coord file">{fileCh}</span>}
               {piece && (
-                <svg className="piece" viewBox="0 0 40 40" aria-hidden="true">
+                <svg
+                  className="piece"
+                  viewBox="0 0 40 40"
+                  aria-hidden="true"
+                  style={slide && slide.to === square ? { visibility: 'hidden' } : undefined}
+                >
                   <use href={`#${piece.white ? 'w' : 'b'}${piece.type}`} />
                 </svg>
               )}
             </div>
           )
         })}
+        {slide &&
+          (() => {
+            const a = squareOffset(slide.from, orientation)
+            const b = squareOffset(slide.to, orientation)
+            if (!a || !b) return null
+            const pos = slide.go ? b : a
+            return (
+              <div className="board-anim" aria-hidden="true">
+                <svg
+                  className="anim-piece"
+                  viewBox="0 0 40 40"
+                  style={{ transform: `translate(${pos.col * 100}%, ${pos.row * 100}%)` }}
+                >
+                  <use href={`#${slide.piece.white ? 'w' : 'b'}${slide.piece.type}`} />
+                </svg>
+              </div>
+            )
+          })()}
         {arrows.length > 0 && (
           <svg className="board-arrows" viewBox="0 0 8 8" aria-hidden="true">
             {arrows.map((a, i) => {

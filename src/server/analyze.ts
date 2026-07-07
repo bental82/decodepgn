@@ -1008,6 +1008,21 @@ const META_INSIGHT_SCHEMA = {
       items: { type: 'integer' },
       description: `The rules of thumb involved (1-${RULE_COUNT}).`,
     },
+    examples: {
+      type: 'array',
+      maxItems: 2,
+      description:
+        'Up to 2 concrete moments backing this insight: the game NUMBER exactly as listed (1-based) and the ply from that game\'s lesson lines. The app turns these into links the player can tap to open that exact move.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          game: { type: 'integer', description: 'game number as listed, 1-based' },
+          ply: { type: 'integer', description: 'the ply cited in that game\'s lesson lines' },
+        },
+        required: ['game', 'ply'],
+      },
+    },
   },
   required: ['title', 'detail'],
 }
@@ -1099,10 +1114,23 @@ function sanitizeSummaries(raw: unknown): MetaGameSummary[] {
         speculative: Math.max(0, intOr(snd.speculative, 0)),
         dubious: Math.max(0, intOr(snd.dubious, 0)),
       },
+      // older clients send plain strings; newer ones send { ply, text }
       lessons: (Array.isArray(s.lessons) ? s.lessons : [])
-        .filter((l) => typeof l === 'string')
+        .map((l: unknown) =>
+          typeof l === 'string'
+            ? { text: l }
+            : l && typeof (l as { text?: unknown }).text === 'string'
+              ? {
+                  text: (l as { text: string }).text,
+                  ...(Number.isInteger((l as { ply?: unknown }).ply)
+                    ? { ply: (l as { ply: number }).ply }
+                    : {}),
+                }
+              : null,
+        )
+        .filter((l): l is { ply?: number; text: string } => !!l)
         .slice(0, 3)
-        .map((l) => cleanClip(l, 220)),
+        .map((l) => ({ ...l, text: cleanClip(l.text, 220) })),
     }
     if (s.me === 'w' || s.me === 'b') sum.me = s.me
     if (typeof s.result === 'string') sum.result = clip(s.result, 8)
@@ -1138,7 +1166,9 @@ function summaryLine(s: MetaGameSummary, i: number): string {
     line += `\n  Stockfish: ${s.engine.accuracy != null ? `accuracy ${s.engine.accuracy}%, ` : ''}average loss ${(s.engine.avgCpLoss / 100).toFixed(2)} pawns/move over ${s.engine.checked} checked moves, worst single loss ${(s.engine.worst / 100).toFixed(1)}, blunders (>=1.5): ${s.engine.blunders}.`
   }
   if (s.lessons.length) {
-    line += `\n  Lessons from the costliest moves: ${s.lessons.map((l) => `"${l}"`).join(' | ')}`
+    line += `\n  Lessons from the costliest moves: ${s.lessons
+      .map((l) => `${l.ply !== undefined ? `(ply ${l.ply}) ` : ''}"${l.text}"`)
+      .join(' | ')}`
   }
   return line
 }
@@ -1191,6 +1221,8 @@ export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
   const intro = `You are reviewing this player's WHOLE recent history — ${withAnalysis.length} analysed game(s) — to surface the patterns no single game can show. Address the player as "you" throughout.
 
 Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (a chess.com-style accuracy %, average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context. Games are listed OLDEST FIRST.
+
+Each lesson line carries its ply number. When an insight rests on a concrete moment, attach "examples": the game number exactly as listed plus that ply — the app turns them into links the player taps to open that exact move. Only cite plies that appear in the lesson lines.
 
 Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`
 
@@ -1245,6 +1277,21 @@ Write your part of the meta-analysis.`
           (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= RULE_COUNT,
         )
         if (ids.length) out.ruleIds = ids.slice(0, 6)
+        // resolve "game N, ply P" citations to tappable game links
+        const refs = (Array.isArray(x.examples) ? x.examples : [])
+          .map((e: { game?: unknown; ply?: unknown }) => {
+            const g = Number.isInteger(e?.game) ? withAnalysis[(e.game as number) - 1] : undefined
+            if (!g || !Number.isInteger(e?.ply) || (e.ply as number) < 0) return null
+            const ply = e.ply as number
+            return {
+              key: g.key,
+              ply,
+              label: `${g.white} vs ${g.black} · move ${Math.floor(ply / 2) + 1}`,
+            }
+          })
+          .filter((r: { key: string; ply: number; label: string } | null): r is { key: string; ply: number; label: string } => !!r)
+          .slice(0, 2)
+        if (refs.length) out.refs = refs
         return out
       })
 
