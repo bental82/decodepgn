@@ -729,6 +729,176 @@ export const RULES: Rule[] = [
     detail:
       'When going over a finished game, do not only hunt for the tactical blunder — note the recurring ideas, maneuvers, and pawn breaks that appeared. Ask: which plan kept working, and which break did I miss? Collecting these builds a mental library of plans you can reuse in similar structures.',
   },
+
+  // Added rules (97-120) — proposed by theme, then dedup-checked against 1-96.
+  {
+    id: 97,
+    category: 'Opening and development',
+    title: 'When development ends, stop and pick a plan from the pawn structure.',
+    detail:
+      'Once your minor pieces are out, your king is castled, and the rooks are connected, the opening is over — do not keep making “developing” moves on autopilot. Read the structure to choose a plan: which file will open, where your pawn breaks are, and on which side of the board you are stronger. Ask: what does this pawn structure want me to do?',
+  },
+  {
+    id: 98,
+    category: 'Opening and development',
+    title: 'Do not block your own center pawns and pawn breaks with your pieces.',
+    detail:
+      'A bishop on d3 with the d-pawn still on d2, or a knight on c3 in front of an unpushed c-pawn in a queen’s-pawn opening, strangles the very break your position needs. Develop pieces to squares that leave your center pawns and planned breaks free to advance. Ask: which of my pawns does this piece stand in front of, and will I want to push it later?',
+  },
+  {
+    id: 99,
+    category: 'Opening and development',
+    title: 'Beware the poisoned b-pawn — think twice before Qxb2 or Qxb7.',
+    detail:
+      'Grabbing the b2/b7 pawn with your queen is a famous way to lose: she spends several tempi, gets chased by Rb1 or ...Rb8, and is sometimes trapped outright while your development freezes. Take the poisoned pawn only after calculating her full escape route home. Ask: after Rb1, exactly how does my queen get back?',
+  },
+  {
+    id: 100,
+    category: 'Weaknesses and planning',
+    title: 'Launch a minority attack to create a lasting pawn weakness.',
+    detail:
+      'In Carlsbad-type structures — your a- and b-pawns facing their a-, b-, and c-pawns — push b4-b5 (prepared by Rb1 and a4) to exchange on c6 and leave the opponent a backward c-pawn on a half-open file. The point is not to win a pawn but to manufacture a permanent target your rooks can besiege. Ask: after the trade on c6, what weak pawn and weak square do they inherit?',
+  },
+  {
+    id: 101,
+    category: 'Weaknesses and planning',
+    title: 'Know the plans on both sides of an isolated queen’s pawn.',
+    detail:
+      'With an isolani on d4, play for piece activity before the endgame arrives: use the e5 and c5 support squares, aim at the king, and keep the d4-d5 break loaded. Against it, blockade d5 with a knight, trade minor pieces, and steer toward endings where the pawn is a pure weakness. Ask: is this game drifting toward the middlegame the isolani wants, or the endgame its owner fears?',
+  },
+  {
+    id: 102,
+    category: 'Pawn play',
+    title: 'Mobilize a pawn majority by advancing the candidate pawn first.',
+    detail:
+      'To turn a healthy majority (say, queenside 3 vs 2) into a passed pawn, lead with the candidate — the pawn with no enemy pawn on its file — and let its neighbors escort it; pushing a supporting pawn first can leave the candidate permanently stopped. Ask: which of my majority pawns faces no opposing pawn, and is it the one out in front?',
+  },
+  {
+    id: 103,
+    category: 'Pawn play',
+    title: 'Do not kick an enemy piece to a better square.',
+    detail:
+      'Attacking a piece with a pawn feels active, but if it retreats to a square it wanted anyway — a bishop nudged from g4 to h5 keeps the pin, a knight chased from f6 may land on a d5 outpost — you have spent a tempo and weakened squares just to improve your opponent’s game. Ask: after the retreat, is that piece worse off, or did I just usher it to a better home?',
+  },
+  {
+    id: 104,
+    category: 'Tactics and safety checks',
+    title: 'After your opponent moves, ask what their move changed.',
+    detail:
+      'Every move creates something and abandons something: it may carry a threat, but it also stops defending a square, blocks a line, or weakens a pawn. Find the idea behind the move before resuming your own plan, and look just as hard for what it gave up. Ask: why did they play that — and what did that piece stop doing?',
+  },
+  {
+    id: 105,
+    category: 'Tactics and safety checks',
+    title: 'Count attackers and defenders before you capture on a square.',
+    detail:
+      'To safely win a defended pawn or piece you generally need more attackers than they have defenders, and you should capture with your cheapest piece first. Play the full capture sequence in your head and count material only when the dust settles — never mid-sequence. Ask: after the very last recapture, who has actually come out ahead?',
+  },
+  {
+    id: 106,
+    category: 'Tactics and safety checks',
+    title: 'Notice pieces lined up on the same rank, file, or diagonal.',
+    detail:
+      'Pins, skewers, and discovered attacks all start from an alignment — king and queen on one diagonal, queen and rook on one file — even when something stands in between, because blockers can move or be captured away. Scan both camps for these loaded lines before they fire. Ask: which of my valuable pieces share a line, and can an enemy bishop, rook, or queen exploit it?',
+  },
+  {
+    id: 107,
+    category: 'Tactics and safety checks',
+    title: 'Spot the overworked defender — one piece guarding two things guards neither.',
+    detail:
+      'When a single piece defends two targets, capturing one forces it to recapture and abandon the other. List the defensive jobs of every piece — yours included — before deciding a target is really protected. Ask: if that defender carries out one of its jobs, which other job goes undone?',
+  },
+  {
+    id: 108,
+    category: 'Tactics and safety checks',
+    title: 'Check the retreat before sending a piece into enemy territory.',
+    detail:
+      'A piece that raids deep into the opponent’s camp can be netted by cheap pawn moves once its escape squares disappear — the bishop that grabs a7 and gets sealed in by ...b6 is the classic victim. Before venturing in, count the retreat squares and see whether they can be taken away one by one. Ask: if it is attacked next move, where exactly does it go?',
+  },
+  {
+    id: 109,
+    category: 'Tactics and safety checks',
+    title: 'Know the smothered mate pattern.',
+    detail:
+      'The classic machine: a knight check on f7, a double check from h6 driving the king into the corner, the queen sacrificed on g8 to force the rook to box in its own king, and the knight returning to f7 for mate. Whenever a queen and knight operate near a king stuck in the corner, check for it — for both sides. Ask: can a double check force the king into the corner where its own pieces smother it?',
+  },
+  {
+    id: 110,
+    category: 'King safety and attacking rules',
+    title: 'Plant a knight on f5 (or ...f4) — it can be worth a pawn.',
+    detail:
+      'A knight entrenched on f5 in front of a castled king eyes g7, h6, and e7 and cramps every defender — masters routinely sacrifice a pawn just to put one there or keep it there. The defender usually has to take it or evict it even at the cost of a weakening move like ...g6. Ask: can I route a knight to f5 — and if one is heading toward my king, what removes it before it lands?',
+  },
+  {
+    id: 111,
+    category: 'Defense and practical play',
+    title: 'Reroute a knight to f8 (f1) to defend your castled king.',
+    detail:
+      'The old rule says there is no mate with a knight on f8: from there it guards h7 and g6, the two squares most sacrifices aim at, and it is hard to trade off. When a kingside attack is gathering, the regrouping ...Re8 and ...Nf8 (or Re1 and Nf1 as White) is often the sturdiest defensive setup available. Ask: can I station a knight on f8 before the attack lands?',
+  },
+  {
+    id: 112,
+    category: 'Defense and practical play',
+    title: 'Give back material to break an attack.',
+    detail:
+      'Material won under fire is a loan: returning a pawn or the exchange at the right moment can trade off attackers, close a line, or buy the tempo you need to consolidate. A small concession that kills the initiative is far cheaper than defending a mating attack perfectly for ten moves. Ask: what is the cheapest material I can return to make the attack stop?',
+  },
+  {
+    id: 113,
+    category: 'Defense and practical play',
+    title: 'When lost, hunt for the swindle: perpetual check, stalemate, fortress.',
+    detail:
+      'A lost position is not a lost game until the drawing resources run out: look for perpetual check, sacrifices that leave you stalemated, fortresses the extra material can never break, and trades into known drawn endings — and prefer the move that gives your opponent the most chances to go wrong. When you are the one winning, deny exactly these: careless checks and pawn grabs near a cornered king throw away half points every day. Ask: what is the last thing they must still find in order to win?',
+  },
+  {
+    id: 114,
+    category: 'Defense and practical play',
+    title: 'Set traps only with moves you would play anyway.',
+    detail:
+      'A trap that worsens your position is hope chess: if the opponent sees it, you have paid a full move for nothing. Prefer moves that are sound on their own merits and merely happen to contain poison — then a refuted trick costs you nothing. Ask: if my opponent finds the best reply, am I still happy with this move?',
+  },
+  {
+    id: 115,
+    category: 'Defense and practical play',
+    title: 'Spend your clock where the game is decided.',
+    detail:
+      'Blitz out obvious recaptures and moves you already know, but invest real minutes at critical moments — when the pawn structure changes permanently, when a forcing line beckons, or when a trade decides which endgame you get. Chronic time trouble is a chess weakness, not bad luck. Ask: is this a critical moment, or am I burning minutes on a move that will not change the evaluation?',
+  },
+  {
+    id: 116,
+    category: 'Defense and practical play',
+    title: 'After a blunder, reset before you move again.',
+    detail:
+      'The most dangerous move of your game is the one right after a mistake: tilt makes you lash out to win the material back and lose in two moves what you could still have saved. Take a breath and assess the new position as if you had just sat down to it, then find the most stubborn continuation. Ask: am I choosing this move, or is my last mistake choosing it for me?',
+  },
+  {
+    id: 117,
+    category: 'Piece placement and coordination',
+    title: 'Maneuver a knight by choosing its dream square first, then the route.',
+    detail:
+      'Instead of one-move improvements, decide where the knight would dominate — an outpost like d5, e5, or f5 — and work out the journey backwards; maneuvers like Nf3-d2-f1-e3-d5 only look slow until the knight arrives. Closed positions give you time for multi-move trips. Ask: what is this knight’s best square in the whole position, and how many moves is the trip?',
+  },
+  {
+    id: 118,
+    category: 'Endgame technique',
+    title: 'Win the Lucena position by building a bridge.',
+    detail:
+      'With your pawn on the seventh and your king stuck in front of it, do not shuffle: put your rook on the fourth rank, walk your king out through the checks, and when the checks come, block them by interposing the rook — the famous bridge. Almost every winning rook-and-pawn-vs-rook ending funnels into this position. Ask: can I steer for Lucena, and do I know the bridge by heart?',
+  },
+  {
+    id: 119,
+    category: 'Endgame technique',
+    title: 'Defend rook endings a pawn down with the Philidor method.',
+    detail:
+      'With your king in front of the enemy pawn, park your rook on your third rank so their king can never advance past the pawn; the instant the pawn steps onto that rank, swing your rook to their side of the board and check from behind forever — the king has no shelter. Ask: is my rook holding the third-rank cut, and am I ready to switch to rear checks the moment the pawn advances?',
+  },
+  {
+    id: 120,
+    category: 'Endgame technique',
+    title: 'Know the wrong rook pawn draw.',
+    detail:
+      'A bishop plus rook pawn cannot win if the bishop does not control the pawn’s promotion square and the defending king reaches that corner — the king can never be evicted. When defending, trade off the other pawns and race your king to the corner; when winning, avoid trading down into it. Ask: does their bishop control the queening square?',
+  },
 ]
 
 /** Total number of rules — keep prompt, schema, validation, and UI in sync. */
