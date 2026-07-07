@@ -66,6 +66,9 @@ export default function App() {
   // Step only between flagged moves (soundness "dubious" or an engine loss
   // of 1.5+ pawns) — arrows, swipes and keyboard all honour it.
   const [dubiousOnly, setDubiousOnly] = useState(false)
+  // Set when a game was opened via a "Your play" summary link, so the game
+  // view can offer the way back to the report.
+  const [fromMeta, setFromMeta] = useState(false)
   const [results, setResults] = useState<Record<number, MoveResult>>({})
   const [loadingPlies, setLoadingPlies] = useState<Set<number>>(new Set())
   const [errorByPly, setErrorByPly] = useState<Record<number, string>>({})
@@ -371,6 +374,7 @@ export default function App() {
         atPly !== undefined ? Math.min(Math.max(0, atPly), g.moves.length - 1) : first,
       )
       setDubiousOnly(false)
+      setFromMeta(false)
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
@@ -1193,7 +1197,8 @@ export default function App() {
             onGenerate={() => void generateMeta()}
             onOpenGame={(key, ply) => {
               const item = historyItems.find((h) => h.key === key)
-              if (item) void openSaved(item, ply)
+              // the flag is set AFTER the game loads (handleSubmit clears it)
+              if (item) void openSaved(item, ply).then(() => setFromMeta(true))
             }}
             onOpenRule={openRule}
             summaries={metaSummaries}
@@ -1377,6 +1382,23 @@ export default function App() {
                 {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
                   <button className="jump-back" onClick={returnFromJump}>
                     ↩ Back to {moveLabel(moves[jumpBack])}
+                  </button>
+                ) : null}
+                {fromMeta ? (
+                  <button
+                    className="jump-back"
+                    onClick={() => {
+                      setFromMeta(false)
+                      reset()
+                      // landing renders next frame — then bring the report into view
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector('.meta-card')
+                          ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                      )
+                    }}
+                  >
+                    ↩ Back to “Your play” summary
                   </button>
                 ) : null}
                 </div>
