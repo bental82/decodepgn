@@ -622,6 +622,113 @@ export const RULES: Rule[] = [
     detail:
       'With one bishop, pawns fixed on its color block it and weaken the squares it cannot cover. Pawns on the opposite color let the bishop breathe and let pawns and bishop control both colors together.',
   },
+
+  // Added rules (82-96) — each dedup-checked against 1-81 before inclusion.
+  {
+    id: 82,
+    category: 'Opening and development',
+    title: 'Do not play h3/h6 (or f3/f6) just to prevent a pin.',
+    detail:
+      'Unless a piece coming to g4/g5 carries a concrete threat, the “preventive” h3/h6 wastes a developing tempo and — worse — creates a hook the opponent can lever open with ...h5 or rip apart with a ...Bxh3 sacrifice. Develop a piece instead and deal with the pin only when it actually bites.',
+  },
+  {
+    id: 83,
+    category: 'Opening and development',
+    title: 'Blunt an early bishop aimed at your king with a pawn block.',
+    detail:
+      'When an enemy bishop takes early aim at your king — e.g. Bc4 eyeing f7 — putting a pawn in its path with ...e6 shuts the diagonal and turns their active piece into a spectator biting on granite. As a bonus, later pawn advances can kick the blunted bishop around for free tempi.',
+  },
+  {
+    id: 84,
+    category: 'Defense and practical play',
+    title: 'Meet a g4 pawn storm with a timely ...h5 (or ...h6).',
+    detail:
+      'When the opponent prepares g4 to storm your king or trap your bishop on the h-file, a well-timed ...h5 physically stops the push and keeps a safe retreat square for the bishop. This is the justified version of the edge-pawn move — it prevents a concrete plan, unlike the reflexive kind (rule 82).',
+  },
+  {
+    id: 85,
+    category: 'King safety and attacking rules',
+    title: 'Run the Greek Gift checklist before sacrificing on h7/h2.',
+    detail:
+      'Before a Bxh7+/Bxh2+ Greek Gift, verify the ingredients: a knight ready to hit g5 with check, a queen that can reach h5, and no enemy knight covering f6/h7. Then calculate the king’s escape squares — including the h4-h5 push if the king runs up the board — before committing.',
+  },
+  {
+    id: 86,
+    category: 'King safety and attacking rules',
+    title: 'With opposite-side castling, race your pawns at their king.',
+    detail:
+      'When the kings castle on opposite wings the game is a footrace: throw the pawns in front of their king to rip open files — those pushes cost you nothing, since your own king lives on the other side. Every tempo counts; passive defense of your own wing usually loses the race.',
+  },
+  {
+    id: 87,
+    category: 'King safety and attacking rules',
+    title: 'Push the h-pawn to pry open a fianchettoed king.',
+    detail:
+      'Against a fianchettoed king, march your h-pawn — “Harry” — with h4-h5 (or ...h5-h4) to trade off the g-pawn and rip open the h-file toward the king. It works best when the center is stable and your own king does not live on the same wing.',
+  },
+  {
+    id: 88,
+    category: 'King safety and attacking rules',
+    title: 'Sacrifice the exchange when the damage is worth more than the rook.',
+    detail:
+      'Giving up rook for knight or bishop can be a bargain when it wrecks the enemy pawn structure, removes their best defender, or tears open the pawn cover in front of their king. Ask: was my rook doing anything on its file, and what does the piece — or the weakness I create — do every move?',
+  },
+  {
+    id: 89,
+    category: 'Tactics and safety checks',
+    title: 'A recapture is never forced — check for in-between moves.',
+    detail:
+      'When you calculate a sequence of captures, do not assume the opponent must take back. At every step ask whether they have a zwischenzug — a check, a counter-capture, or a bigger threat — that comes first; many “winning” exchanges fail because an in-between move breaks the sequence.',
+  },
+  {
+    id: 90,
+    category: 'Tactics and safety checks',
+    title: 'Do not play empty one-move threats — and do not panic at threats.',
+    detail:
+      'A move whose only point is a threat the opponent easily parries just loses time — ask what your move achieves once the threat is met. Likewise, when a move attacks your piece, do not retreat automatically: check whether the threat is real and whether ignoring it, defending, or a bigger counter-threat is stronger.',
+  },
+  {
+    id: 91,
+    category: 'Bishop, knight, and endgame rules',
+    title: 'Engineer good knight vs bad bishop: lock pawns on their bishop’s color.',
+    detail:
+      'When the opponent is down to one bishop, try to fix the center pawns on that bishop’s color — their own pawns then wall the bishop in while your knight hops between squares it cannot touch. Ask: which bishop will they be left with, and can I lock the structure on exactly that color?',
+  },
+  {
+    id: 92,
+    category: 'Piece placement and coordination',
+    title: 'After trading away a bishop, put your pawns on its former color.',
+    detail:
+      'When one of your bishops leaves the board, the squares of its color lose their natural defender — let your pawns take over by fixing them on that color. This plugs the color-complex holes the trade left behind (the flip side of rule 81: with the bishop gone, its color is exactly where your pawns belong).',
+  },
+  {
+    id: 93,
+    category: 'Piece placement and coordination',
+    title: 'Coordinated pieces can outfight a lone queen.',
+    detail:
+      'Two rooks, or a swarm of active, harmonized minor pieces, often beat a lone queen — she cannot defend everything against attackers that protect each other. Before trading queen for pieces (or accepting the queen side of the deal), ask: do the pieces coordinate against targets, or do they stand loose where the queen can fork them?',
+  },
+  {
+    id: 94,
+    category: 'Center, pawn breaks, and tension',
+    title: 'In Hedgehog-style cramped setups, play for the counter-break.',
+    detail:
+      'A cramped-but-solid setup like the Hedgehog is a coiled spring, not a fortress to sit in. Keep the ...b5 and ...d5 breaks loaded and strike the moment the opponent overextends — the counter-break is the whole point of the structure, and sitting passively squanders it.',
+  },
+  {
+    id: 95,
+    category: 'Positional play and weaknesses',
+    title: 'Consider a positional pawn sacrifice for lasting pressure.',
+    detail:
+      'Giving up a pawn can be a plan, not a loss: an open file for your rooks and a cleared long diagonal for your fianchettoed bishop can generate pressure the opponent never shakes off — sometimes even into the endgame. Ask: does this pawn buy lasting activity and targets, or just a temporary initiative?',
+  },
+  {
+    id: 96,
+    category: 'Defense and practical play',
+    title: 'Review your games for recurring plans, not just blunders.',
+    detail:
+      'When going over a finished game, do not only hunt for the tactical blunder — note the recurring ideas, maneuvers, and pawn breaks that appeared. Ask: which plan kept working, and which break did I miss? Collecting these builds a mental library of plans you can reuse in similar structures.',
+  },
 ]
 
 /** Total number of rules — keep prompt, schema, validation, and UI in sync. */
