@@ -34,6 +34,8 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--ink); line-height: 1.5; }
+/* horizontal swipes browse moves — never trigger browser back/forward */
+html, body { overscroll-behavior-x: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 h1, h2, h3 { margin: 0 0 0.4em; line-height: 1.2; }
 a { color: var(--accent-ink); }
@@ -146,9 +148,14 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .navbtn { border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 8px 12px; font-size: 15px; cursor: pointer; color: var(--ink); }
+/* dubious-only stepping toggle */
+.warnbtn { display: inline-flex; align-items: center; gap: 4px; }
+.warnbtn.on { border-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+.warnbtn:disabled { opacity: 0.4; cursor: default; }
+.warn-count { font-size: 11px; font-weight: 700; }
 .navbtn:hover:not(:disabled) { border-color: var(--accent); }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
-.navlabel { flex: 1; text-align: center; font-weight: 600; font-size: 15px; }
+.navlabel { flex: 1; text-align: center; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .nav-opp { color: var(--muted); font-weight: 500; font-size: 12.5px; }
 
 /* board-side explanation panel */
@@ -194,6 +201,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .board-arrows .ar-blue polygon { fill: var(--anno-blue); }
 /* no drop-shadow: it smears the vector edges at phone sizes and reads as blur */
 .piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
+/* move-navigation glide: one piece slides between squares above the grid */
+.board-anim { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.anim-piece { position: absolute; left: 0; top: 0; width: 12.5%; height: 12.5%; transition: transform 170ms ease; will-change: transform; }
 .coord { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; z-index: 2; user-select: none; pointer-events: none; }
 .coord.rank { top: 2px; left: 3px; }
 .coord.file { bottom: 2px; right: 3px; }
@@ -339,6 +349,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .jump-back:hover { background: var(--panel-2); }
 
 .linkbtn { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; text-decoration: underline; }
+/* clickable move reference inside prose ("12. Nf3") — jumps the board there */
+.move-ref { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--accent-ink); cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; white-space: nowrap; }
+.move-ref:hover { color: var(--accent); }
 .linkbtn:hover { color: var(--accent-ink); }
 
 /* game summary */
@@ -453,6 +466,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .board-sticky {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
     margin: 0 -14px; padding: 8px 0 8px;
+    /* vertical drags scroll the page; horizontal drags are ours (move swipe) */
+    touch-action: pan-y;
   }
   .board { width: 100%; max-width: 100%; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
   /* the nav lives inside the full-bleed sticky block, so it needs its own inset;
@@ -505,7 +520,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .meta-card h3 { font-size: 15px; margin: 14px 0 6px; color: var(--accent-ink); }
 .meta-report p.meta-profile { font-size: 15.5px; }
 .meta-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
-.meta-rules { margin-left: 8px; display: inline-flex; gap: 8px; }
+.meta-rules { margin-left: 8px; display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.game-ref { white-space: nowrap; }
 .meta-report p { margin: 4px 0; font-size: 15px; }
 
 /* the history can grow forever — cap it and scroll inside the card, so it

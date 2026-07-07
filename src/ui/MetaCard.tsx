@@ -17,6 +17,8 @@ interface Props {
   available: number
   onGenerate: () => void
   onOpenRule: (id: number) => void
+  /** open a cited game at a specific move (from an insight's example link) */
+  onOpenGame: (key: string, ply: number) => void
   /** digests of the analysed games — context for the Ask thread */
   summaries: MetaGameSummary[]
   apiKey: string
@@ -26,18 +28,20 @@ interface Props {
 function InsightList({
   items,
   onOpenRule,
+  onOpenGame,
 }: {
   items: MetaInsight[]
   onOpenRule: (id: number) => void
+  onOpenGame: (key: string, ply: number) => void
 }) {
   return (
     <ul className="meta-list">
       {items.map((x, i) => (
         <li key={i}>
           <strong>{x.title}</strong> — <RuleText text={x.detail} onOpenRule={onOpenRule} />
-          {x.ruleIds?.length ? (
+          {x.ruleIds?.length || x.refs?.length ? (
             <span className="meta-rules">
-              {x.ruleIds.map((id) =>
+              {(x.ruleIds ?? []).map((id) =>
                 RULES_BY_ID[id] ? (
                   <button
                     key={id}
@@ -49,6 +53,16 @@ function InsightList({
                   </button>
                 ) : null,
               )}
+              {(x.refs ?? []).map((r, j) => (
+                <button
+                  key={`g${j}`}
+                  className="rule-ref game-ref"
+                  title="Open this game at this move"
+                  onClick={() => onOpenGame(r.key, r.ply)}
+                >
+                  ↗ {r.label}
+                </button>
+              ))}
             </span>
           ) : null}
         </li>
@@ -69,6 +83,7 @@ export default function MetaCard({
   available,
   onGenerate,
   onOpenRule,
+  onOpenGame,
   summaries,
   apiKey,
   onNeedKey,
@@ -133,25 +148,25 @@ export default function MetaCard({
               {report.recurringMistakes.length > 0 && (
                 <>
                   <h3>Recurring mistakes</h3>
-                  <InsightList items={report.recurringMistakes} onOpenRule={onOpenRule} />
+                  <InsightList items={report.recurringMistakes} onOpenRule={onOpenRule} onOpenGame={onOpenGame} />
                 </>
               )}
               {report.strengths.length > 0 && (
                 <>
                   <h3>Strengths to keep</h3>
-                  <InsightList items={report.strengths} onOpenRule={onOpenRule} />
+                  <InsightList items={report.strengths} onOpenRule={onOpenRule} onOpenGame={onOpenGame} />
                 </>
               )}
               {report.trends?.length ? (
                 <>
                   <h3>Trends — your recent games</h3>
-                  <InsightList items={report.trends} onOpenRule={onOpenRule} />
+                  <InsightList items={report.trends} onOpenRule={onOpenRule} onOpenGame={onOpenGame} />
                 </>
               ) : null}
               {report.priorities.length > 0 && (
                 <>
                   <h3>Work on next</h3>
-                  <InsightList items={report.priorities} onOpenRule={onOpenRule} />
+                  <InsightList items={report.priorities} onOpenRule={onOpenRule} onOpenGame={onOpenGame} />
                 </>
               )}
               <p className="muted small">

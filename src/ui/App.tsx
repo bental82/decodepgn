@@ -63,6 +63,9 @@ export default function App() {
   const [moves, setMoves] = useState<ParsedMove[]>([])
   const [focus, setFocus] = useState<Focus>('w')
   const [selectedPly, setSelectedPly] = useState(0)
+  // Step only between flagged moves (soundness "dubious" or an engine loss
+  // of 1.5+ pawns) — arrows, swipes and keyboard all honour it.
+  const [dubiousOnly, setDubiousOnly] = useState(false)
   const [results, setResults] = useState<Record<number, MoveResult>>({})
   const [loadingPlies, setLoadingPlies] = useState<Set<number>>(new Set())
   const [errorByPly, setErrorByPly] = useState<Record<number, string>>({})
@@ -333,7 +336,7 @@ export default function App() {
     [apiKey],
   )
 
-  const handleSubmit = (pgn: string, f: Focus): boolean => {
+  const handleSubmit = (pgn: string, f: Focus, atPly?: number): boolean => {
     try {
       const g = parsePgn(pgn)
       genRef.current++
@@ -364,7 +367,10 @@ export default function App() {
       setParseError(null)
       setHighlightRule(undefined)
       const first = g.moves.find((m) => isStudied(m.color, f))?.ply ?? 0
-      setSelectedPly(first)
+      setSelectedPly(
+        atPly !== undefined ? Math.min(Math.max(0, atPly), g.moves.length - 1) : first,
+      )
+      setDubiousOnly(false)
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
@@ -798,14 +804,14 @@ export default function App() {
 
   // Open a saved game: when the cloud copy is the only one — or clearly newer
   // than this browser's — pull it down first so the analysis comes with it.
-  const openSaved = async (item: HistoryItem) => {
+  const openSaved = async (item: HistoryItem, atPly?: number) => {
     const local = loadGame(item.key)
     const cloud = (cloudGames ?? []).find((c) => c.key === item.key)
     if (!local || (cloud && cloud.savedAt > local.savedAt)) {
       const remote = await cloudGet(item.key)
       if (remote) saveGame(remote)
     }
-    handleSubmit(item.pgn, item.focus)
+    handleSubmit(item.pgn, item.focus, atPly)
   }
 
   const deleteSaved = (key: string) => {
@@ -823,8 +829,8 @@ export default function App() {
     if (phase !== 'game') return
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
-      if (e.key === 'ArrowRight') setSelectedPly((p) => Math.min(moves.length - 1, p + 1))
-      if (e.key === 'ArrowLeft') setSelectedPly((p) => Math.max(0, p - 1))
+      if (e.key === 'ArrowRight') stepPlyRef.current(1)
+      if (e.key === 'ArrowLeft') stepPlyRef.current(-1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -906,11 +912,37 @@ export default function App() {
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
 
+  // Moves worth revisiting: judged dubious, or a 1.5+ pawn engine loss.
+  const dubiousPlies = useMemo(
+    () =>
+      moves
+        .filter((m) => isStudied(m.color, focus))
+        .map((m) => m.ply)
+        .filter((ply) => {
+          const r = results[ply]
+          return !!r && (r.soundness === 'dubious' || (r.engine?.cpLoss ?? 0) >= 150)
+        }),
+    [moves, focus, results],
+  )
+
   // Step through EVERY ply (both sides) so the game's sequence is followable;
   // opponent moves show on the board with a note, studied moves get analysis.
+  // In dubious-only mode the same step jumps between flagged moves instead.
   const stepPly = (dir: 1 | -1) => {
+    if (dubiousOnly && dubiousPlies.length) {
+      const next =
+        dir === 1
+          ? dubiousPlies.find((ply) => ply > selectedPly)
+          : [...dubiousPlies].reverse().find((ply) => ply < selectedPly)
+      if (next !== undefined) setSelectedPly(next)
+      return
+    }
     setSelectedPly((p) => Math.min(moves.length - 1, Math.max(0, p + dir)))
   }
+  // The keyboard listener (and swipe) call through a ref so they always see
+  // the current mode without re-subscribing.
+  const stepPlyRef = useRef(stepPly)
+  stepPlyRef.current = stepPly
 
   // Chip jumps (overview key moments, by-rule chips) remember where the user
   // was reading; chained jumps keep the ORIGINAL spot until they return.
@@ -971,7 +1003,51 @@ export default function App() {
   }, [tab])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
+  // In dubious-only mode the arrows are exhausted when no flagged move remains
+  // in that direction.
+  const noPrev = dubiousOnly && dubiousPlies.length ? !dubiousPlies.some((p) => p < selectedPly) : atFirst
+  const noNext = dubiousOnly && dubiousPlies.length ? !dubiousPlies.some((p) => p > selectedPly) : atLast
   const moveLabel = (m: ParsedMove) => `${m.moveNumber}${m.color === 'w' ? '.' : '…'} ${m.san}`
+
+  // Which piece should glide when the shown position changes: stepping forward
+  // animates the arriving move; stepping back animates the piece returning;
+  // longer jumps animate the move that produced the new position.
+  const prevPlyRef = useRef<number | null>(null)
+  const prevPlyForAnim = prevPlyRef.current
+  let boardAnim: { from: string; to: string } | null = null
+  if (prevPlyForAnim !== null && prevPlyForAnim !== selectedPly && moves.length) {
+    if (selectedPly === prevPlyForAnim - 1 && moves[prevPlyForAnim]) {
+      const undone = moves[prevPlyForAnim]
+      boardAnim = { from: undone.to, to: undone.from }
+    } else if (moves[selectedPly]) {
+      boardAnim = { from: moves[selectedPly].from, to: moves[selectedPly].to }
+    }
+  }
+  useEffect(() => {
+    prevPlyRef.current = selectedPly
+  }, [selectedPly])
+  useEffect(() => {
+    prevPlyRef.current = null // a new game: nothing to animate on first render
+  }, [moves])
+
+  // Swipe on the board area browses moves (horizontal-dominant gestures only,
+  // so vertical scrolling through the analysis is unaffected).
+  const touchRef = useRef<{ x: number; y: number } | null>(null)
+  const onBoardTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0]
+    touchRef.current = t ? { x: t.clientX, y: t.clientY } : null
+  }
+  const onBoardTouchEnd = (e: React.TouchEvent) => {
+    const start = touchRef.current
+    touchRef.current = null
+    const t = e.changedTouches[0]
+    if (!start || !t) return
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) > 48 && Math.abs(dx) > 1.6 * Math.abs(dy)) {
+      stepPlyRef.current(dx < 0 ? 1 : -1)
+    }
+  }
 
   return (
     <div className="app">
@@ -1115,6 +1191,10 @@ export default function App() {
             error={metaError}
             available={historyItems.filter((g) => g.analysed > 0).length}
             onGenerate={() => void generateMeta()}
+            onOpenGame={(key, ply) => {
+              const item = historyItems.find((h) => h.key === key)
+              if (item) void openSaved(item, ply)
+            }}
             onOpenRule={openRule}
             summaries={metaSummaries}
             apiKey={apiKey}
@@ -1175,7 +1255,12 @@ export default function App() {
               <div className="board-panel">
                 {/* Only this wrapper is sticky on mobile — the progress strip
                     below scrolls away so the analysis text keeps real estate. */}
-                <div className={'board-sticky' + (boardMini ? ' mini' : '')} ref={stickyRef}>
+                <div
+                  className={'board-sticky' + (boardMini ? ' mini' : '')}
+                  ref={stickyRef}
+                  onTouchStart={onBoardTouchStart}
+                  onTouchEnd={onBoardTouchEnd}
+                >
                 {/* The alternative-move arrow lives in the position BEFORE the
                     played move — show that position while it's toggled on. The
                     green arrow says it all; no caption (it only ate board space). */}
@@ -1191,6 +1276,7 @@ export default function App() {
                     orientation={focus === 'b' ? 'b' : 'w'}
                     lastMove={{ from: move.from, to: move.to }}
                     annotations={boardAnnotations}
+                    anim={boardAnim}
                   />
                 )}
                 <div className="board-nav">
@@ -1205,8 +1291,8 @@ export default function App() {
                   <button
                     className="navbtn"
                     onClick={() => stepPly(-1)}
-                    disabled={atFirst}
-                    aria-label="Previous move"
+                    disabled={noPrev}
+                    aria-label={dubiousOnly ? 'Previous dubious move' : 'Previous move'}
                   >
                     ◀
                   </button>
@@ -1217,8 +1303,8 @@ export default function App() {
                   <button
                     className="navbtn"
                     onClick={() => stepPly(1)}
-                    disabled={atLast}
-                    aria-label="Next move"
+                    disabled={noNext}
+                    aria-label={dubiousOnly ? 'Next dubious move' : 'Next move'}
                   >
                     ▶
                   </button>
@@ -1229,6 +1315,22 @@ export default function App() {
                     aria-label="Last move"
                   >
                     ⏭
+                  </button>
+                  <button
+                    className={'navbtn warnbtn' + (dubiousOnly ? ' on' : '')}
+                    onClick={() => setDubiousOnly((v) => !v)}
+                    disabled={dubiousPlies.length === 0}
+                    aria-pressed={dubiousOnly}
+                    aria-label="Step only through dubious moves"
+                    title={
+                      dubiousPlies.length === 0
+                        ? 'No dubious moves flagged (yet)'
+                        : dubiousOnly
+                          ? 'Stepping through dubious moves only — tap to step through all moves'
+                          : `Step only through the ${dubiousPlies.length} dubious move${dubiousPlies.length === 1 ? '' : 's'}`
+                    }
+                  >
+                    ⚠{dubiousPlies.length ? <span className="warn-count">{dubiousPlies.length}</span> : null}
                   </button>
                   <button
                     className="navbtn minibtn"
@@ -1244,26 +1346,34 @@ export default function App() {
                     {boardMini ? '⤢' : '⤡'}
                   </button>
                 </div>
-                {currentEvalCp !== undefined ? (
-                  <div
-                    className="eval-row"
-                    title={`Stockfish evaluation after this move, from White's side: ${(currentEvalCp / 100).toFixed(2)}`}
-                  >
-                    <div className="evalbar">
-                      <div
-                        className="evalbar-fill"
-                        style={{ width: `${50 + 50 * Math.tanh(currentEvalCp / 600)}%` }}
-                      />
-                    </div>
-                    <span className="eval-num">
-                      {Math.abs(currentEvalCp) >= 9000
+                {/* Always rendered (hidden when no eval) so the sticky block
+                    keeps a CONSTANT height — otherwise the board visibly jumps
+                    when stepping between evaluated and unevaluated moves. */}
+                <div
+                  className="eval-row"
+                  style={currentEvalCp === undefined ? { visibility: 'hidden' } : undefined}
+                  title={
+                    currentEvalCp === undefined
+                      ? undefined
+                      : `Stockfish evaluation after this move, from White's side: ${(currentEvalCp / 100).toFixed(2)}`
+                  }
+                >
+                  <div className="evalbar">
+                    <div
+                      className="evalbar-fill"
+                      style={{ width: `${50 + 50 * Math.tanh((currentEvalCp ?? 0) / 600)}%` }}
+                    />
+                  </div>
+                  <span className="eval-num">
+                    {currentEvalCp === undefined
+                      ? '0.0'
+                      : Math.abs(currentEvalCp) >= 9000
                         ? currentEvalCp > 0
                           ? '+M'
                           : '−M'
                         : (currentEvalCp >= 0 ? '+' : '') + (currentEvalCp / 100).toFixed(1)}
-                    </span>
-                  </div>
-                ) : null}
+                  </span>
+                </div>
                 {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
                   <button className="jump-back" onClick={returnFromJump}>
                     ↩ Back to {moveLabel(moves[jumpBack])}

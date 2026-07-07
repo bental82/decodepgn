@@ -38,7 +38,7 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
   let checked = 0
   let worst = 0
   let blunders = 0
-  const lessons: Array<{ cp: number; text: string }> = []
+  const lessons: Array<{ cp: number; ply: number; text: string }> = []
   // Accuracy is personal: when a game studied both sides, only the flagged
   // player's own moves count towards it.
   const meSide = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
@@ -57,7 +57,7 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
       if (r.engine.cpLoss >= 150) blunders++
       if (!meSide || (r.ply % 2 === 0 ? 'w' : 'b') === meSide) ownEvals.push(r.engine)
     }
-    if (r.lesson) lessons.push({ cp: r.engine?.cpLoss ?? 0, text: r.lesson })
+    if (r.lesson) lessons.push({ cp: r.engine?.cpLoss ?? 0, ply: r.ply, text: r.lesson })
   }
 
   const out: MetaGameSummary = {
@@ -73,7 +73,7 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
     lessons: lessons
       .sort((a, b) => b.cp - a.cp)
       .slice(0, 3)
-      .map((l) => l.text),
+      .map((l) => ({ ply: l.ply, text: l.text })),
   }
   if (meSide) out.me = meSide
   if (g.headers?.Result) out.result = g.headers.Result

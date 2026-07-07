@@ -31,6 +31,8 @@ export interface BoardProps {
   caption?: string
   /** squares to tint + arrows to draw (AI graphics or deterministic client ones) */
   annotations?: BoardAnnotations
+  /** glide the piece now standing on `to` in from `from` (move navigation) */
+  anim?: { from: string; to: string } | null
 }
 
 /** What the sticky board is currently illustrating for the selected move. */

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { GameOverview, ParsedMove } from '../shared/types'
 import type { AskContext } from './contract'
 import AskBox from './AskBox'
-import RuleText from './RuleText'
+import MoveText from './MoveText'
 
 interface Props {
   overview: GameOverview | null
@@ -67,11 +67,11 @@ export default function GameOverviewCard({
       ) : overview ? (
         <>
           <p className="overview-summary">
-            <RuleText text={overview.summary} onOpenRule={onOpenRule} />
+            <MoveText text={overview.summary} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
           </p>
           {overview.trend ? (
             <p className="overview-trend">
-              <RuleText text={overview.trend} onOpenRule={onOpenRule} />
+              <MoveText text={overview.trend} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
             </p>
           ) : null}
           {overview.keyMoments.length > 0 ? (

@@ -249,7 +249,7 @@ export interface MetaGameSummary {
     /** chess.com-style game accuracy % for the player's own moves (one decimal) */
     accuracy?: number
   }
-  lessons: string[] // lessons from the costliest moves (up to 3)
+  lessons: Array<{ ply?: number; text: string }> // lessons from the costliest moves (up to 3)
 }
 
 export interface MetaRequest {
@@ -263,6 +263,8 @@ export interface MetaInsight {
   title: string
   detail: string
   ruleIds?: number[]
+  /** concrete moments backing the insight — tappable links to a game + move */
+  refs?: Array<{ key: string; label: string; ply: number }>
 }
 
 export interface MetaReport {
