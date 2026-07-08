@@ -62,10 +62,12 @@ function shuffle<T>(arr: T[]): T[] {
 
 /**
  * Targeted practice on the player's own mistakes: each position is shown as a
- * find-the-better-move puzzle, graded instantly, then re-explained with the
- * stored coaching. Wrong answers come back a few positions later; a position
- * is "mastered" after two consecutive correct answers — mastered ones drop to
- * the back of future rounds so the weak spots keep coming up first.
+ * find-the-better-move puzzle answered ON THE BOARD (tap or drag), graded
+ * instantly, then re-explained with the stored coaching. A correct answer
+ * removes the position from the round's queue; a wrong one sends it to the
+ * END of the queue, so the round only finishes once everything was answered
+ * correctly. Positions are ordered by how often their KIND of mistake
+ * (violated rule) recurs across the player's games — typical patterns first.
  */
 export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) {
   const [stats, setStats] = useState<Record<string, ItemStats>>(loadStats)
@@ -92,15 +94,18 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
 
   const mastered = (key: string) => (statsRef.current[key]?.streak ?? 0) >= MASTERY_STREAK
 
-  // One round = every position, weak spots first; mastered ones at the back
-  // as review. Queue is per-session state so wrong answers can be re-enqueued.
+  // One round = every position, sorted by how often its KIND of mistake
+  // (most-frequent violated rule) recurs across all positions, then by the
+  // engine cost; already-mastered ones go to the back as review.
   const buildQueue = () => {
     const score = (it: DrillItem) =>
       Math.max(0, ...it.ruleIds.map((id) => ruleFreq.get(id) ?? 0)) * 1000 + (it.cpLoss ?? 0)
     const fresh = shuffle(playable.filter((it) => !mastered(it.key))).sort(
       (a, b) => score(b) - score(a),
     )
-    const review = shuffle(playable.filter((it) => mastered(it.key)))
+    const review = shuffle(playable.filter((it) => mastered(it.key))).sort(
+      (a, b) => score(b) - score(a),
+    )
     return [...fresh, ...review].map((it) => it.key)
   }
   const [queue, setQueue] = useState<string[]>(buildQueue)
@@ -147,20 +152,6 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
     const m = verbose.find((v) => plain(v.san) === plain(san))
     return m ? { from: m.from, to: m.to } : null
   }
-
-  // Options are fixed per queue position (not re-shuffled on re-render).
-  const options = useMemo(() => {
-    if (!item) return []
-    const set = new Set<string>([item.best])
-    const playedLegal = item.legal.find((m) => plain(m) === plain(item.played))
-    if (playedLegal) set.add(playedLegal)
-    const pool = item.legal.filter((m) => !set.has(m))
-    while (set.size < 4 && pool.length) {
-      set.add(pool.splice(Math.floor(Math.random() * pool.length), 1)[0])
-    }
-    return shuffle([...set])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.key, liveIdx])
 
   if (!playable.length) {
     return (
@@ -260,12 +251,9 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
 
   const next = () => {
     if (chosen !== null && chosen !== item.best) {
-      // wrong: the same position comes back a few puzzles later
-      setQueue((q) => {
-        const nq = [...q]
-        nq.splice(Math.min(liveIdx + 3, nq.length), 0, item.key)
-        return nq
-      })
+      // wrong: the position goes to the END of the queue — the round only
+      // completes once every position has been answered correctly
+      setQueue((q) => [...q, item.key])
     }
     setChosen(null)
     setIdx(liveIdx + 1)
@@ -306,25 +294,9 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
         />
       </div>
       <p className="drill-prompt">
-        {item.color === 'w' ? 'White' : 'Black'} (you) to move — find the better move.{' '}
-        <span className="muted small">Tap or drag a piece, or pick an answer below.</span>
+        {item.color === 'w' ? 'White' : 'Black'} (you) to move — play the better move.{' '}
+        <span className="muted small">Tap a piece to see its moves, then tap the target — or drag it there.</span>
       </p>
-      <div className="quiz-options">
-        {options.map((opt) => (
-          <button
-            key={opt}
-            className={
-              'quiz-option' +
-              (chosen !== null && opt === item.best ? ' correct' : '') +
-              (chosen === opt && opt !== item.best ? ' wrong' : '')
-            }
-            disabled={chosen !== null}
-            onClick={() => answer(opt)}
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
       {chosen !== null ? (
         <div className={'quiz-feedback ' + (isRight ? 'fb-good' : 'fb-bad')}>
           <p className="drill-verdict">

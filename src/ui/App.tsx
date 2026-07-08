@@ -71,6 +71,10 @@ export default function App() {
   // Set when a game was opened via a "Your play" summary link, so the game
   // view can offer the way back to the report.
   const [fromMeta, setFromMeta] = useState(false)
+  // Drill session: bumping the run remounts a fresh round; the session stays
+  // mounted (hidden) while peeking at a game so "back" resumes mid-round.
+  const [drillRun, setDrillRun] = useState(0)
+  const [fromDrill, setFromDrill] = useState(false)
   const [results, setResults] = useState<Record<number, MoveResult>>({})
   const [loadingPlies, setLoadingPlies] = useState<Set<number>>(new Set())
   const [errorByPly, setErrorByPly] = useState<Record<number, string>>({})
@@ -387,6 +391,7 @@ export default function App() {
       prevPlyRef.current = startPly
       setDubiousOnly(false)
       setFromMeta(false)
+      setFromDrill(false)
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
@@ -1274,19 +1279,22 @@ export default function App() {
         )}
       </header>
 
-      {phase === 'drill' ? (
-        <div className="workspace">
+      {drillRun > 0 ? (
+        <div className="workspace" hidden={phase !== 'drill'}>
           <Drill
+            key={drillRun}
             items={drillItems}
             onOpenRule={openRule}
             onOpenGame={(gameKey, ply) => {
               const item = historyItems.find((h) => h.key === gameKey)
-              if (item) void openSaved(item, ply)
+              // the drill stays mounted; the flag is set after the game loads
+              if (item) void openSaved(item, ply).then(() => setFromDrill(true))
             }}
             onExit={() => setPhase('input')}
           />
         </div>
-      ) : phase === 'input' ? (
+      ) : null}
+      {phase === 'input' ? (
         <div className="landing">
           <PgnInput
             onSubmit={handleSubmit}
@@ -1304,7 +1312,13 @@ export default function App() {
                   where a better move existed — practise them until they stick.
                 </p>
               </div>
-              <button className="btn primary" onClick={() => setPhase('drill')}>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  setDrillRun((r) => r + 1)
+                  setPhase('drill')
+                }}
+              >
                 Start drilling
               </button>
             </div>
@@ -1465,7 +1479,7 @@ export default function App() {
             onNeedKey={() => setShowSettings(true)}
           />
         </div>
-      ) : (
+      ) : phase !== 'game' ? null : (
         <div className="workspace">
           <div className="tabs">
             <button className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
@@ -1647,6 +1661,17 @@ export default function App() {
                 {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
                   <button className="jump-back" onClick={returnFromJump}>
                     ↩ Back to {moveLabel(moves[jumpBack])}
+                  </button>
+                ) : null}
+                {fromDrill ? (
+                  <button
+                    className="jump-back"
+                    onClick={() => {
+                      setFromDrill(false)
+                      setPhase('drill')
+                    }}
+                  >
+                    ↩ Back to the drill
                   </button>
                 ) : null}
                 {fromMeta ? (
