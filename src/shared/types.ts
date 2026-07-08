@@ -212,6 +212,11 @@ export interface AskRequest {
   /** Earlier exchanges in this thread, oldest first. */
   history?: AskExchange[]
   focus?: Focus
+  /** which side the asker played — "I"/"my" in questions means this color */
+  me?: Color
+  /** player display names, for natural references in answers */
+  white?: string
+  black?: string
   game?: GameMove[]
   ply?: number
   san?: string

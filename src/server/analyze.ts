@@ -927,6 +927,12 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
   if (!question) throw new AnalyzeError('Please enter a question.')
 
   const contextLines: string[] = []
+  if (input.me === 'w' || input.me === 'b') {
+    const name = clip(input.me === 'w' ? input.white : input.black, 40)
+    contextLines.push(
+      `The person asking IS the ${sideName(input.me)} player${name ? ` (${name})` : ''} in this game. When they say "I", "me" or "my", they mean ${sideName(input.me)}'s moves and position — answer from their side's perspective.`,
+    )
+  }
   if (Array.isArray(input.game) && input.game.length) {
     contextLines.push(`Game so far (SAN): ${moveTextOf(sanitizeGame(input.game))}`)
   }
