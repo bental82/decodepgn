@@ -28,7 +28,35 @@
   --anno-red: #dc2626;
   --anno-yellow: #d97706;
   --anno-blue: #2563eb;
+  --evalbar-bg: #14161c;
+  --evalbar-fill: #e8ecf2;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* light theme: same variables, brighter values (set via <html data-theme>) */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f1f3f7;
+  --ink: #1c2330;
+  --muted: #5c6575;
+  --line: #dde2ea;
+  --line-2: #c6cdd9;
+  --accent: #ea580c;
+  --accent-strong: #ea580c;
+  --accent-weak: #ffedd8;
+  --accent-ink: #c2410c;
+  --good: #15803d;
+  --good-bg: rgba(21, 128, 61, 0.12);
+  --warn: #a16207;
+  --warn-bg: rgba(202, 138, 4, 0.15);
+  --bad: #dc2626;
+  --bad-bg: rgba(220, 38, 38, 0.1);
+  --rel: #4f46e5;
+  --rel-bg: rgba(99, 102, 241, 0.12);
+  --evalbar-bg: #d7dce4;
+  --evalbar-fill: #2c3442;
 }
 
 * { box-sizing: border-box; }
@@ -115,6 +143,25 @@ a { color: var(--accent-ink); }
 .history-del { border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 13px; }
 .history-del:hover { color: var(--bad); border-color: var(--line-2); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+/* drill mode: entry card on the landing + the practice screen */
+.drill-entry { display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; }
+.drill-entry h2 { font-size: 16px; margin-bottom: 2px; }
+.drill-entry p { margin: 0; }
+.drill-entry .btn { flex-shrink: 0; }
+.drill { max-width: 560px; margin: 24px auto; padding: 0 16px 40px; }
+.drill-head { display: flex; align-items: center; gap: 12px; }
+.drill-head h2 { flex: 1; margin: 0; font-size: 18px; }
+.drill-progress { white-space: nowrap; }
+.drill-source { margin: 6px 0 10px; }
+.drill-board { width: min(100%, 46vh, 420px); margin: 0 auto 12px; }
+.drill-prompt { font-weight: 600; margin: 0 0 10px; }
+.drill .quiz-feedback { margin-top: 14px; }
+.quiz-feedback.fb-good { border-left-color: var(--good); }
+.quiz-feedback.fb-bad { border-left-color: var(--bad); }
+.drill-verdict { margin: 0 0 6px; font-weight: 700; }
+.drill-rules { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.drill-actions { display: flex; gap: 10px; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; }
+.drill-summary { font-size: 16px; font-weight: 600; }
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
 
@@ -304,6 +351,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px;
 }
 .settings-update span { flex: 1; min-width: 200px; }
+.settings-theme { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+.theme-opts { display: flex; gap: 6px; }
+.theme-opts .btn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
 .settings-update .btn { flex-shrink: 0; }
 
 /* soundness badge colours (reuse .badge sizing) */
@@ -440,8 +490,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* eval bar (Stockfish, White's perspective) */
 .eval-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.evalbar { position: relative; flex: 1; height: 12px; border-radius: 6px; background: #14161c; border: 1px solid var(--line-2); overflow: hidden; }
-.evalbar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: #e8ecf2; transition: width 300ms ease; }
+.evalbar { position: relative; flex: 1; height: 12px; border-radius: 6px; background: var(--evalbar-bg); border: 1px solid var(--line-2); overflow: hidden; }
+.evalbar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--evalbar-fill); transition: width 300ms ease; }
 .eval-num { width: 46px; text-align: right; font-size: 12px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* compact-board toggle (shown on phones) + floating back-to-analysis pill */
