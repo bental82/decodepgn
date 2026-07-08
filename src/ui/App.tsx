@@ -1014,14 +1014,21 @@ export default function App() {
 
   // Snap the analysis text back to its top when the move changes (only if the
   // user had scrolled down into it), and expose the same jump as a button.
+  // Desktop: the panel is its own scroll container (sticky next to the board),
+  // so only ITS scroll resets — the page and the board never move. Mobile:
+  // the page scrolls under the pinned board, so the window scrolls instead.
   const scrollToAnalysisTop = useCallback((force = false) => {
     const panel = explainRef.current
     if (!panel) return
+    if (getComputedStyle(panel).overflowY === 'auto') {
+      panel.scrollTo({ top: 0 })
+      return
+    }
     const sticky = stickyRef.current
     const stickyH =
       sticky && getComputedStyle(sticky).position === 'sticky'
         ? sticky.getBoundingClientRect().height
-        : 82 // desktop: just below the sticky topbar
+        : 82 // fallback: just below the sticky topbar
     const top = panel.getBoundingClientRect().top
     if (force || top < stickyH - 4) {
       window.scrollTo({ top: Math.max(0, window.scrollY + top - stickyH - 8), behavior: 'smooth' })
@@ -1036,14 +1043,18 @@ export default function App() {
   // Show the floating "back to top of the analysis" pill as soon as the text
   // starts scrolling under the sticky board (not only when scrolled deep).
   useEffect(() => {
+    const panel = explainRef.current
     const onScroll = () => {
       if (tab === 'rules' || tab === 'map') {
         setShowToTop(window.scrollY > 220)
         return
       }
-      const panel = explainRef.current
       if (!panel) {
         setShowToTop(false)
+        return
+      }
+      if (getComputedStyle(panel).overflowY === 'auto') {
+        setShowToTop(panel.scrollTop > 220)
         return
       }
       const sticky = stickyRef.current
@@ -1055,7 +1066,11 @@ export default function App() {
     }
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    panel?.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      panel?.removeEventListener('scroll', onScroll)
+    }
   }, [tab])
   const atFirst = selectedPly <= 0
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
@@ -1655,9 +1670,18 @@ export default function App() {
         <PlayersModal
           white={headers.White ?? ''}
           black={headers.Black ?? ''}
+          whiteElo={headers.WhiteElo ?? ''}
+          blackElo={headers.BlackElo ?? ''}
           me={mySide ?? (focus !== 'both' ? focus : undefined)}
-          onSave={(w, b, me) => {
-            setHeaders((h) => ({ ...h, White: w, Black: b }))
+          onSave={(w, b, me, wElo, bElo) => {
+            setHeaders((h) => {
+              const next: Record<string, string> = { ...h, White: w, Black: b }
+              if (wElo) next.WhiteElo = wElo
+              else delete next.WhiteElo
+              if (bElo) next.BlackElo = bElo
+              else delete next.BlackElo
+              return next
+            })
             setMySide(me)
             setShowPlayers(false)
           }}
