@@ -169,6 +169,11 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* board-side explanation panel */
 .explain-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; min-height: 200px; }
+/* desktop: the panel scrolls internally beside the sticky board, so changing
+   moves never scrolls the page (no board/page skips) */
+@media (min-width: 821px) {
+  .explain-panel { position: sticky; top: 74px; max-height: calc(100vh - 90px); overflow-y: auto; }
+}
 
 /* inlined piece sprite (hidden; provides the #wk … #bp defs for <use>) */
 .piece-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -523,6 +528,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .edit-names { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 13px; }
 .edit-names:hover { color: var(--accent); }
 .player-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.player-row { display: flex; gap: 10px; }
+.player-row .player-field { flex: 1; min-width: 0; }
+.player-row .player-elo { flex: 0 0 84px; }
 .player-field span { font-size: 12px; color: var(--muted); }
 .player-field input { width: 100%; border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; font-size: 14px; }
 .player-me { margin: 6px 0 4px; display: flex; flex-direction: column; gap: 6px; }

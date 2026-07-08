@@ -4,17 +4,22 @@ import type { Color } from '../shared/types'
 interface Props {
   white: string
   black: string
+  /** current Elo header values ('' when the PGN has none) */
+  whiteElo: string
+  blackElo: string
   me?: Color
-  onSave: (white: string, black: string, me?: Color) => void
+  onSave: (white: string, black: string, me: Color | undefined, whiteElo: string, blackElo: string) => void
   onClose: () => void
 }
 
 // Edit the players' display names and flag which side is the user. Names live
 // in the game's headers (so they persist and sync with the analysis); the
 // "me" flag feeds the cross-game meta-analysis.
-export default function PlayersModal({ white, black, me, onSave, onClose }: Props) {
+export default function PlayersModal({ white, black, whiteElo, blackElo, me, onSave, onClose }: Props) {
   const [w, setW] = useState(white)
   const [b, setB] = useState(black)
+  const [wElo, setWElo] = useState(whiteElo)
+  const [bElo, setBElo] = useState(blackElo)
   const [mine, setMine] = useState<Color | undefined>(me)
   const firstRef = useRef<HTMLInputElement | null>(null)
 
@@ -27,7 +32,12 @@ export default function PlayersModal({ white, black, me, onSave, onClose }: Prop
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const save = () => onSave(w.trim() || 'White', b.trim() || 'Black', mine)
+  const cleanElo = (v: string) => {
+    const n = parseInt(v.trim(), 10)
+    return Number.isFinite(n) && n > 0 && n < 4000 ? String(n) : ''
+  }
+  const save = () =>
+    onSave(w.trim() || 'White', b.trim() || 'Black', mine, cleanElo(wElo), cleanElo(bElo))
 
   return (
     <div
@@ -51,29 +61,61 @@ export default function PlayersModal({ white, black, me, onSave, onClose }: Prop
             ✕
           </button>
         </div>
-        <label className="player-field">
-          <span>White</span>
-          <input
-            ref={firstRef}
-            value={w}
-            maxLength={60}
-            onChange={(e) => setW(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') save()
-            }}
-          />
-        </label>
-        <label className="player-field">
-          <span>Black</span>
-          <input
-            value={b}
-            maxLength={60}
-            onChange={(e) => setB(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') save()
-            }}
-          />
-        </label>
+        <div className="player-row">
+          <label className="player-field">
+            <span>White</span>
+            <input
+              ref={firstRef}
+              value={w}
+              maxLength={60}
+              onChange={(e) => setW(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') save()
+              }}
+            />
+          </label>
+          <label className="player-field player-elo">
+            <span>Elo</span>
+            <input
+              value={wElo}
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="—"
+              aria-label="White Elo"
+              onChange={(e) => setWElo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') save()
+              }}
+            />
+          </label>
+        </div>
+        <div className="player-row">
+          <label className="player-field">
+            <span>Black</span>
+            <input
+              value={b}
+              maxLength={60}
+              onChange={(e) => setB(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') save()
+              }}
+            />
+          </label>
+          <label className="player-field player-elo">
+            <span>Elo</span>
+            <input
+              value={bElo}
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="—"
+              aria-label="Black Elo"
+              onChange={(e) => setBElo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') save()
+              }}
+            />
+          </label>
+        </div>
         <div className="player-me">
           <span className="player-me-label">Which one is you?</span>
           <div className="player-me-opts">
