@@ -96,6 +96,15 @@ a { color: var(--accent-ink); }
 /* history of analysed games */
 .history { grid-column: 1 / -1; padding: 16px 18px; }
 .history h2 { font-size: 15px; margin-bottom: 8px; }
+/* filter row above the game list */
+.history-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px; }
+.history-filters input, .history-filters select { border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 10px; font-size: 13px; }
+.history-filters select { cursor: pointer; }
+.hf-q { flex: 2 1 150px; min-width: 130px; }
+.hf-elo { width: 76px; flex: 0 0 auto; }
+.hf-clear { padding: 6px 10px; flex: 0 0 auto; }
+.hf-count { margin: 0 0 8px; }
+.history-title .elo { color: var(--muted); font-weight: 500; }
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .history-list li { display: flex; align-items: stretch; gap: 6px; }
 .history-row { flex: 1; min-width: 0; position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 44px 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }
