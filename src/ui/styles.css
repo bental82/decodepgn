@@ -186,6 +186,10 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* AI board graphics: tinted squares (::before so the piece stays on top) and
    an SVG arrow layer over the whole grid. */
+/* graphics appear after the move glide lands — ease them in, don't pop */
+@keyframes gfx-in { from { opacity: 0; } to { opacity: 1; } }
+.sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before { animation: gfx-in 200ms ease-out both; }
+.board-arrows { animation: gfx-in 200ms ease-out both; }
 .sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
 }
