@@ -370,9 +370,10 @@ export default function App() {
       setParseError(null)
       setHighlightRule(undefined)
       const first = g.moves.find((m) => isStudied(m.color, f))?.ply ?? 0
-      setSelectedPly(
-        atPly !== undefined ? Math.min(Math.max(0, atPly), g.moves.length - 1) : first,
-      )
+      const startPly = atPly !== undefined ? Math.min(Math.max(0, atPly), g.moves.length - 1) : first
+      setSelectedPly(startPly)
+      // the new game's first paint must not glide — but its first STEP must
+      prevPlyRef.current = startPly
       setDubiousOnly(false)
       setFromMeta(false)
       setTab('move')
@@ -1081,9 +1082,6 @@ export default function App() {
   useEffect(() => {
     prevPlyRef.current = selectedPly
   }, [selectedPly])
-  useEffect(() => {
-    prevPlyRef.current = null // a new game: nothing to animate on first render
-  }, [moves])
 
   // Swipe on the board area browses moves (horizontal-dominant gestures only,
   // so vertical scrolling through the analysis is unaffected).
