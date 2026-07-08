@@ -474,16 +474,19 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
      analysis text below keeps most of the screen. */
   .board-sticky {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
-    margin: 0 -14px; padding: 8px 0 8px;
+    margin: 0 -14px; padding: 4px 0 6px;
     /* vertical drags scroll the page; horizontal drags are ours (move swipe) */
     touch-action: pan-y;
   }
-  .board { width: 100%; max-width: 100%; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
+  /* height-capped: on tall phones the board no longer swallows the screen —
+     the analysis text keeps at least half the viewport */
+  .board { width: min(100%, 40vh); max-width: 100%; margin-left: auto; margin-right: auto; border-radius: 8px; border: 1px solid var(--line-2); box-shadow: none; }
   /* the nav lives inside the full-bleed sticky block, so it needs its own inset;
      the progress strip is back in normal (padded) flow. */
-  .board-nav { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; margin-top: 8px; }
-  .eval-row { padding-left: 14px; padding-right: 14px; }
-  .navbtn { padding: 7px 12px; font-size: 14px; }
+  .board-nav { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; margin-top: 6px; }
+  .eval-row { padding-left: 14px; padding-right: 14px; margin-top: 5px; }
+  .evalbar { height: 9px; }
+  .navbtn { padding: 6px 11px; font-size: 14px; }
   .minibtn { display: inline-block; }
   /* compact board: much more room for the analysis text below */
   .board-sticky.mini .board { width: 56%; max-width: 240px; margin-left: auto; margin-right: auto; border-radius: 8px; border: 1px solid var(--line-2); }
