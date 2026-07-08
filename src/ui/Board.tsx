@@ -103,6 +103,7 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   const ordered = orientation === 'b' ? [...cells].reverse() : cells
   const tints = tintMap(annotations)
   const arrows = (annotations?.arrows ?? []).filter((a) => a && ANNO_COLORS.has(a.color))
+  // (arrows and square tints render only after the glide lands — see below)
 
   // Move-navigation glide: the piece now standing on anim.to slides in from
   // anim.from, so the eye instantly sees WHICH piece just moved (or un-moved).
@@ -175,7 +176,8 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
           const fileIdx = files.indexOf(fileCh)
           const dark = (fileIdx + rankNum - 1) % 2 === 0
           const hi = !!lastMove && (square === lastMove.from || square === lastMove.to)
-          const tint = tints.get(square)
+          // graphics wait for the glide to land, then fade in together
+          const tint = active ? undefined : tints.get(square)
           // Coordinates only along the two outer edges, respecting orientation.
           const showRank = orientation === 'w' ? fileCh === 'a' : fileCh === 'h'
           const showFile = orientation === 'w' ? rankNum === 1 : rankNum === 8
@@ -219,7 +221,7 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
               </div>
             )
           })()}
-        {arrows.length > 0 && (
+        {!active && arrows.length > 0 && (
           <svg className="board-arrows" viewBox="0 0 8 8" aria-hidden="true">
             {arrows.map((a, i) => {
               const shape = arrowShape(a.from, a.to, orientation)
