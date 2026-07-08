@@ -154,7 +154,7 @@ a { color: var(--accent-ink); }
 .drill-head h2 { flex: 1; margin: 0; font-size: 18px; }
 .drill-progress { white-space: nowrap; }
 .drill-source { margin: 6px 0 10px; }
-.drill-board { width: min(100%, 46vh, 420px); margin: 0 auto 12px; }
+.drill-board { width: min(100%, 54vh, 500px); margin: 0 auto 12px; }
 .drill-prompt { font-weight: 600; margin: 0 0 10px; }
 .drill .quiz-feedback { margin-top: 14px; }
 .quiz-feedback.fb-good { border-left-color: var(--good); }
