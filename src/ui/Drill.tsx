@@ -105,9 +105,16 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
   const [idx, setIdx] = useState(0)
   const [chosen, setChosen] = useState<string | null>(null)
   const [firstTry, setFirstTry] = useState({ right: 0, total: 0 })
+  // keys already answered this round — retries of a missed position must not
+  // count towards the "X of Y first-try" score again
+  const attemptedRef = useRef<Set<string>>(new Set())
   const byKey = useMemo(() => new Map(playable.map((it) => [it.key, it])), [playable])
 
-  const item = idx < queue.length ? byKey.get(queue[idx]) : undefined
+  // Background re-analysis can remove a queued position mid-round (it is no
+  // longer a mistake) — skip past dead keys instead of ending the round early.
+  let liveIdx = idx
+  while (liveIdx < queue.length && !byKey.get(queue[liveIdx])) liveIdx++
+  const item = liveIdx < queue.length ? byKey.get(queue[liveIdx]) : undefined
 
   // Options are fixed per queue position (not re-shuffled on re-render).
   const options = useMemo(() => {
@@ -121,7 +128,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
     }
     return shuffle([...set])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.key, idx])
+  }, [item?.key, liveIdx])
 
   if (!playable.length) {
     return (
@@ -166,6 +173,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
             setIdx(0)
             setChosen(null)
             setFirstTry({ right: 0, total: 0 })
+            attemptedRef.current = new Set()
           }}
         >
           Run another round
@@ -182,7 +190,10 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
     if (chosen !== null) return
     setChosen(opt)
     const right = opt === item.best
-    setFirstTry((s) => ({ right: s.right + (right ? 1 : 0), total: s.total + 1 }))
+    if (!attemptedRef.current.has(item.key)) {
+      attemptedRef.current.add(item.key)
+      setFirstTry((s) => ({ right: s.right + (right ? 1 : 0), total: s.total + 1 }))
+    }
     setStats((prev) => {
       const cur = prev[item.key] ?? { seen: 0, correct: 0, streak: 0, lastAt: 0 }
       return {
@@ -202,12 +213,12 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
       // wrong: the same position comes back a few puzzles later
       setQueue((q) => {
         const nq = [...q]
-        nq.splice(Math.min(idx + 3, nq.length), 0, item.key)
+        nq.splice(Math.min(liveIdx + 3, nq.length), 0, item.key)
         return nq
       })
     }
     setChosen(null)
-    setIdx((i) => i + 1)
+    setIdx(liveIdx + 1)
   }
 
   return (
@@ -215,7 +226,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
       <div className="drill-head">
         <h2>Drill your mistakes</h2>
         <span className="muted small drill-progress">
-          {Math.min(idx + 1, queue.length)} / {queue.length}
+          {Math.min(liveIdx + 1, queue.length)} / {queue.length}
         </span>
         <button className="btn" onClick={onExit}>
           ← Done

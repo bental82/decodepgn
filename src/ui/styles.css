@@ -55,8 +55,9 @@
   --bad-bg: rgba(220, 38, 38, 0.1);
   --rel: #4f46e5;
   --rel-bg: rgba(99, 102, 241, 0.12);
-  --evalbar-bg: #d7dce4;
-  --evalbar-fill: #2c3442;
+  /* fill = White's share in BOTH themes — polarity must never flip */
+  --evalbar-bg: #3a4150;
+  --evalbar-fill: #f4f6f9;
 }
 
 * { box-sizing: border-box; }

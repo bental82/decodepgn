@@ -832,7 +832,10 @@ export default function App() {
       for (const r of Object.values(g.results)) {
         const mistake = r.soundness === 'dubious' || (r.engine?.cpLoss ?? 0) >= 100
         if (!mistake) continue
-        const best = r.engine && !r.engine.isBest ? r.engine.bestSan : r.alternative?.move
+        // when the ENGINE verified the played move as its top choice, there is
+        // no better move to drill — never fall back to the AI's alternative
+        if (r.engine?.isBest) continue
+        const best = r.engine ? r.engine.bestSan : r.alternative?.move
         if (!best) continue
         if (!parsed) {
           try {
