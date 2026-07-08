@@ -743,6 +743,8 @@ export default function App() {
     cloudOnly: boolean
     /** present in the cloud (listed there, or upload confirmed this session) */
     inCloud: boolean
+    /** which side is the user (from the local save; cloud listings don't carry it) */
+    me?: Color
   }
   // Result from the player's own perspective (me flag, else the studied side).
   const resultFor = (
@@ -781,6 +783,7 @@ export default function App() {
         hasQuiz: !!g.quiz,
         cloudOnly: false,
         inCloud: syncedKeys.has(g.key),
+        me: g.me,
       })
     }
     for (const c of cloudGames ?? []) {
@@ -805,6 +808,54 @@ export default function App() {
     }
     return [...byKey.values()].sort((a, b) => b.date - a.date)
   }, [history, cloudGames, syncedKeys])
+
+  const eloOf = (h: Record<string, string>, c: Color): number | undefined => {
+    const v = parseInt((c === 'w' ? h?.WhiteElo : h?.BlackElo) ?? '', 10)
+    return Number.isFinite(v) && v > 0 ? v : undefined
+  }
+  // The strength faced: the non-you side's Elo; when the user's side is
+  // unknown (both studied, no flag) fall back to the stronger listed player.
+  const opponentEloOf = (g: HistoryItem): number | undefined => {
+    const me = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
+    if (me) return eloOf(g.headers, me === 'w' ? 'b' : 'w')
+    const w = eloOf(g.headers, 'w')
+    const b = eloOf(g.headers, 'b')
+    return w !== undefined && b !== undefined ? Math.max(w, b) : (w ?? b)
+  }
+
+  // History filters: player name, studied colour, result, opponent-Elo range.
+  const [histFilter, setHistFilter] = useState({
+    q: '',
+    color: 'all' as 'all' | Focus,
+    result: 'all' as 'all' | 'won' | 'lost' | 'draw',
+    eloMin: '',
+    eloMax: '',
+  })
+  const histFilterActive =
+    histFilter.q !== '' ||
+    histFilter.color !== 'all' ||
+    histFilter.result !== 'all' ||
+    histFilter.eloMin !== '' ||
+    histFilter.eloMax !== ''
+  const visibleHistory = useMemo(() => {
+    if (!histFilterActive) return historyItems
+    const q = histFilter.q.trim().toLowerCase()
+    const min = parseInt(histFilter.eloMin, 10)
+    const max = parseInt(histFilter.eloMax, 10)
+    return historyItems.filter((g) => {
+      if (q && !`${g.headers.White ?? ''} ${g.headers.Black ?? ''}`.toLowerCase().includes(q)) return false
+      if (histFilter.color !== 'all' && g.focus !== histFilter.color) return false
+      if (histFilter.result !== 'all' && g.result !== histFilter.result) return false
+      if (Number.isFinite(min) || Number.isFinite(max)) {
+        const e = opponentEloOf(g)
+        if (e === undefined) return false
+        if (Number.isFinite(min) && e < min) return false
+        if (Number.isFinite(max) && e > max) return false
+      }
+      return true
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyItems, histFilter, histFilterActive])
 
   // Open a saved game: when the cloud copy is the only one — or clearly newer
   // than this browser's — pull it down first so the analysis comes with it.
@@ -1076,12 +1127,20 @@ export default function App() {
             <div className="game-meta">
               <strong>
                 {headers.White ?? 'White'}
-                {mySide === 'w' ? ' (you)' : ''}
+                {mySide === 'w'
+                  ? ' (you)'
+                  : headers.WhiteElo && parseInt(headers.WhiteElo, 10) > 0
+                    ? ` (${parseInt(headers.WhiteElo, 10)})`
+                    : ''}
               </strong>{' '}
               vs{' '}
               <strong>
                 {headers.Black ?? 'Black'}
-                {mySide === 'b' ? ' (you)' : ''}
+                {mySide === 'b'
+                  ? ' (you)'
+                  : headers.BlackElo && parseInt(headers.BlackElo, 10) > 0
+                    ? ` (${parseInt(headers.BlackElo, 10)})`
+                    : ''}
               </strong>
               <span className="studying"> · studying {colorName(focus)}</span>
               <button
@@ -1145,13 +1204,93 @@ export default function App() {
                 <h2>Your analysed games ({historyItems.length})</h2>
                 <span className="collapse-chevron">{histOpen ? '▾' : '▸'}</span>
               </button>
+              {histOpen && historyItems.length > 3 ? (
+                <div className="history-filters">
+                  <input
+                    className="hf-q"
+                    placeholder="Filter by player…"
+                    aria-label="Filter games by player name"
+                    value={histFilter.q}
+                    onChange={(e) => setHistFilter((f) => ({ ...f, q: e.target.value }))}
+                  />
+                  <select
+                    aria-label="Filter by studied colour"
+                    value={histFilter.color}
+                    onChange={(e) =>
+                      setHistFilter((f) => ({ ...f, color: e.target.value as 'all' | Focus }))
+                    }
+                  >
+                    <option value="all">Any colour</option>
+                    <option value="w">as White</option>
+                    <option value="b">as Black</option>
+                    <option value="both">Both sides</option>
+                  </select>
+                  <select
+                    aria-label="Filter by result"
+                    value={histFilter.result}
+                    onChange={(e) =>
+                      setHistFilter((f) => ({
+                        ...f,
+                        result: e.target.value as 'all' | 'won' | 'lost' | 'draw',
+                      }))
+                    }
+                  >
+                    <option value="all">Any result</option>
+                    <option value="won">Won</option>
+                    <option value="lost">Lost</option>
+                    <option value="draw">Draw</option>
+                  </select>
+                  <input
+                    className="hf-elo"
+                    inputMode="numeric"
+                    placeholder="Elo ≥"
+                    aria-label="Minimum opponent Elo"
+                    value={histFilter.eloMin}
+                    onChange={(e) => setHistFilter((f) => ({ ...f, eloMin: e.target.value }))}
+                  />
+                  <input
+                    className="hf-elo"
+                    inputMode="numeric"
+                    placeholder="Elo ≤"
+                    aria-label="Maximum opponent Elo"
+                    value={histFilter.eloMax}
+                    onChange={(e) => setHistFilter((f) => ({ ...f, eloMax: e.target.value }))}
+                  />
+                  {histFilterActive ? (
+                    <button
+                      className="btn ghost hf-clear"
+                      onClick={() =>
+                        setHistFilter({ q: '', color: 'all', result: 'all', eloMin: '', eloMax: '' })
+                      }
+                      aria-label="Clear filters"
+                      title="Clear filters"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {histOpen && histFilterActive ? (
+                <p className="muted small hf-count">
+                  {visibleHistory.length === 0
+                    ? 'No games match these filters.'
+                    : `${visibleHistory.length} of ${historyItems.length} games`}
+                </p>
+              ) : null}
               {histOpen ? (
               <ul className="history-list">
-                {historyItems.map((g) => (
+                {visibleHistory.map((g) => (
                   <li key={g.key}>
                     <button className="history-row" onClick={() => void openSaved(g)}>
                       <span className="history-title">
-                        {g.headers.White ?? 'White'} vs {g.headers.Black ?? 'Black'}
+                        {g.headers.White ?? 'White'}
+                        {(g.me ?? (g.focus !== 'both' ? g.focus : undefined)) !== 'w' && eloOf(g.headers, 'w') ? (
+                          <span className="elo"> ({eloOf(g.headers, 'w')})</span>
+                        ) : null}{' '}
+                        vs {g.headers.Black ?? 'Black'}
+                        {(g.me ?? (g.focus !== 'both' ? g.focus : undefined)) !== 'b' && eloOf(g.headers, 'b') ? (
+                          <span className="elo"> ({eloOf(g.headers, 'b')})</span>
+                        ) : null}
                       </span>
                       <span className="history-meta">
                         as {colorName(g.focus)} · {g.analysed} analysed
