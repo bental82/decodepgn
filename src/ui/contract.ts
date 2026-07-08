@@ -3,6 +3,7 @@
 
 import type {
   BoardAnnotations,
+  Color,
   Focus,
   GameMove,
   MetaGameSummary,
@@ -83,6 +84,10 @@ export interface QuizProps {
 
 export interface AskContext {
   focus?: Focus
+  /** which side the user played (the "me" flag) — lets answers resolve "I"/"my" */
+  me?: Color
+  white?: string
+  black?: string
   game?: GameMove[]
   ply?: number
   san?: string

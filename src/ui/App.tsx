@@ -1386,7 +1386,13 @@ export default function App() {
                 onJump={jumpTo}
                 onRetry={fetchOverview}
                 askKey={storeRef.current?.key ?? 'game'}
-                askContext={{ focus, game: toGameMoves(moves) }}
+                askContext={{
+                  focus,
+                  me: mySide,
+                  white: headers.White,
+                  black: headers.Black,
+                  game: toGameMoves(moves),
+                }}
                 apiKey={apiKey}
                 onNeedKey={() => setShowSettings(true)}
                 onOpenRule={openRule}
@@ -1580,6 +1586,9 @@ export default function App() {
                   key={selectedPly} // remount per move so answers never carry over
                   context={{
                     focus,
+                    me: mySide,
+                    white: headers.White,
+                    black: headers.Black,
                     game: toGameMoves(moves),
                     ply: selectedPly,
                     san: move.san,
