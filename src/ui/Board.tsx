@@ -69,6 +69,8 @@ function tintMap(annotations?: BoardAnnotations): Map<string, AnnoColor> {
 // (#wk, #bq, …) via <use>, which gives crisp vector pieces at any size.
 interface Slide {
   key: string
+  /** the position this glide belongs to — never applied to any other */
+  placement: string
   from: string
   to: string
   piece: { type: string; white: boolean }
@@ -104,35 +106,64 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
 
   // Move-navigation glide: the piece now standing on anim.to slides in from
   // anim.from, so the eye instantly sees WHICH piece just moved (or un-moved).
-  // The animation is keyed to position+move; it expires on its own timer and
-  // is never cancelled by unrelated re-renders mid-flight.
+  //
+  // Hard-won rules:
+  // 1. The very first paint of a new position must already hide the
+  //    destination piece and show the overlay at the ORIGIN square — an
+  //    effect-only start flashes the piece at its target for a frame before
+  //    it snaps back and slides ("jumpy"). The `pending` value below derives
+  //    that first frame purely from props; the effect then adopts it into
+  //    state (StrictMode-safe: no ref writes during render).
+  // 2. The glide ends ONLY via its own timer, keyed to the slide itself.
+  //    Tying it to the anim prop cancels the cleanup whenever an unrelated
+  //    re-render clears that prop mid-flight (engine evals, analysis
+  //    results…), leaving the destination piece invisible for good.
   const [slide, setSlide] = useState<Slide | null>(null)
-  const slideKey = anim ? `${anim.from}>${anim.to}|${placement}` : ''
-  const startedRef = useRef('')
+  const doneRef = useRef('') // last started key — blocks a restart loop after expiry
+  const pieceAtTarget = anim ? (cells.find((c) => c.square === anim.to)?.piece ?? null) : null
+  const wantKey =
+    anim &&
+    pieceAtTarget &&
+    squareOffset(anim.from, orientation) &&
+    squareOffset(anim.to, orientation)
+      ? `${anim.from}>${anim.to}|${placement}`
+      : ''
+  const pending: Slide | null =
+    wantKey && anim && pieceAtTarget && doneRef.current !== wantKey && slide?.key !== wantKey
+      ? { key: wantKey, placement, from: anim.from, to: anim.to, piece: pieceAtTarget, go: false }
+      : null
+  const active = pending ?? (slide && slide.placement === placement ? slide : null)
+
   useEffect(() => {
-    if (!anim || !slideKey || startedRef.current === slideKey) return
-    startedRef.current = slideKey
-    const piece = cells.find((c) => c.square === anim.to)?.piece
-    if (!piece || !squareOffset(anim.from, orientation) || !squareOffset(anim.to, orientation)) return
-    setSlide({ key: slideKey, from: anim.from, to: anim.to, piece, go: false })
-    // two frames: paint at the origin square first, then transition to target
+    if (!wantKey || !anim || !pieceAtTarget || doneRef.current === wantKey) return
+    doneRef.current = wantKey
+    setSlide({ key: wantKey, placement, from: anim.from, to: anim.to, piece: pieceAtTarget, go: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantKey])
+
+  useEffect(() => {
+    if (!slide) return
+    let raf1 = 0
     let raf2 = 0
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() =>
-        setSlide((cur) => (cur && cur.key === slideKey ? { ...cur, go: true } : cur)),
-      )
-    })
+    if (!slide.go) {
+      // paint at the origin square first, then transition to the target
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() =>
+          setSlide((cur) => (cur && cur.key === slide.key && !cur.go ? { ...cur, go: true } : cur)),
+        )
+      })
+    }
     const timer = setTimeout(
-      () => setSlide((cur) => (cur && cur.key === slideKey ? null : cur)),
-      260,
+      () => setSlide((cur) => (cur && cur.key === slide.key ? null : cur)),
+      240,
     )
     return () => {
       cancelAnimationFrame(raf1)
-      if (raf2) cancelAnimationFrame(raf2)
+      cancelAnimationFrame(raf2)
       clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slideKey])
+  }, [slide?.key])
 
   return (
     <div className="board-wrap">
@@ -162,7 +193,7 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
                   className="piece"
                   viewBox="0 0 40 40"
                   aria-hidden="true"
-                  style={slide && slide.to === square ? { visibility: 'hidden' } : undefined}
+                  style={active && active.to === square ? { visibility: 'hidden' } : undefined}
                 >
                   <use href={`#${piece.white ? 'w' : 'b'}${piece.type}`} />
                 </svg>
@@ -170,12 +201,12 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
             </div>
           )
         })}
-        {slide &&
+        {active &&
           (() => {
-            const a = squareOffset(slide.from, orientation)
-            const b = squareOffset(slide.to, orientation)
+            const a = squareOffset(active.from, orientation)
+            const b = squareOffset(active.to, orientation)
             if (!a || !b) return null
-            const pos = slide.go ? b : a
+            const pos = active.go ? b : a
             return (
               <div className="board-anim" aria-hidden="true">
                 <svg
@@ -183,7 +214,7 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
                   viewBox="0 0 40 40"
                   style={{ transform: `translate(${pos.col * 100}%, ${pos.row * 100}%)` }}
                 >
-                  <use href={`#${slide.piece.white ? 'w' : 'b'}${slide.piece.type}`} />
+                  <use href={`#${active.piece.white ? 'w' : 'b'}${active.piece.type}`} />
                 </svg>
               </div>
             )
