@@ -128,6 +128,8 @@ export interface GameSummaryProps {
 export interface SettingsProps {
   apiKey: string
   hasServerKey: boolean
+  theme: 'dark' | 'light'
+  onTheme: (t: 'dark' | 'light') => void
   /** the deployed API's build marker (from GET /api/analyze) — shows what's live */
   serverBuild?: string
   onSave: (key: string) => void

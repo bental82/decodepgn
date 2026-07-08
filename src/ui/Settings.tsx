@@ -25,7 +25,7 @@ async function hardRefresh() {
   window.location.replace(u.toString())
 }
 
-export default function Settings({ apiKey, hasServerKey, serverBuild, onSave, onClose }: SettingsProps) {
+export default function Settings({ apiKey, hasServerKey, serverBuild, theme, onTheme, onSave, onClose }: SettingsProps) {
   const [value, setValue] = useState(apiKey)
   const [refreshing, setRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -91,6 +91,25 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, onSave, on
           <button className="btn primary" onClick={() => onSave(value)}>
             Save
           </button>
+        </div>
+        <div className="settings-theme">
+          <span className="muted small">Theme</span>
+          <div className="theme-opts">
+            <button
+              className={'btn' + (theme === 'dark' ? ' on' : '')}
+              aria-pressed={theme === 'dark'}
+              onClick={() => onTheme('dark')}
+            >
+              🌙 Dark
+            </button>
+            <button
+              className={'btn' + (theme === 'light' ? ' on' : '')}
+              aria-pressed={theme === 'light'}
+              onClick={() => onTheme('light')}
+            >
+              ☀️ Light
+            </button>
+          </div>
         </div>
         <div className="settings-update">
           <span className="muted small">

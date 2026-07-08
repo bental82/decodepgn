@@ -42,6 +42,7 @@ import Board from './Board'
 import GameImport from './GameImport'
 import GameOverviewCard from './GameOverviewCard'
 import GameSummary from './GameSummary'
+import Drill, { type DrillItem } from './Drill'
 import MetaCard, { type SavedMetaReport } from './MetaCard'
 import MoveAnalysis from './MoveAnalysis'
 import PieceSprite from './PieceSprite'
@@ -56,9 +57,10 @@ import Settings from './Settings'
 const KEY_STORAGE = 'decodepgn.apiKey'
 const META_KEY = 'decodepgn.meta.v1'
 type Tab = 'move' | 'quiz' | 'map' | 'rules'
+type Phase = 'input' | 'game' | 'drill'
 
 export default function App() {
-  const [phase, setPhase] = useState<'input' | 'game'>('input')
+  const [phase, setPhase] = useState<Phase>('input')
   const [headers, setHeaders] = useState<Record<string, string>>({})
   const [moves, setMoves] = useState<ParsedMove[]>([])
   const [focus, setFocus] = useState<Focus>('w')
@@ -110,6 +112,15 @@ export default function App() {
   }, [])
   const [hasServerKey, setHasServerKey] = useState(false)
   const [serverBuild, setServerBuild] = useState<string | undefined>(undefined)
+  // Light/dark theme — applied to <html data-theme> (index.html sets it before
+  // first paint) and remembered across sessions.
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    localStorage.getItem('decodepgn.theme') === 'light' ? 'light' : 'dark',
+  )
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('decodepgn.theme', theme)
+  }, [theme])
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
   const [queuedPlies, setQueuedPlies] = useState<Set<number>>(new Set())
@@ -810,6 +821,64 @@ export default function App() {
     return [...byKey.values()].sort((a, b) => b.date - a.date)
   }, [history, cloudGames, syncedKeys])
 
+  // Every analysed move flagged dubious — or costing 1+ pawn by the engine —
+  // becomes a practice position for the Drill screen, as long as we know a
+  // better move (the engine's, else the AI's suggested alternative).
+  const drillItems = useMemo<DrillItem[]>(() => {
+    const out: DrillItem[] = []
+    for (const g of history) {
+      let parsed: ParsedMove[] | null = null
+      const meSide = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
+      for (const r of Object.values(g.results)) {
+        const mistake = r.soundness === 'dubious' || (r.engine?.cpLoss ?? 0) >= 100
+        if (!mistake) continue
+        // when the ENGINE verified the played move as its top choice, there is
+        // no better move to drill — never fall back to the AI's alternative
+        if (r.engine?.isBest) continue
+        const best = r.engine ? r.engine.bestSan : r.alternative?.move
+        if (!best) continue
+        if (!parsed) {
+          try {
+            parsed = parsePgn(g.pgn).moves
+          } catch {
+            break
+          }
+        }
+        const mv = parsed[r.ply]
+        if (!mv) continue
+        if (meSide ? mv.color !== meSide : !isStudied(mv.color, g.focus)) continue
+        // the stored better move must be LEGAL here (the AI's alternative can
+        // hallucinate) — validate now so the drill count is always honest,
+        // and adopt the canonical SAN spelling for exact option matching
+        let legal: string[]
+        try {
+          legal = new Chess(mv.fenBefore).moves()
+        } catch {
+          continue
+        }
+        const plainSan = (x: string) => x.replace(/[+#]/g, '')
+        const canonBest = legal.find((m) => plainSan(m) === plainSan(best))
+        if (!canonBest || plainSan(canonBest) === plainSan(mv.san)) continue
+        out.push({
+          key: `${g.key}:${r.ply}`,
+          gameKey: g.key,
+          ply: r.ply,
+          fen: mv.fenBefore,
+          color: mv.color,
+          played: mv.san,
+          best: canonBest,
+          legal,
+          cpLoss: r.engine?.cpLoss,
+          ruleIds: r.rules.filter((h) => h.status === 'violates').map((h) => h.id),
+          lesson: r.lesson,
+          why: r.alternative?.why,
+          label: `${g.headers.White ?? 'White'} vs ${g.headers.Black ?? 'Black'} · move ${Math.floor(r.ply / 2) + 1}`,
+        })
+      }
+    }
+    return out
+  }, [history])
+
   const eloOf = (h: Record<string, string>, c: Color): number | undefined => {
     const v = parseInt((c === 'w' ? h?.WhiteElo : h?.BlackElo) ?? '', 10)
     return Number.isFinite(v) && v > 0 ? v : undefined
@@ -1193,7 +1262,19 @@ export default function App() {
         )}
       </header>
 
-      {phase === 'input' ? (
+      {phase === 'drill' ? (
+        <div className="workspace">
+          <Drill
+            items={drillItems}
+            onOpenRule={openRule}
+            onOpenGame={(gameKey, ply) => {
+              const item = historyItems.find((h) => h.key === gameKey)
+              if (item) void openSaved(item, ply)
+            }}
+            onExit={() => setPhase('input')}
+          />
+        </div>
+      ) : phase === 'input' ? (
         <div className="landing">
           <PgnInput
             onSubmit={handleSubmit}
@@ -1202,6 +1283,20 @@ export default function App() {
             hasServerKey={hasServerKey}
           />
           <GameImport onPick={handleSubmit} />
+          {drillItems.length > 0 ? (
+            <div className="card drill-entry">
+              <div>
+                <h2>🎯 Drill your mistakes</h2>
+                <p className="muted small">
+                  {drillItems.length} position{drillItems.length === 1 ? '' : 's'} from your games
+                  where a better move existed — practise them until they stick.
+                </p>
+              </div>
+              <button className="btn primary" onClick={() => setPhase('drill')}>
+                Start drilling
+              </button>
+            </div>
+          ) : null}
           {historyItems.length > 0 ? (
             <div className="history card">
               <button
@@ -1703,6 +1798,8 @@ export default function App() {
           apiKey={apiKey}
           hasServerKey={hasServerKey}
           serverBuild={serverBuild}
+          theme={theme}
+          onTheme={setTheme}
           onSave={saveKey}
           onClose={() => setShowSettings(false)}
         />
