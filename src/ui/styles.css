@@ -267,6 +267,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .board-arrows .ar-blue polygon { fill: var(--anno-blue); }
 /* no drop-shadow: it smears the vector edges at phone sizes and reads as blur */
 .piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
+/* interactive board (drill): selection, legal-target dots, dragged piece */
+.board.interactive { touch-action: none; cursor: pointer; user-select: none; }
+.sq.sel { box-shadow: inset 0 0 0 3px var(--accent); }
+.tgt { position: absolute; left: 50%; top: 50%; width: 26%; height: 26%; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(22, 163, 74, 0.55); z-index: 2; pointer-events: none; }
+.tgt.tgt-cap { width: 88%; height: 88%; background: transparent; border: 4px solid rgba(22, 163, 74, 0.55); }
+.drag-piece { position: absolute; width: 13.5%; height: 13.5%; transform: translate(-50%, -55%); z-index: 6; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4)); }
 /* move-navigation glide: the destination piece itself FLIPs from the origin
    square to rest (no overlay — an overlay lands with sub-pixel drift) */
 .coord { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; z-index: 2; user-select: none; pointer-events: none; }

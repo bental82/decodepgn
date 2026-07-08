@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Chess } from 'chess.js'
 import Board from './Board'
+import type { BoardAnnotations } from '../shared/types'
 import RuleText from './RuleText'
 import { RULES_BY_ID } from '../shared/rules'
 import type { Color } from '../shared/types'
@@ -116,6 +118,36 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
   while (liveIdx < queue.length && !byKey.get(queue[liveIdx])) liveIdx++
   const item = liveIdx < queue.length ? byKey.get(queue[liveIdx]) : undefined
 
+  // Verbose legal moves for the current puzzle: powers tap/drag input
+  // (from->to squares) and the reveal arrows.
+  const verbose = useMemo(() => {
+    if (!item) return []
+    try {
+      return new Chess(item.fen).moves({ verbose: true }) as Array<{
+        from: string
+        to: string
+        san: string
+        promotion?: string
+      }>
+    } catch {
+      return []
+    }
+  }, [item?.key]) // eslint-disable-line react-hooks/exhaustive-deps
+  const targets = useMemo(() => {
+    const t: Record<string, string[]> = {}
+    for (const m of verbose) (t[m.from] ??= []).push(m.to)
+    return t
+  }, [verbose])
+  // from->to picks the queen on promotions (underpromotion drills are not a thing here)
+  const sanFor = (from: string, to: string): string | undefined => {
+    const ms = verbose.filter((m) => m.from === from && m.to === to)
+    return (ms.find((m) => !m.promotion || m.promotion === 'q') ?? ms[0])?.san
+  }
+  const squaresOf = (san: string) => {
+    const m = verbose.find((v) => plain(v.san) === plain(san))
+    return m ? { from: m.from, to: m.to } : null
+  }
+
   // Options are fixed per queue position (not re-shuffled on re-render).
   const options = useMemo(() => {
     if (!item) return []
@@ -186,6 +218,24 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
   const violated = item.ruleIds.filter((id) => RULES_BY_ID[id])
   const recurring = violated.filter((id) => (ruleFreq.get(id) ?? 0) >= 2)
 
+  // After answering, show the story on the board: green = the better move,
+  // red = what was played in the game, yellow = a wrong pick (when distinct).
+  let revealGfx: BoardAnnotations | undefined
+  if (chosen !== null) {
+    const arrows: NonNullable<BoardAnnotations['arrows']> = []
+    const best = squaresOf(item.best)
+    if (best) arrows.push({ from: best.from, to: best.to, color: 'green' })
+    const played = squaresOf(item.played)
+    if (played && plain(item.played) !== plain(item.best)) {
+      arrows.push({ from: played.from, to: played.to, color: 'red' })
+    }
+    if (!isRight && plain(chosen) !== plain(item.played)) {
+      const picked = squaresOf(chosen)
+      if (picked) arrows.push({ from: picked.from, to: picked.to, color: 'yellow' })
+    }
+    if (arrows.length) revealGfx = { arrows }
+  }
+
   const answer = (opt: string) => {
     if (chosen !== null) return
     setChosen(opt)
@@ -237,10 +287,27 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
         {recurring.length ? ' · a recurring pattern of yours' : ''}
       </p>
       <div className="drill-board">
-        <Board fen={item.fen} orientation={item.color} />
+        <Board
+          fen={item.fen}
+          orientation={item.color}
+          annotations={revealGfx}
+          interact={
+            chosen === null
+              ? {
+                  color: item.color,
+                  targets,
+                  onMove: (from, to) => {
+                    const san = sanFor(from, to)
+                    if (san) answer(san)
+                  },
+                }
+              : undefined
+          }
+        />
       </div>
       <p className="drill-prompt">
-        {item.color === 'w' ? 'White' : 'Black'} (you) to move — find the better move.
+        {item.color === 'w' ? 'White' : 'Black'} (you) to move — find the better move.{' '}
+        <span className="muted small">Tap or drag a piece, or pick an answer below.</span>
       </p>
       <div className="quiz-options">
         {options.map((opt) => (
@@ -261,7 +328,9 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
       {chosen !== null ? (
         <div className={'quiz-feedback ' + (isRight ? 'fb-good' : 'fb-bad')}>
           <p className="drill-verdict">
-            {isRight ? '✓ Right — ' + item.best + ' was the move.' : `✗ Not quite — ${item.best} was the move.`}
+            {isRight
+              ? '✓ Right — ' + item.best + ' was the move.'
+              : `✗ Not quite — you chose ${chosen}; ${item.best} was the move.`}
           </p>
           <p className="muted small">
             In the game you played <strong>{item.played}</strong>
