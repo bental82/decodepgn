@@ -1204,6 +1204,18 @@ export default function App() {
             <span className="tagline">which rules of thumb apply, move by move</span>
           </div>
         </button>
+        {phase !== 'game' && (
+          <div className="topbar-right">
+            <button
+              className="btn ghost"
+              onClick={() => setShowSettings(true)}
+              title="Settings"
+              aria-label="API key settings"
+            >
+              ⚙
+            </button>
+          </div>
+        )}
         {phase === 'game' && (
           <div className="topbar-right">
             <div className="game-meta">

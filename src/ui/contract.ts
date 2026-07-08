@@ -34,6 +34,13 @@ export interface BoardProps {
   annotations?: BoardAnnotations
   /** glide the piece now standing on `to` in from `from` (move navigation) */
   anim?: { from: string; to: string } | null
+  /** make the mover's pieces tappable/draggable (drill mode) */
+  interact?: {
+    color: Color
+    /** legal destinations per from-square (precomputed by the caller) */
+    targets: Record<string, string[]>
+    onMove: (from: string, to: string) => void
+  }
 }
 
 /** What the sticky board is currently illustrating for the selected move. */

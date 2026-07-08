@@ -76,7 +76,7 @@ interface Slide {
   go: boolean
 }
 
-export default function Board({ fen, orientation, lastMove, caption, annotations, anim }: BoardProps) {
+export default function Board({ fen, orientation, lastMove, caption, annotations, anim, interact }: BoardProps) {
   const placement = fen.split(' ')[0]
   const rows = placement.split('/')
 
@@ -103,6 +103,70 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   const tints = tintMap(annotations)
   const arrows = (annotations?.arrows ?? []).filter((a) => a && ANNO_COLORS.has(a.color))
   // (arrows and square tints render only after the glide lands — see below)
+
+  // Tap/drag interaction (drill mode): tap a piece to select it (legal
+  // destinations get dots), then tap a destination — or just drag the piece.
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const [sel, setSel] = useState<string | null>(null)
+  const [drag, setDrag] = useState<{ from: string; x: number; y: number } | null>(null)
+  const pressRef = useRef<{ from: string; startX: number; startY: number; dragging: boolean } | null>(null)
+  const squareAt = (clientX: number, clientY: number): string | null => {
+    const el = boardRef.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const col = Math.floor(((clientX - r.left) / r.width) * 8)
+    const row = Math.floor(((clientY - r.top) / r.height) * 8)
+    if (col < 0 || col > 7 || row < 0 || row > 7) return null
+    const f = orientation === 'b' ? 7 - col : col
+    const rank = orientation === 'b' ? row + 1 : 8 - row
+    return files[f] + rank
+  }
+  const clearInteraction = () => {
+    setSel(null)
+    setDrag(null)
+    pressRef.current = null
+  }
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!interact) return
+    const sq = squareAt(e.clientX, e.clientY)
+    if (!sq) return
+    // tapping a legal destination of the selected piece = play the move
+    if (sel && (interact.targets[sel] ?? []).includes(sq)) {
+      interact.onMove(sel, sq)
+      clearInteraction()
+      return
+    }
+    if ((interact.targets[sq] ?? []).length) {
+      setSel(sq)
+      pressRef.current = { from: sq, startX: e.clientX, startY: e.clientY, dragging: false }
+      boardRef.current?.setPointerCapture(e.pointerId)
+    } else {
+      setSel(null)
+    }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const press = pressRef.current
+    if (!press) return
+    if (!press.dragging && Math.hypot(e.clientX - press.startX, e.clientY - press.startY) < 7) return
+    press.dragging = true
+    const r = boardRef.current?.getBoundingClientRect()
+    if (r) setDrag({ from: press.from, x: e.clientX - r.left, y: e.clientY - r.top })
+  }
+  const onPointerUp = (e: React.PointerEvent) => {
+    const press = pressRef.current
+    if (!press) return
+    if (press.dragging && interact) {
+      const drop = squareAt(e.clientX, e.clientY)
+      if (drop && (interact.targets[press.from] ?? []).includes(drop)) {
+        interact.onMove(press.from, drop)
+        clearInteraction()
+        return
+      }
+      setDrag(null) // revert; keep the piece selected for a tap-move
+    }
+    pressRef.current = null
+  }
+  const targetSet = interact && sel ? new Set(interact.targets[sel] ?? []) : null
 
   // Move-navigation glide: the piece now standing on anim.to slides in from
   // anim.from, so the eye instantly sees WHICH piece just moved (or un-moved).
@@ -184,7 +248,16 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   return (
     <div className="board-wrap">
       {caption && <div className="board-caption">{caption}</div>}
-      <div className="board" role="img" aria-label={caption ?? 'chess position'}>
+      <div
+        className={'board' + (interact ? ' interactive' : '')}
+        role="img"
+        aria-label={caption ?? 'chess position'}
+        ref={boardRef}
+        onPointerDown={interact ? onPointerDown : undefined}
+        onPointerMove={interact ? onPointerMove : undefined}
+        onPointerUp={interact ? onPointerUp : undefined}
+        onPointerCancel={interact ? clearInteraction : undefined}
+      >
         {ordered.map(({ square, piece }) => {
           const fileCh = square[0]
           const rankNum = parseInt(square[1], 10)
@@ -196,21 +269,30 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
           // Coordinates only along the two outer edges, respecting orientation.
           const showRank = orientation === 'w' ? fileCh === 'a' : fileCh === 'h'
           const showFile = orientation === 'w' ? rankNum === 1 : rankNum === 8
+          const isSel = sel === square
+          const isTarget = !!targetSet?.has(square)
           return (
             <div
               key={square}
               className={
-                'sq ' + (dark ? 'dark' : 'light') + (hi ? ' hi' : '') + (tint ? ' anno-' + tint : '')
+                'sq ' +
+                (dark ? 'dark' : 'light') +
+                (hi ? ' hi' : '') +
+                (tint ? ' anno-' + tint : '') +
+                (isSel ? ' sel' : '')
               }
             >
               {showRank && <span className="coord rank">{rankNum}</span>}
               {showFile && <span className="coord file">{fileCh}</span>}
+              {isTarget && <span className={'tgt' + (piece ? ' tgt-cap' : '')} aria-hidden="true" />}
               {piece && (
                 <svg
                   className="piece"
                   viewBox="0 0 40 40"
                   aria-hidden="true"
-                  style={glideStyle(square)}
+                  style={
+                    drag && drag.from === square ? { visibility: 'hidden' } : glideStyle(square)
+                  }
                   onTransitionEnd={
                     active && active.to === square
                       ? (e) => {
@@ -225,6 +307,21 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
             </div>
           )
         })}
+        {drag &&
+          (() => {
+            const piece = cells.find((c) => c.square === drag.from)?.piece
+            if (!piece) return null
+            return (
+              <svg
+                className="drag-piece"
+                viewBox="0 0 40 40"
+                aria-hidden="true"
+                style={{ left: drag.x, top: drag.y }}
+              >
+                <use href={`#${piece.white ? 'w' : 'b'}${piece.type}`} />
+              </svg>
+            )
+          })()}
         {!active && arrows.length > 0 && (
           <svg className="board-arrows" viewBox="0 0 8 8" aria-hidden="true">
             {arrows.map((a, i) => {
