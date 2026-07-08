@@ -73,7 +73,6 @@ interface Slide {
   placement: string
   from: string
   to: string
-  piece: { type: string; white: boolean }
   go: boolean
 }
 
@@ -109,16 +108,18 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   // anim.from, so the eye instantly sees WHICH piece just moved (or un-moved).
   //
   // Hard-won rules:
-  // 1. The very first paint of a new position must already hide the
-  //    destination piece and show the overlay at the ORIGIN square — an
-  //    effect-only start flashes the piece at its target for a frame before
-  //    it snaps back and slides ("jumpy"). The `pending` value below derives
-  //    that first frame purely from props; the effect then adopts it into
-  //    state (StrictMode-safe: no ref writes during render).
-  // 2. The glide ends ONLY via its own timer, keyed to the slide itself.
-  //    Tying it to the anim prop cancels the cleanup whenever an unrelated
-  //    re-render clears that prop mid-flight (engine evals, analysis
-  //    results…), leaving the destination piece invisible for good.
+  // 1. FLIP on the REAL piece: the destination piece itself starts offset at
+  //    the origin square and transitions to rest. Its final state is its
+  //    natural grid position, so there is no overlay-to-static swap — an
+  //    overlay lands with sub-pixel drift and the piece visibly "vibrates"
+  //    when swapped.
+  // 2. The very first paint of a new position must already show the piece at
+  //    the ORIGIN offset (the `pending` value derives that frame purely from
+  //    props; the effect then adopts it into state — StrictMode-safe).
+  // 3. The glide ends on ITS OWN transitionend/timer, keyed to the slide
+  //    itself. Tying cleanup to the anim prop cancels it whenever an
+  //    unrelated re-render clears that prop mid-flight (engine evals,
+  //    analysis results…), freezing the piece mid-glide.
   const [slide, setSlide] = useState<Slide | null>(null)
   const doneRef = useRef('') // last started key — blocks a restart loop after expiry
   const pieceAtTarget = anim ? (cells.find((c) => c.square === anim.to)?.piece ?? null) : null
@@ -130,15 +131,16 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
       ? `${anim.from}>${anim.to}|${placement}`
       : ''
   const pending: Slide | null =
-    wantKey && anim && pieceAtTarget && doneRef.current !== wantKey && slide?.key !== wantKey
-      ? { key: wantKey, placement, from: anim.from, to: anim.to, piece: pieceAtTarget, go: false }
+    wantKey && anim && doneRef.current !== wantKey && slide?.key !== wantKey
+      ? { key: wantKey, placement, from: anim.from, to: anim.to, go: false }
       : null
   const active = pending ?? (slide && slide.placement === placement ? slide : null)
+  const endGlide = (key: string) => setSlide((cur) => (cur && cur.key === key ? null : cur))
 
   useEffect(() => {
-    if (!wantKey || !anim || !pieceAtTarget || doneRef.current === wantKey) return
+    if (!wantKey || !anim || doneRef.current === wantKey) return
     doneRef.current = wantKey
-    setSlide({ key: wantKey, placement, from: anim.from, to: anim.to, piece: pieceAtTarget, go: false })
+    setSlide({ key: wantKey, placement, from: anim.from, to: anim.to, go: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantKey])
 
@@ -147,17 +149,15 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
     let raf1 = 0
     let raf2 = 0
     if (!slide.go) {
-      // paint at the origin square first, then transition to the target
+      // paint at the origin offset first, then transition to rest
       raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() =>
           setSlide((cur) => (cur && cur.key === slide.key && !cur.go ? { ...cur, go: true } : cur)),
         )
       })
     }
-    const timer = setTimeout(
-      () => setSlide((cur) => (cur && cur.key === slide.key ? null : cur)),
-      240,
-    )
+    // fallback only — transitionend on the piece normally ends the glide sooner
+    const timer = setTimeout(() => endGlide(slide.key), 320)
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
@@ -165,6 +165,21 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slide?.key])
+
+  // inline FLIP style for the destination piece while the glide runs
+  const glideStyle = (square: string): React.CSSProperties | undefined => {
+    if (!active || active.to !== square) return undefined
+    const a = squareOffset(active.from, orientation)
+    const b = squareOffset(active.to, orientation)
+    if (!a || !b) return undefined
+    return active.go
+      ? { transform: 'translate(0, 0)', transition: 'transform 150ms ease', zIndex: 4 }
+      : {
+          transform: `translate(${(a.col - b.col) * 100}%, ${(a.row - b.row) * 100}%)`,
+          transition: 'none',
+          zIndex: 4,
+        }
+  }
 
   return (
     <div className="board-wrap">
@@ -195,7 +210,14 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
                   className="piece"
                   viewBox="0 0 40 40"
                   aria-hidden="true"
-                  style={active && active.to === square ? { visibility: 'hidden' } : undefined}
+                  style={glideStyle(square)}
+                  onTransitionEnd={
+                    active && active.to === square
+                      ? (e) => {
+                          if (e.propertyName === 'transform') endGlide(active.key)
+                        }
+                      : undefined
+                  }
                 >
                   <use href={`#${piece.white ? 'w' : 'b'}${piece.type}`} />
                 </svg>
@@ -203,24 +225,6 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
             </div>
           )
         })}
-        {active &&
-          (() => {
-            const a = squareOffset(active.from, orientation)
-            const b = squareOffset(active.to, orientation)
-            if (!a || !b) return null
-            const pos = active.go ? b : a
-            return (
-              <div className="board-anim" aria-hidden="true">
-                <svg
-                  className="anim-piece"
-                  viewBox="0 0 40 40"
-                  style={{ transform: `translate(${pos.col * 100}%, ${pos.row * 100}%)` }}
-                >
-                  <use href={`#${active.piece.white ? 'w' : 'b'}${active.piece.type}`} />
-                </svg>
-              </div>
-            )
-          })()}
         {!active && arrows.length > 0 && (
           <svg className="board-arrows" viewBox="0 0 8 8" aria-hidden="true">
             {arrows.map((a, i) => {

@@ -188,8 +188,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
    an SVG arrow layer over the whole grid. */
 /* graphics appear after the move glide lands — ease them in, don't pop */
 @keyframes gfx-in { from { opacity: 0; } to { opacity: 1; } }
-.sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before { animation: gfx-in 200ms ease-out both; }
-.board-arrows { animation: gfx-in 200ms ease-out both; }
+.sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before { animation: gfx-in 120ms ease-out both; }
+.board-arrows { animation: gfx-in 120ms ease-out both; }
 .sq.anno-green::before, .sq.anno-red::before, .sq.anno-yellow::before, .sq.anno-blue::before {
   content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
 }
@@ -214,9 +214,8 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .board-arrows .ar-blue polygon { fill: var(--anno-blue); }
 /* no drop-shadow: it smears the vector edges at phone sizes and reads as blur */
 .piece { display: block; width: 100%; height: 100%; position: relative; z-index: 1; }
-/* move-navigation glide: one piece slides between squares above the grid */
-.board-anim { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.anim-piece { position: absolute; left: 0; top: 0; width: 12.5%; height: 12.5%; transition: transform 170ms ease; will-change: transform; }
+/* move-navigation glide: the destination piece itself FLIPs from the origin
+   square to rest (no overlay — an overlay lands with sub-pixel drift) */
 .coord { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; z-index: 2; user-select: none; pointer-events: none; }
 .coord.rank { top: 2px; left: 3px; }
 .coord.file { bottom: 2px; right: 3px; }
