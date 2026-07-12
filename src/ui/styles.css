@@ -411,9 +411,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 
 /* game overview — the coach's opening word */
 .overview { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
-.overview-head { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: none; padding: 0; margin: 0 0 6px; cursor: pointer; font: inherit; }
+.overview-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; background: none; border: none; padding: 0; margin: 0 0 6px; cursor: pointer; font: inherit; }
 .overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
-.overview-chevron { color: var(--accent-ink); font-size: 13px; }
+/* accuracy badges sit right of the header, before the chevron */
+.overview-acc { margin-left: auto; display: flex; gap: 6px; }
+.overview-chevron { color: var(--accent-ink); font-size: 13px; margin-left: auto; }
+.overview-acc + .overview-chevron { margin-left: 0; }
 .overview-summary { margin: 0 0 8px; font-size: 15.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 14.5px; color: var(--muted); }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

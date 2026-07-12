@@ -22,6 +22,7 @@ import {
   type SavedQuiz,
 } from '../lib/store'
 import { RULE_COUNT } from '../shared/rules'
+import { gameAccuracy } from '../shared/accuracy'
 import { summarizeGame } from '../shared/meta'
 import { isStudied } from '../shared/types'
 import type {
@@ -1093,6 +1094,25 @@ export default function App() {
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
 
+  // Chess.com-style per-side accuracy from the engine-checked moves — shown
+  // in the Game overview header. Only studied sides carry engine data.
+  const overviewAccuracy = useMemo(() => {
+    const forSide = (c: Color) => {
+      const evs: EngineEval[] = []
+      for (const r of Object.values(results)) {
+        if (r.engine && moves[r.ply]?.color === c) evs.push(r.engine)
+      }
+      return gameAccuracy(evs)
+    }
+    const out: Array<{ key: string; label: string; value: number }> = []
+    for (const c of ['w', 'b'] as const) {
+      const v = forSide(c)
+      if (v == null) continue
+      out.push({ key: c, label: mySide === c ? 'You' : colorName(c), value: v })
+    }
+    return out
+  }, [results, moves, mySide])
+
   // Moves worth revisiting: judged dubious, or a 1.5+ pawn engine loss.
   const dubiousPlies = useMemo(
     () =>
@@ -1304,13 +1324,18 @@ export default function App() {
             </div>
             <button
               className="btn"
-              onClick={() => void handleAnalyzeAll()}
-              disabled={!!allProgress || focusMovesRemaining === 0}
+              onClick={() => void handleAnalyzeAll(focusMovesRemaining === 0)}
+              disabled={!!allProgress}
+              title={
+                focusMovesRemaining === 0
+                  ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
+                  : undefined
+              }
             >
               {allProgress
                 ? `Analysing… ${allProgress.done}/${allProgress.total}`
                 : focusMovesRemaining === 0
-                  ? 'All analysed ✓'
+                  ? '↻ Re-analyse all'
                   : analyzedFocus > 0
                     ? `Analyse remaining (${focusMovesRemaining})`
                     : `Analyse all ${studiedPlies.length} ${focus === 'both' ? '' : colorName(focus) + ' '}moves`}
@@ -1557,6 +1582,7 @@ export default function App() {
                 moves={moves}
                 onJump={jumpTo}
                 onRetry={fetchOverview}
+                accuracy={overviewAccuracy}
                 askKey={storeRef.current?.key ?? 'game'}
                 askContext={{
                   focus,
