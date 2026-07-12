@@ -40,6 +40,12 @@ import type {
 } from '../shared/types'
 
 export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
+/** Cheaper model for routine per-move analysis. Key moments (a meaningful
+    engine loss, or no engine check to vouch for the move) stay on MODEL, as
+    do the game overview, the cross-game meta report, quiz and ask. */
+export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5'
+/** Engine loss (centipawns) from which a move counts as a key moment. */
+const KEY_MOVE_CP_LOSS = 60
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
 const MAX_GAME_PLIES = 800 // bound the context we send
 
@@ -150,6 +156,8 @@ interface ClaudeOpts {
   /** wall-clock allowance for the Anthropic call (default 55s; long-form
       reports like the cross-game meta need several minutes of generation) */
   timeoutMs?: number
+  /** override the model for this call (default MODEL) */
+  model?: string
 }
 
 /** Single place that calls the Anthropic Messages API over HTTP and maps errors. */
@@ -170,7 +178,7 @@ async function callClaude(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: opts.model ?? MODEL,
         max_tokens: opts.maxTokens,
         system,
         messages,
@@ -429,21 +437,22 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
 
   const byPly = new Map(game.map((m) => [m.ply, m]))
   const pawns = (cp: number) => (cp / 100).toFixed(2)
-  const targetLines = targets
-    .map((t) => {
-      const m = byPly.get(t.ply)
-      const label = m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : `ply ${t.ply}`
-      const mover = m ? (m.color === 'w' ? 'White' : 'Black') : sideName
-      let line = `- ply ${t.ply}: ${mover}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
-      if (t.engine) {
-        const e = t.engine
-        line += e.isBest
-          ? `\n  Engine check (Stockfish): the played move IS the engine's top choice (eval ${pawns(e.evalPlayed)}).`
-          : `\n  Engine check (Stockfish): best was ${e.bestSan} (eval ${pawns(e.evalBest)}); the played move evaluates ${pawns(e.evalPlayed)} — it gives up ${pawns(e.cpLoss)} pawns vs best.`
-      }
-      return line
-    })
-    .join('\n')
+  const targetLinesOf = (ts: typeof targets) =>
+    ts
+      .map((t) => {
+        const m = byPly.get(t.ply)
+        const label = m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : `ply ${t.ply}`
+        const mover = m ? (m.color === 'w' ? 'White' : 'Black') : sideName
+        let line = `- ply ${t.ply}: ${mover}'s move ${label}. Resulting position (FEN): ${t.fenAfter}`
+        if (t.engine) {
+          const e = t.engine
+          line += e.isBest
+            ? `\n  Engine check (Stockfish): the played move IS the engine's top choice (eval ${pawns(e.evalPlayed)}).`
+            : `\n  Engine check (Stockfish): best was ${e.bestSan} (eval ${pawns(e.evalBest)}); the played move evaluates ${pawns(e.evalPlayed)} — it gives up ${pawns(e.cpLoss)} pawns vs best.`
+        }
+        return line
+      })
+      .join('\n')
 
   const system = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. ${
     both
@@ -465,17 +474,33 @@ Some moves come with an "Engine check" (Stockfish evaluation). Treat it as groun
 - If the engine shows a loss of ~1.5 pawns or more, be honest that the move was an error even if it looks principled, and prefer the engine's best move as your "alternative" when it also fits the principle you cite.
 - Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.`)
 
-  const user = `Full game in SAN:
+  const userOf = (ts: typeof targets) => `Full game in SAN:
 ${moveText}
 
 Analyse the following ${sideName} move(s); return exactly one result object per ply listed:
-${targetLines}`
+${targetLinesOf(ts)}`
 
-  const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 8000,
-    tool: OUTPUT_TOOL,
-    toolName: 'report_relevance',
-  })) as AnalyzeResponse
+  // Model tiering (engine-gated): moves the engine vouches for (its top choice,
+  // or a small loss) are routine and go to the cheaper model; key moments — a
+  // meaningful engine loss, or no engine check at all — get the strong model.
+  const isKey = (t: (typeof targets)[number]) =>
+    !t.engine || (!t.engine.isBest && t.engine.cpLoss >= KEY_MOVE_CP_LOSS)
+  const groups = [
+    { targets: targets.filter(isKey), model: MODEL },
+    { targets: targets.filter((t) => !isKey(t)), model: MODEL_FAST },
+  ].filter((g) => g.targets.length > 0)
+
+  const parts = (await Promise.all(
+    groups.map((g) =>
+      callClaude(apiKey, system, userOf(g.targets), {
+        maxTokens: 8000,
+        tool: OUTPUT_TOOL,
+        toolName: 'report_relevance',
+        model: g.model,
+      }),
+    ),
+  )) as AnalyzeResponse[]
+  const data: AnalyzeResponse = { results: parts.flatMap((p) => p.results || []) }
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
   const seenPly = new Set<number>()
