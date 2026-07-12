@@ -11,9 +11,19 @@ export function winPct(cp: number): number {
   return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * capped)) - 1)
 }
 
+// Two-search noise floor: evalBest and evalPlayed come from independent
+// searches that disagree by a few centipawns on nearly every move, so raw
+// eval differences under-score even perfect play. Below this loss a move
+// counts as clean.
+const NOISE_CP = 15
+
 /** Accuracy (0-100) of one played move vs the engine's best in that position. */
 export function moveAccuracy(e: EngineEval): number {
-  const drop = Math.max(0, winPct(e.evalBest) - winPct(e.evalPlayed))
+  // The engine's own verdict wins: its top move is a 100% move, full stop.
+  if (e.isBest || e.cpLoss < NOISE_CP) return 100
+  // Derive the win% drop from cpLoss (not raw evalPlayed) so the two-search
+  // disagreement can't inflate the loss beyond what the engine measured.
+  const drop = Math.max(0, winPct(e.evalBest) - winPct(e.evalBest - e.cpLoss))
   const acc = 103.1668 * Math.exp(-0.04354 * drop) - 3.1669
   return Math.max(0, Math.min(100, acc))
 }
