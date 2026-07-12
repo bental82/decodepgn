@@ -9,13 +9,19 @@
 import { Chess } from 'chess.js'
 import type { EngineEval } from '../shared/types'
 
-const ENGINE_URL = `${import.meta.env.BASE_URL}engine/stockfish-18-lite-single.js`
+// Engine builds, strongest first: the full-strength net (~79MB, downloaded
+// once and cached) gives judgments close to desktop Stockfish; the small
+// lite net (~7MB) is the fallback when the big download fails.
+const ENGINE_CANDIDATES = [
+  `${import.meta.env.BASE_URL}engine/stockfish-17.1-single-a496a04.js`,
+  `${import.meta.env.BASE_URL}engine/stockfish-18-lite-single.js`,
+]
 // Two search budgets: QUICK feeds the eval bar (volume over precision); DEEP
 // feeds the per-move check whose best move the app presents as a
 // recommendation — at 350ms those flip between candidate moves from run to
 // run, so recommendations get a bigger, reproducible budget.
 const QUICK_MOVETIME_MS = 350
-const DEEP_MOVETIME_MS = 1000
+const DEEP_MOVETIME_MS = 1200
 const QUICK_MAX_DEPTH = 18
 const DEEP_MAX_DEPTH = 24
 const MATE_CP = 10_000
@@ -36,23 +42,40 @@ const SCORE_CACHE_MAX = 4000
 let workerPromise: Promise<Worker> | null = null
 let engineBroken = false
 let initFailures = 0
-const MAX_INIT_FAILURES = 3
+let candidateIdx = 0
+const MAX_INIT_FAILURES = 3 // per candidate build
+let engineId: string | null = null
 // Single worker — serialize evaluations through a promise chain.
 let queue: Promise<unknown> = Promise.resolve()
+
+/** Which engine build actually loaded (from the UCI "id name" line). */
+export function engineName(): string | null {
+  return engineId
+}
 
 function initWorker(): Promise<Worker> {
   return new Promise((resolve, reject) => {
     let w: Worker
     try {
-      w = new Worker(ENGINE_URL)
+      w = new Worker(ENGINE_CANDIDATES[candidateIdx])
     } catch (e) {
       reject(e)
       return
     }
-    const timer = setTimeout(() => reject(new Error('Engine init timed out')), 45_000)
+    // generous: the first visit downloads the ~79MB full build inside init
+    const timer = setTimeout(() => {
+      try {
+        w.terminate()
+      } catch {
+        /* already dead */
+      }
+      reject(new Error('Engine init timed out'))
+    }, 240_000)
     const onMsg = (e: MessageEvent) => {
       const line = String(e.data)
-      if (line === 'uciok') {
+      if (line.startsWith('id name ')) {
+        engineId = line.slice('id name '.length)
+      } else if (line === 'uciok') {
         w.postMessage('isready')
       } else if (line === 'readyok') {
         clearTimeout(timer)
@@ -85,11 +108,18 @@ export async function engineAvailable(): Promise<boolean> {
     await getWorker()
     return true
   } catch {
-    // A slow network can fail the first 7MB wasm download — allow retries
-    // before giving up on the session.
+    // A slow network can fail the big wasm download — retry a few times,
+    // then fall back to the next (smaller) build before giving up.
     workerPromise = null
     initFailures++
-    if (initFailures >= MAX_INIT_FAILURES) engineBroken = true
+    if (initFailures >= MAX_INIT_FAILURES) {
+      if (candidateIdx < ENGINE_CANDIDATES.length - 1) {
+        candidateIdx++
+        initFailures = 0
+      } else {
+        engineBroken = true
+      }
+    }
     return false
   }
 }

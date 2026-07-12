@@ -197,8 +197,14 @@ The board uses the classic **cburnett** SVG chess pieces by
 Commons), licensed [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
 The sprite in [`src/ui/pieces.svg`](src/ui/pieces.svg) retains that license notice.
 
-The engine check uses **[Stockfish](https://stockfishchess.org/)** (the
-WASM build from the [stockfish npm package](https://www.npmjs.com/package/stockfish),
-vendored in [`public/engine/`](public/engine/)), licensed under the
+The engine check uses **[Stockfish](https://stockfishchess.org/)** (WASM builds
+from the [stockfish npm package](https://www.npmjs.com/package/stockfish)),
+licensed under the
 [GPL v3](https://github.com/official-stockfish/Stockfish/blob/master/Copying.txt).
-It runs entirely in the user’s browser.
+It runs entirely in the user’s browser. Two builds are shipped: the
+**full-strength** single-threaded build (~79MB, downloaded once and cached —
+copied into `public/engine/` from the npm package by
+[`scripts/engine-assets.mjs`](scripts/engine-assets.mjs) on install/build, not
+committed to git) and the small **lite** build (~7MB, vendored in
+[`public/engine/`](public/engine/)) as an automatic fallback when the big
+download fails.
