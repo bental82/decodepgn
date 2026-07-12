@@ -2,8 +2,6 @@
 // and per game. Uses the openly documented Lichess formulas: win probability
 // from centipawns, exponential decay on the win% a move throws away, and a
 // volatility-weighted game average (sharp phases count more than dead ones).
-// Leading engine-approved opening moves are treated as book theory and
-// excluded from the game score, the way chess.com discounts book moves.
 
 import type { EngineEval } from './types'
 
@@ -18,19 +16,6 @@ export function moveAccuracy(e: EngineEval): number {
   const drop = Math.max(0, winPct(e.evalBest) - winPct(e.evalPlayed))
   const acc = 103.1668 * Math.exp(-0.04354 * drop) - 3.1669
   return Math.max(0, Math.min(100, acc))
-}
-
-// "Book": a leading streak of engine-approved moves (< 0.3 pawns lost),
-// capped at the player's first 5 moves (~10 game plies of theory).
-const BOOK_MOVE_CAP = 5
-const BOOK_CP_LOSS = 30
-
-function withoutBookMoves(evals: EngineEval[]): EngineEval[] {
-  let skip = 0
-  while (skip < Math.min(BOOK_MOVE_CAP, evals.length) && evals[skip].cpLoss < BOOK_CP_LOSS) skip++
-  const rest = evals.slice(skip)
-  // a short clean game would score on nothing — keep everything instead
-  return rest.length ? rest : evals
 }
 
 function stdev(xs: number[]): number {
@@ -50,12 +35,11 @@ function stdev(xs: number[]): number {
  */
 export function gameAccuracy(evals: EngineEval[]): number | null {
   if (!evals.length) return null
-  const scored = withoutBookMoves(evals)
-  const accs = scored.map(moveAccuracy)
+  const accs = evals.map(moveAccuracy)
   // Win% trajectory sampled at the player's moves: the position before the
   // first scored move, then the position after each scored move.
-  const traj = [winPct(scored[0].evalBest), ...scored.map((e) => winPct(e.evalPlayed))]
-  const windowSize = Math.max(2, Math.min(8, Math.floor(scored.length / 10)))
+  const traj = [winPct(evals[0].evalBest), ...evals.map((e) => winPct(e.evalPlayed))]
+  const windowSize = Math.max(2, Math.min(8, Math.floor(evals.length / 10)))
   const weights = accs.map((_, i) => {
     // window ending at this move's resulting position
     const xs = traj.slice(Math.max(0, i + 2 - windowSize), i + 2)
