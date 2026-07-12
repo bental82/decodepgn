@@ -9,3 +9,7 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+
+# full-strength Stockfish build — copied from the npm package by
+# scripts/engine-assets.mjs (postinstall/prebuild); too big for git
+public/engine/stockfish-17.1-single-*
