@@ -39,11 +39,16 @@ export function gameAccuracy(evals: EngineEval[]): number | null {
   // Win% trajectory sampled at the player's moves: the position before the
   // first scored move, then the position after each scored move.
   const traj = [winPct(evals[0].evalBest), ...evals.map((e) => winPct(e.evalPlayed))]
-  const windowSize = Math.max(2, Math.min(8, Math.floor(evals.length / 10)))
+  // A window CENTERED on each move, wide enough that the weight describes the
+  // phase of the game around it — not just the move's own eval jump (a narrow
+  // trailing window let every mistake maximally weight itself, dragging
+  // scores far below the familiar range). Weight spread is kept gentle.
+  const windowSize = Math.max(3, Math.min(8, Math.floor(traj.length / 5)))
+  const half = Math.floor(windowSize / 2)
   const weights = accs.map((_, i) => {
-    // window ending at this move's resulting position
-    const xs = traj.slice(Math.max(0, i + 2 - windowSize), i + 2)
-    return Math.min(12, Math.max(0.5, stdev(xs)))
+    const centre = i + 1 // this move's resulting position in traj
+    const xs = traj.slice(Math.max(0, centre - half), Math.min(traj.length, centre + half + 1))
+    return Math.min(6, Math.max(1, stdev(xs)))
   })
   const wSum = weights.reduce((a, b) => a + b, 0)
   const weightedMean = accs.reduce((a, acc, i) => a + acc * weights[i], 0) / wSum
