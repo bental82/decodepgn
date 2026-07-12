@@ -391,6 +391,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .alt-head { display: flex; align-items: center; gap: 10px; }
 .alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
 .alt p { margin: 3px 0 0; font-size: 15px; }
+/* one suggestion per row: prose wraps on the left, its board toggle stays right */
+.alt-line { display: flex; align-items: flex-start; gap: 10px; }
+.alt-line p { flex: 1; min-width: 0; }
+.alt-line .gfx-btn { margin-top: 6px; }
+.eng-note { color: var(--muted); font-size: 13.5px; }
+.eng-note-block { margin: 6px 0 0; }
 
 /* "show on board" toggles next to rules / the alternative move */
 .gfx-btn {

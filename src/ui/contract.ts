@@ -49,6 +49,7 @@ export type GfxSelection =
   | { kind: 'off' }
   | { kind: 'rule'; id: number }
   | { kind: 'alt' } // the suggested cleaner move, as an arrow
+  | { kind: 'engine' } // Stockfish's best move, as an arrow
 
 export interface MoveAnalysisProps {
   move: ParsedMove
@@ -65,6 +66,8 @@ export interface MoveAnalysisProps {
   autoGfxRuleId?: number
   /** the alternative move parsed to a real arrow — enables its board toggle */
   altArrow: boolean
+  /** Stockfish's best move parsed to a real arrow — enables its board toggle */
+  engineArrow: boolean
 }
 
 export interface RulesReferenceProps {

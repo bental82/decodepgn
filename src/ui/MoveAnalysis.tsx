@@ -8,7 +8,10 @@ function hasGraphics(h: RuleHit): boolean {
   return !!h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0
 }
 
+const plainSan = (san: string) => san.replace(/[+#]/g, '')
+
 export default function MoveAnalysis({
+  move,
   result,
   loading,
   error,
@@ -18,6 +21,7 @@ export default function MoveAnalysis({
   onGfx,
   autoGfxRuleId,
   altArrow,
+  engineArrow,
 }: MoveAnalysisProps) {
   if (error) {
     return (
@@ -48,6 +52,18 @@ export default function MoveAnalysis({
   const ruleShown = (id: number) =>
     (gfx.kind === 'rule' && gfx.id === id) || (gfx.kind === 'auto' && autoGfxRuleId === id)
   const altShown = gfx.kind === 'alt'
+  const engShown = gfx.kind === 'engine'
+
+  // Stockfish's recommendation always accompanies the cleaner-move box, as
+  // long as the engine actually preferred a DIFFERENT move to the one played.
+  const alt = result.alternative
+  const engBest = eng && !eng.isBest && plainSan(eng.bestSan) !== plainSan(move.san) ? eng : null
+  const engSameAsAlt = !!alt && !!engBest && plainSan(alt.move) === plainSan(engBest.bestSan)
+  const engGain = engBest
+    ? engBest.cpLoss >= 10
+      ? `saves ≈${(engBest.cpLoss / 100).toFixed(1)} pawns`
+      : 'about equal by eval'
+    : ''
 
   return (
     <div className="analysis">
@@ -149,25 +165,58 @@ export default function MoveAnalysis({
         )}
       </div>
 
-      {result.alternative ? (
+      {alt || engBest ? (
         <div className="alt">
           <div className="alt-head">
             <span className="alt-label">Cleaner here</span>
-            {altArrow ? (
-              <button
-                className={'gfx-btn' + (altShown ? ' on' : '')}
-                aria-pressed={altShown}
-                title={altShown ? 'Hide the arrow' : 'Show this move as an arrow on the board'}
-                onClick={() => onGfx(altShown ? { kind: 'off' } : { kind: 'alt' })}
-              >
-                ◈ board
-              </button>
-            ) : null}
           </div>
-          <p>
-            <strong>{result.alternative.move}</strong> —{' '}
-            <RuleText text={result.alternative.why} onOpenRule={onOpenRule} />
-          </p>
+          {alt ? (
+            <div className="alt-line">
+              <p>
+                <strong>{alt.move}</strong> —{' '}
+                <RuleText text={alt.why} onOpenRule={onOpenRule} />
+                {engSameAsAlt ? (
+                  <span className="eng-note"> ⚙ Also Stockfish’s top move ({engGain}).</span>
+                ) : null}
+              </p>
+              {altArrow ? (
+                <button
+                  className={'gfx-btn' + (altShown ? ' on' : '')}
+                  aria-pressed={altShown}
+                  title={altShown ? 'Hide the arrow' : 'Show this move as an arrow on the board'}
+                  onClick={() => onGfx(altShown ? { kind: 'off' } : { kind: 'alt' })}
+                >
+                  ◈ board
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {engBest && !engSameAsAlt ? (
+            <div className="alt-line">
+              <p>
+                <strong>{engBest.bestSan}</strong> —{' '}
+                <span className="eng-note">
+                  ⚙ Stockfish’s top move here ({engGain}, depth {engBest.depth}).
+                </span>
+              </p>
+              {engineArrow ? (
+                <button
+                  className={'gfx-btn' + (engShown ? ' on' : '')}
+                  aria-pressed={engShown}
+                  title={engShown ? 'Hide the arrow' : 'Show Stockfish’s move as an arrow on the board'}
+                  onClick={() => onGfx(engShown ? { kind: 'off' } : { kind: 'engine' })}
+                >
+                  ◈ board
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {alt && eng && !engBest ? (
+            <p className="eng-note eng-note-block">
+              ⚙ Stockfish’s top choice was the move actually played — read this suggestion as
+              style, not a fix.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

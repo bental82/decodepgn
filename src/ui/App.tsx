@@ -1005,6 +1005,20 @@ export default function App() {
     }
   }, [results, selectedPly, moves])
 
+  // Stockfish's best move resolved the same way — shown in blue so "the engine
+  // says" reads apart from the coach's green suggestion.
+  const engineArrow = useMemo(() => {
+    const e = results[selectedPly]?.engine
+    const m = moves[selectedPly]
+    if (!e || e.isBest || !m) return null
+    try {
+      const mv = new Chess(m.fenBefore).move(e.bestSan, { strict: false })
+      return mv ? { from: mv.from, to: mv.to } : null
+    } catch {
+      return null
+    }
+  }, [results, selectedPly, moves])
+
   // The rule whose graphics show by default: the most relevant one that has any.
   const autoGfxRule = useMemo(() => {
     const r = results[selectedPly]
@@ -1019,11 +1033,16 @@ export default function App() {
     if (gfx.kind === 'alt') {
       return altArrow ? { arrows: [{ from: altArrow.from, to: altArrow.to, color: 'green' }] } : undefined
     }
+    if (gfx.kind === 'engine') {
+      return engineArrow
+        ? { arrows: [{ from: engineArrow.from, to: engineArrow.to, color: 'blue' }] }
+        : undefined
+    }
     const r = results[selectedPly]
     if (!r) return undefined
     if (gfx.kind === 'rule') return r.rules.find((h) => h.id === gfx.id)?.graphics
     return autoGfxRule?.graphics
-  }, [gfx, altArrow, results, selectedPly, autoGfxRule])
+  }, [gfx, altArrow, engineArrow, results, selectedPly, autoGfxRule])
 
   // Eval (White's perspective) after the current move: sweep result first,
   // falling back to the per-move engine check when the sweep hasn't reached it.
@@ -1545,10 +1564,11 @@ export default function App() {
                   onTouchStart={onBoardTouchStart}
                   onTouchEnd={onBoardTouchEnd}
                 >
-                {/* The alternative-move arrow lives in the position BEFORE the
-                    played move — show that position while it's toggled on. The
-                    green arrow says it all; no caption (it only ate board space). */}
-                {gfx.kind === 'alt' && altArrow ? (
+                {/* The alternative-move / engine-move arrows live in the position
+                    BEFORE the played move — show that position while one is
+                    toggled on. The arrow says it all; no caption (it only ate
+                    board space). */}
+                {(gfx.kind === 'alt' && altArrow) || (gfx.kind === 'engine' && engineArrow) ? (
                   <Board
                     fen={move.fenBefore}
                     orientation={focus === 'b' ? 'b' : 'w'}
@@ -1707,6 +1727,7 @@ export default function App() {
                     onGfx={setGfx}
                     autoGfxRuleId={autoGfxRule?.id}
                     altArrow={!!altArrow}
+                    engineArrow={!!engineArrow}
                   />
                 ) : (
                   <p className="note">
