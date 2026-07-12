@@ -472,7 +472,8 @@ When a rule's point can be SHOWN on the board, add "graphics" to that rule — t
 Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
 - If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
 - If the engine shows a loss of ~1.5 pawns or more, be honest that the move was an error even if it looks principled, and prefer the engine's best move as your "alternative" when it also fits the principle you cite.
-- Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.`)
+- Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.
+- GROUND every square-level claim in the FEN: before saying a square is protected, safe, or controlled, verify from the FEN which pieces actually attack and defend it. If the engine's best move can simply be captured, it is a SACRIFICE line — say so and name the concrete follow-up (check the position!) instead of inventing positional cover for it; if you cannot see the compensation, give your own principled alternative and mention the engine move only as "the engine's tactical suggestion". A confidently wrong claim about the board is the worst mistake you can make.`)
 
   const userOf = (ts: typeof targets) => `Full game in SAN:
 ${moveText}

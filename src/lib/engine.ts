@@ -10,14 +10,22 @@ import { Chess } from 'chess.js'
 import type { EngineEval } from '../shared/types'
 
 const ENGINE_URL = `${import.meta.env.BASE_URL}engine/stockfish-18-lite-single.js`
-const MOVETIME_MS = 350 // per position; two positions per analysed move
-const MAX_DEPTH = 18
+// Two search budgets: QUICK feeds the eval bar (volume over precision); DEEP
+// feeds the per-move check whose best move the app presents as a
+// recommendation — at 350ms those flip between candidate moves from run to
+// run, so recommendations get a bigger, reproducible budget.
+const QUICK_MOVETIME_MS = 350
+const DEEP_MOVETIME_MS = 1000
+const QUICK_MAX_DEPTH = 18
+const DEEP_MAX_DEPTH = 24
 const MATE_CP = 10_000
 
 interface ScoredPosition {
   cp: number // from the side-to-move's perspective
   bestUci: string | null
   depth: number
+  /** the search budget this score was computed with (cache-quality gate) */
+  movetime: number
 }
 
 // Positions repeat across the whole-game eval sweep and per-move checks
@@ -86,17 +94,35 @@ export async function engineAvailable(): Promise<boolean> {
   }
 }
 
-function scorePosition(fen: string): Promise<ScoredPosition> {
+function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<ScoredPosition> {
   const hit = scoreCache.get(fen)
-  if (hit) return Promise.resolve(hit)
+  // a cached deep score serves quick requests, never the other way round
+  if (hit && hit.movetime >= movetime) return Promise.resolve(hit)
   const run = async (): Promise<ScoredPosition> => {
     const w = await getWorker()
     return new Promise((resolve, reject) => {
-      let last: ScoredPosition = { cp: 0, bestUci: null, depth: 0 }
-      const timer = setTimeout(() => {
+      let last: ScoredPosition = { cp: 0, bestUci: null, depth: 0, movetime }
+      let settled = false
+      // Abandoning a search while the worker keeps running poisons every
+      // search after it: the NEXT listener receives THIS position's lines and
+      // caches them under the wrong FEN (an off-by-one shift through the whole
+      // batch — seen in the wild when iOS froze the page mid-analysis).
+      // Killing the worker is the only way to guarantee a clean channel.
+      const fail = (why: string) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
         w.removeEventListener('message', onMsg)
-        reject(new Error('Engine evaluation timed out'))
-      }, 10_000)
+        try {
+          w.terminate()
+        } catch {
+          /* already dead */
+        }
+        workerPromise = null // next search re-initialises a fresh worker
+        reject(new Error(why))
+      }
+      const timer = setTimeout(() => fail('Engine evaluation timed out'), 10_000)
+      const onErr = () => fail('Engine crashed mid-search')
       const onMsg = (e: MessageEvent) => {
         const line = String(e.data)
         if (line.startsWith('info ')) {
@@ -111,11 +137,14 @@ function scorePosition(fen: string): Promise<ScoredPosition> {
                   : -MATE_CP - val * 10
                 : Math.max(-MATE_CP, Math.min(MATE_CP, val))
             const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/)
-            last = { cp, bestUci: pv ? pv[1] : last.bestUci, depth }
+            last = { cp, bestUci: pv ? pv[1] : last.bestUci, depth, movetime }
           }
         } else if (line.startsWith('bestmove')) {
+          if (settled) return
+          settled = true
           clearTimeout(timer)
           w.removeEventListener('message', onMsg)
+          w.removeEventListener('error', onErr)
           const bm = line.split(' ')[1]
           const scored = { ...last, bestUci: bm && bm !== '(none)' ? bm : last.bestUci }
           if (scoreCache.size >= SCORE_CACHE_MAX) scoreCache.clear()
@@ -124,8 +153,10 @@ function scorePosition(fen: string): Promise<ScoredPosition> {
         }
       }
       w.addEventListener('message', onMsg)
+      w.addEventListener('error', onErr)
       w.postMessage('position fen ' + fen)
-      w.postMessage(`go movetime ${MOVETIME_MS} depth ${MAX_DEPTH}`)
+      const depthCap = movetime > QUICK_MOVETIME_MS ? DEEP_MAX_DEPTH : QUICK_MAX_DEPTH
+      w.postMessage(`go movetime ${movetime} depth ${depthCap}`)
     })
   }
   const p = queue.then(run, run)
@@ -157,15 +188,32 @@ interface MoveToEvaluate {
   to: string
 }
 
+/** Drop every cached score. Explicit re-analysis calls this path (via
+    evaluateMove's fresh option) so bad cached data cannot resurface. */
+export function clearEngineCache(): void {
+  scoreCache.clear()
+}
+
 /**
  * Engine check for one played move: the best move in the position, the eval of
  * best vs played (both from the mover's perspective), and the centipawn loss.
  * Returns null when the engine is unavailable or an evaluation fails.
  */
-export async function evaluateMove(m: MoveToEvaluate): Promise<EngineEval | null> {
+export async function evaluateMove(
+  m: MoveToEvaluate,
+  opts?: { fresh?: boolean },
+): Promise<EngineEval | null> {
   if (!(await engineAvailable())) return null
   try {
-    const before = await scorePosition(m.fenBefore) // the player is to move
+    if (opts?.fresh) {
+      // explicit re-analysis: never trust this session's cached scores
+      scoreCache.delete(m.fenBefore)
+      scoreCache.delete(m.fenAfter)
+    }
+    // Deep budget: this search's best move is shown as a recommendation.
+    // (fenAfter of one move IS fenBefore of the next, so deep scores chain
+    // through the cache and most moves cost one deep search, not two.)
+    const before = await scorePosition(m.fenBefore, DEEP_MOVETIME_MS) // the player is to move
 
     // If the played move ended the game, score it directly instead of asking
     // the engine to search a terminal position.
@@ -176,15 +224,17 @@ export async function evaluateMove(m: MoveToEvaluate): Promise<EngineEval | null
     } else if (afterGame.isDraw()) {
       evalPlayed = 0
     } else {
-      const after = await scorePosition(m.fenAfter) // opponent to move
+      const after = await scorePosition(m.fenAfter, DEEP_MOVETIME_MS) // opponent to move
       evalPlayed = -after.cp
     }
 
     const isBest = !!before.bestUci && before.bestUci.startsWith(m.from + m.to)
     const cpLoss = isBest ? 0 : Math.max(0, before.cp - evalPlayed)
 
-    // Best move in SAN for display; fall back to the raw UCI string.
-    let bestSan = before.bestUci ?? ''
+    // Best move in SAN for display. If the engine's move is not legal in this
+    // position, the result is corrupt (e.g. a line that belongs to another
+    // search) — report NO engine data rather than a wrong recommendation.
+    let bestSan: string | null = null
     if (before.bestUci) {
       try {
         const c = new Chess(m.fenBefore)
@@ -195,9 +245,10 @@ export async function evaluateMove(m: MoveToEvaluate): Promise<EngineEval | null
         })
         if (mv) bestSan = mv.san
       } catch {
-        /* keep uci */
+        /* illegal — treated as corrupt below */
       }
     }
+    if (!bestSan) return null
 
     return { bestSan, evalBest: before.cp, evalPlayed, cpLoss, isBest, depth: before.depth }
   } catch {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, meta as fetchMetaApi, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
-import { engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
+import { clearEngineCache, engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
 import {
   cloudDelete,
   cloudGet,
@@ -242,7 +242,13 @@ export default function App() {
   }
 
   const analyzePlies = useCallback(
-    async (mvs: ParsedMove[], f: Focus, plies: number[], run?: AnalysisRun) => {
+    async (
+      mvs: ParsedMove[],
+      f: Focus,
+      plies: number[],
+      run?: AnalysisRun,
+      opts?: { freshEngine?: boolean },
+    ) => {
       const targets = plies.filter((ply) => mvs[ply] && isStudied(mvs[ply].color, f))
       if (!targets.length) return
       // The run context is captured when the RUN starts (game on screen), not
@@ -267,12 +273,13 @@ export default function App() {
         // weighs it so objectively strong moves don't get scolded.
         const targetObjs = toTargets(mvs, targets)
         const engineByPly = new Map<number, EngineEval>()
-        // Re-analysis: the position hasn't changed, so a previously computed
-        // engine check is still valid — reuse it instead of re-running
-        // Stockfish (which made "Re-analyse" feel unresponsive for ~30s).
+        // Auto-analysis reuses a previously computed engine check (the
+        // position hasn't changed, and re-running Stockfish made "Re-analyse"
+        // feel unresponsive). EXPLICIT re-analysis recomputes it instead —
+        // it's the repair path when a saved check looks wrong.
         const pending: typeof targetObjs = []
         for (const t of targetObjs) {
-          const prior = resultsRef.current[t.ply]?.engine
+          const prior = opts?.freshEngine ? undefined : resultsRef.current[t.ply]?.engine
           if (prior) {
             t.engine = prior
             engineByPly.set(t.ply, prior)
@@ -283,10 +290,22 @@ export default function App() {
         if (pending.length > 0 && (await engineAvailable())) {
           for (const t of pending) {
             const pm = mvs[t.ply]
-            const ev = await evaluateMove(pm)
+            // fresh recompute failed → keep the saved check over losing it
+            const ev =
+              (await evaluateMove(pm, { fresh: opts?.freshEngine })) ??
+              resultsRef.current[t.ply]?.engine
             if (ev) {
               t.engine = ev
               engineByPly.set(t.ply, ev)
+            }
+          }
+        } else if (opts?.freshEngine) {
+          // engine unavailable on this device: keep the saved checks
+          for (const t of pending) {
+            const prior = resultsRef.current[t.ply]?.engine
+            if (prior) {
+              t.engine = prior
+              engineByPly.set(t.ply, prior)
             }
           }
         }
@@ -584,6 +603,14 @@ export default function App() {
       .filter((m) => isStudied(m.color, focus) && (force || !results[m.ply]))
       .map((m) => m.ply)
     if (!plies.length) return
+    if (force) {
+      // Explicit repair: recompute every engine check and the eval bar from a
+      // clean cache, so a bad saved evaluation cannot survive re-analysis.
+      clearEngineCache()
+      setEvals({})
+      forceSweepRef.current = true
+      setSweepGen((g) => g + 1)
+    }
     const gen = genRef.current
     const runKey = storeRef.current?.key
     const run: AnalysisRun = {
@@ -615,7 +642,7 @@ export default function App() {
             return c
           })
         }
-        await analyzePlies(moves, focus, chunk, run)
+        await analyzePlies(moves, focus, chunk, run, { freshEngine: force })
         done += chunk.length
         if (genRef.current === gen) setAllProgress({ done: Math.min(plies.length, done), total: plies.length })
       }
@@ -650,14 +677,19 @@ export default function App() {
 
   // Background Stockfish sweep: one eval per position so the eval bar covers
   // the whole game. Shares the engine's FEN cache with the per-move checks.
+  // "Re-analyse all" forces a full redo (forceSweepRef + sweepGen bump).
   const sweepRef = useRef<string | null>(null)
+  const forceSweepRef = useRef(false)
+  const [sweepGen, setSweepGen] = useState(0)
   useEffect(() => {
     if (phase !== 'game' || moves.length === 0) return
     const key = storeRef.current?.key ?? ''
-    if (sweepRef.current === key) return
+    if (!forceSweepRef.current && sweepRef.current === key) return
+    const forced = forceSweepRef.current
+    forceSweepRef.current = false
     sweepRef.current = key
     const gen = genRef.current
-    const known = new Set(Object.keys(evals).map(Number))
+    const known = forced ? new Set<number>() : new Set(Object.keys(evals).map(Number))
     void (async () => {
       if (!(await engineAvailable())) return
       for (const m of moves) {
@@ -669,7 +701,7 @@ export default function App() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, moves])
+  }, [phase, moves, sweepGen])
 
   const saveKey = (k: string) => {
     setApiKey(k)
@@ -1721,7 +1753,9 @@ export default function App() {
                     result={results[selectedPly]}
                     loading={loadingPlies.has(selectedPly)}
                     error={errorByPly[selectedPly]}
-                    onReanalyze={() => analyzePlies(moves, focus, [selectedPly])}
+                    onReanalyze={() =>
+                      analyzePlies(moves, focus, [selectedPly], undefined, { freshEngine: true })
+                    }
                     onOpenRule={openRule}
                     gfx={gfx}
                     onGfx={setGfx}
