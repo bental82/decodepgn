@@ -11,6 +11,8 @@ interface Props {
   moves: ParsedMove[]
   onJump: (ply: number) => void
   onRetry: () => void
+  /** chess.com-style engine accuracy per side, shown in the card header */
+  accuracy?: Array<{ key: string; label: string; value: number }>
   /** remount key for the Ask thread — changes when a different game loads */
   askKey: string
   askContext: AskContext
@@ -30,6 +32,7 @@ export default function GameOverviewCard({
   moves,
   onJump,
   onRetry,
+  accuracy,
   askKey,
   askContext,
   apiKey,
@@ -50,6 +53,18 @@ export default function GameOverviewCard({
     <div className="overview">
       <button className="overview-head" onClick={toggle} aria-expanded={open}>
         <span className="overview-label">Game overview</span>
+        {accuracy && accuracy.length > 0 ? (
+          <span
+            className="overview-acc"
+            title="Engine accuracy over the checked moves, on the familiar chess.com-style 0–100% scale — 100% means every move matched Stockfish's choice."
+          >
+            {accuracy.map((a) => (
+              <span key={a.key} className="badge acc-badge">
+                {a.label} {a.value}%
+              </span>
+            ))}
+          </span>
+        ) : null}
         <span className="overview-chevron">{open ? '▾' : '▸'}</span>
       </button>
       {!open ? null : loading ? (
