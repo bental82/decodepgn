@@ -102,7 +102,10 @@ configuration beyond the API key.
 1. Import the repo in Vercel (it auto-detects Vite; [`vercel.json`](vercel.json)
    pins the build command and output directory).
 2. Add an environment variable **`ANTHROPIC_API_KEY`** (Project → Settings →
-   Environment Variables). Optionally set `ANTHROPIC_MODEL` to override the model.
+   Environment Variables). Optionally set `ANTHROPIC_MODEL` (strong model —
+   key moments, game overview, "Your play" report, quiz, ask; defaults to
+   `claude-opus-4-8`) and `ANTHROPIC_MODEL_FAST` (routine per-move analysis;
+   defaults to `claude-sonnet-5`).
 3. Deploy. `api/analyze.ts` becomes a Node serverless function; the static build
    is served from `dist/`.
 
