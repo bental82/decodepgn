@@ -42,6 +42,9 @@ export function parsePgn(pgn: string): ParsedGame {
       san: m.san,
       from: m.from,
       to: m.to,
+      ...((m as { promotion?: string }).promotion
+        ? { promotion: (m as { promotion?: string }).promotion }
+        : {}),
       fenBefore: m.before,
       fenAfter: m.after,
     }

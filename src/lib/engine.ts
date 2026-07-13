@@ -29,6 +29,8 @@ const MATE_CP = 10_000
 interface ScoredPosition {
   cp: number // from the side-to-move's perspective
   bestUci: string | null
+  /** principal variation (UCI moves), starting with bestUci */
+  pvUci: string[]
   depth: number
   /** the search budget this score was computed with (cache-quality gate) */
   movetime: number
@@ -131,7 +133,7 @@ function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<Score
   const run = async (): Promise<ScoredPosition> => {
     const w = await getWorker()
     return new Promise((resolve, reject) => {
-      let last: ScoredPosition = { cp: 0, bestUci: null, depth: 0, movetime }
+      let last: ScoredPosition = { cp: 0, bestUci: null, pvUci: [], depth: 0, movetime }
       let settled = false
       // Abandoning a search while the worker keeps running poisons every
       // search after it: the NEXT listener receives THIS position's lines and
@@ -166,8 +168,11 @@ function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<Score
                   ? MATE_CP - val * 10
                   : -MATE_CP - val * 10
                 : Math.max(-MATE_CP, Math.min(MATE_CP, val))
-            const pv = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/)
-            last = { cp, bestUci: pv ? pv[1] : last.bestUci, depth, movetime }
+            const pv = line.match(/ pv (.+)$/)
+            const pvUci = pv
+              ? pv[1].split(/\s+/).filter((t) => /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(t))
+              : last.pvUci
+            last = { cp, bestUci: pvUci[0] ?? last.bestUci, pvUci, depth, movetime }
           }
         } else if (line.startsWith('bestmove')) {
           if (settled) return
@@ -176,7 +181,10 @@ function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<Score
           w.removeEventListener('message', onMsg)
           w.removeEventListener('error', onErr)
           const bm = line.split(' ')[1]
-          const scored = { ...last, bestUci: bm && bm !== '(none)' ? bm : last.bestUci }
+          const bestUci = bm && bm !== '(none)' ? bm : last.bestUci
+          // a pv that disagrees with the authoritative bestmove is stale
+          const pvUci = bestUci && last.pvUci[0] === bestUci ? last.pvUci : bestUci ? [bestUci] : []
+          const scored = { ...last, bestUci, pvUci }
           if (scoreCache.size >= SCORE_CACHE_MAX) scoreCache.clear()
           scoreCache.set(fen, scored)
           resolve(scored)
@@ -216,6 +224,8 @@ interface MoveToEvaluate {
   fenAfter: string
   from: string
   to: string
+  /** promotion piece (lowercase) when the played move promotes */
+  promotion?: string
 }
 
 /** Drop every cached score. Explicit re-analysis calls this path (via
@@ -258,7 +268,10 @@ export async function evaluateMove(
       evalPlayed = -after.cp
     }
 
-    const isBest = !!before.bestUci && before.bestUci.startsWith(m.from + m.to)
+    // Exact match including the promotion piece: an underpromotion is NOT the
+    // engine's queen promotion, and claiming so ships a contradictory pv.
+    const playedUci = m.from + m.to + (m.promotion ?? '')
+    const isBest = !!before.bestUci && before.bestUci === playedUci
     const cpLoss = isBest ? 0 : Math.max(0, before.cp - evalPlayed)
 
     // Best move in SAN for display. If the engine's move is not legal in this
@@ -280,7 +293,35 @@ export async function evaluateMove(
     }
     if (!bestSan) return null
 
-    return { bestSan, evalBest: before.cp, evalPlayed, cpLoss, isBest, depth: before.depth }
+    const out: EngineEval = {
+      bestSan,
+      evalBest: before.cp,
+      evalPlayed,
+      cpLoss,
+      isBest,
+      depth: before.depth,
+    }
+    // The expected continuation in SAN (replayed from the position; stop at
+    // the first move that doesn't apply — a stale tail is worse than a short line).
+    if (before.pvUci.length > 1) {
+      const pv: string[] = []
+      try {
+        const c = new Chess(m.fenBefore)
+        for (const uci of before.pvUci.slice(0, 8)) {
+          try {
+            const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] })
+            if (!mv) break
+            pv.push(mv.san)
+          } catch {
+            break // keep the legal prefix
+          }
+        }
+      } catch {
+        /* bad fen — keep the check without a line */
+      }
+      if (pv.length > 1) out.pv = pv
+    }
+    return out
   } catch {
     return null
   }

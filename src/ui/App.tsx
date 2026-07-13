@@ -1806,6 +1806,10 @@ export default function App() {
                     ply: selectedPly,
                     san: move.san,
                     fen: move.fenAfter,
+                    fenBefore: move.fenBefore,
+                    // the coaching on screen — so "why is your suggestion
+                    // better?" is understood
+                    analysis: results[selectedPly],
                   }}
                   apiKey={apiKey}
                   onNeedKey={() => setShowSettings(true)}
