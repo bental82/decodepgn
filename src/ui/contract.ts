@@ -102,7 +102,11 @@ export interface AskContext {
   ply?: number
   san?: string
   fen?: string
+  /** position before the discussed move (grounds the engine continuation) */
+  fenBefore?: string
   ruleId?: number
+  /** the shown analysis of the move under discussion (move-level asks) */
+  analysis?: MoveResult
   /** cross-game questions: digests of every analysed game */
   summaries?: MetaGameSummary[]
 }

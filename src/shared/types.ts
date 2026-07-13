@@ -29,6 +29,8 @@ export interface ParsedMove {
   san: string
   from: string
   to: string
+  /** promotion piece (lowercase, e.g. "q") when the move promotes */
+  promotion?: string
   fenBefore: string
   fenAfter: string
 }
@@ -49,6 +51,9 @@ export interface EngineEval {
   cpLoss: number // how much the played move gave up vs the engine's best (>= 0)
   isBest: boolean // the played move IS the engine's top choice
   depth: number
+  /** the engine's expected continuation (SAN, starts with bestSan) — grounds
+      "what happens next" in both the analysis and the ask coach */
+  pv?: string[]
 }
 
 /** A move we want Claude to analyse, with the exact resulting position. */
@@ -221,7 +226,12 @@ export interface AskRequest {
   ply?: number
   san?: string
   fen?: string
+  /** position before the discussed move — the engine continuation starts here */
+  fenBefore?: string
   ruleId?: number
+  /** the app's shown analysis of the move under discussion — lets the coach
+      answer questions about its own suggestions and the engine's line */
+  analysis?: MoveResult
   /** cross-game questions ("Your play" card): digests of the analysed games */
   summaries?: MetaGameSummary[]
   apiKey?: string

@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // if you see this JSON the function itself is fine.
       res.status(200).json({
         ok: true,
-        build: 'model-tier-1', // bump on deploys to confirm the live version (shown in Settings)
+        build: 'ask-context-1', // bump on deploys to confirm the live version (shown in Settings)
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
         modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5',

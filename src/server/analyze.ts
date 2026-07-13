@@ -129,6 +129,21 @@ function moveTextOf(game: GameMove[]): string {
     .join('  ')
 }
 
+/** Validate a client-supplied engine principal variation (SAN list): every
+    token must look like a SAN move (no whitespace, nothing to break out of
+    its prompt line), and the list is cut at the first invalid entry so
+    non-adjacent moves can't be spliced into a fake continuation. */
+const SAN_TOKEN_RE = /^(O-O(-O)?|[KQRNB]?[a-h]?[1-8]?x?[a-h][1-8](=[QRNB])?)[+#]?$/
+function sanitizePv(pv: unknown): string[] | undefined {
+  if (!Array.isArray(pv)) return undefined
+  const clean: string[] = []
+  for (const s of pv.slice(0, 10)) {
+    if (typeof s !== 'string' || !SAN_TOKEN_RE.test(s)) break
+    clean.push(s)
+  }
+  return clean.length > 1 ? clean : undefined
+}
+
 // The rule reference is identical on every request and every mode, so it is the
 // cached prompt prefix — repeat calls (analyse / quiz / ask) all reuse it cheaply.
 const RULES_REFERENCE = `You are a sharp, practical chess coach for club players (beginner to intermediate). You reason using ${RULE_COUNT} strategic "rules of thumb", numbered 1-${RULE_COUNT}, grouped by theme (opening/development, trades, minor pieces, rooks and files, the center and pawn breaks, weaknesses, king safety and attacking, and endgames).
@@ -421,6 +436,8 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
           isBest: e.isBest === true,
           depth: intOr(e.depth, 0),
         }
+        const pv = sanitizePv(e.pv)
+        if (pv) out.engine.pv = pv
       }
       return out
     })
@@ -449,6 +466,9 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
           line += e.isBest
             ? `\n  Engine check (Stockfish): the played move IS the engine's top choice (eval ${pawns(e.evalPlayed)}).`
             : `\n  Engine check (Stockfish): best was ${e.bestSan} (eval ${pawns(e.evalBest)}); the played move evaluates ${pawns(e.evalPlayed)} — it gives up ${pawns(e.cpLoss)} pawns vs best.`
+          if (e.pv && e.pv.length > 1) {
+            line += `\n  Engine's expected line from the position BEFORE the move: ${e.pv.join(' ')} — ground any claim about what the recommendation leads to in this line.`
+          }
         }
         return line
       })
@@ -959,13 +979,86 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
       `The person asking IS the ${sideName(input.me)} player${name ? ` (${name})` : ''} in this game. When they say "I", "me" or "my", they mean ${sideName(input.me)}'s moves and position — answer from their side's perspective.`,
     )
   }
-  if (Array.isArray(input.game) && input.game.length) {
-    contextLines.push(`Game so far (SAN): ${moveTextOf(sanitizeGame(input.game))}`)
+  const game = Array.isArray(input.game) ? sanitizeGame(input.game) : []
+  if (game.length) {
+    contextLines.push(`Game so far (SAN): ${moveTextOf(game)}`)
   }
-  const parts: string[] = []
-  if (input.san) parts.push(`move ${clip(input.san, 12)}`)
-  if (input.fen) parts.push(`position FEN ${clip(input.fen, 100)}`)
-  if (parts.length) contextLines.push(`The move/position under discussion: ${parts.join(', ')}.`)
+  if (input.san) {
+    // Say WHO played the move under discussion and whether that's the asker —
+    // without this the coach mixes up whose move it is judging. No guessing:
+    // if the ply isn't in the game we were given, we say nothing about the
+    // mover (games can start from a custom position with Black to move, so
+    // ply parity is not a safe fallback).
+    const m = Number.isInteger(input.ply) ? game.find((g) => g.ply === input.ply) : undefined
+    const moverColor: Color | undefined = m?.color
+    const label = m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : clip(input.san, 12)
+    const who = moverColor
+      ? `, played by ${sideName(moverColor)}${
+          input.me === 'w' || input.me === 'b'
+            ? input.me === moverColor
+              ? ' (the person asking)'
+              : " (the asker's opponent)"
+            : ''
+        }`
+      : ''
+    contextLines.push(`The move under discussion: ${label}${who}.`)
+    if (input.fenBefore) {
+      contextLines.push(
+        `Position BEFORE that move (FEN — the engine continuation below starts here): ${clip(input.fenBefore, 100)}`,
+      )
+    }
+    if (input.fen) {
+      contextLines.push(
+        `Position AFTER that move (FEN — note the side to move here is the opponent of the mover): ${clip(input.fen, 100)}`,
+      )
+    }
+  } else if (input.fen) {
+    contextLines.push(`The position under discussion (FEN): ${clip(input.fen, 100)}.`)
+  }
+  // The coaching the app is showing for this move: questions like "why is
+  // your suggestion better?" refer to THIS, so the coach must see it.
+  const shown = input.analysis
+  if (shown && typeof shown === 'object') {
+    const bits: string[] = []
+    if (typeof shown.soundness === 'string' && ['sound', 'speculative', 'dubious'].includes(shown.soundness)) {
+      bits.push(`verdict shown: ${shown.soundness}`)
+    }
+    const okStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
+    const hits = (Array.isArray(shown.rules) ? shown.rules : [])
+      .filter((h) => Number.isInteger(h?.id) && h.id >= 1 && h.id <= RULE_COUNT && okStatuses.has(h?.status))
+      .slice(0, 6)
+    if (hits.length) {
+      bits.push(
+        `rules cited: ${hits.map((h) => `#${h.id} ${RULES_BY_ID[h.id]?.title ?? ''} (${h.status})`).join('; ')}`,
+      )
+    }
+    if (typeof shown.lesson === 'string' && shown.lesson.trim()) {
+      bits.push(`lesson shown: "${cleanClip(shown.lesson, 300)}"`)
+    }
+    const alt = shown.alternative
+    if (alt && typeof alt.move === 'string' && alt.move.trim()) {
+      bits.push(
+        `suggested cleaner move: ${clip(alt.move, 12)}${typeof alt.why === 'string' && alt.why.trim() ? ` — "${cleanClip(alt.why, 240)}"` : ''}`,
+      )
+    }
+    const eng = shown.engine
+    if (eng && typeof eng.bestSan === 'string' && Number.isFinite(eng.cpLoss)) {
+      let engLine =
+        eng.isBest === true
+          ? `Stockfish check (depth ${intOr(eng.depth, 0)}): the played move IS the engine's top choice`
+          : `Stockfish check (depth ${intOr(eng.depth, 0)}): the engine's best was ${clip(eng.bestSan, 12)}; the played move gave up ${(Math.max(0, Math.trunc(eng.cpLoss)) / 100).toFixed(2)} pawns vs it`
+      const pv = sanitizePv(eng.pv)
+      if (pv) {
+        engLine += `. Stockfish's expected continuation from the position BEFORE the move: ${pv.join(' ')}`
+      }
+      bits.push(engLine)
+    }
+    if (bits.length) {
+      contextLines.push(
+        `The app's coaching currently shown for this move — questions about "the suggestion"/"the recommendation" refer to this:\n- ${bits.join('\n- ')}`,
+      )
+    }
+  }
   const rid = input.ruleId
   if (Number.isInteger(rid) && (rid as number) >= 1 && (rid as number) <= RULE_COUNT) {
     const rule = RULES_BY_ID[rid as number]
@@ -986,6 +1079,9 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
   const context = contextLines.length ? `Context:\n${contextLines.join('\n')}\n\n` : ''
 
   const system = systemWith(`Answer the user's chess question concisely and decisively (2-4 sentences) using the answer_question tool, grounded in the ${RULE_COUNT} rules of thumb above. The user may ask follow-up questions — treat the conversation as one thread about the same position/rule unless they change the subject. Cite relevant rule numbers/titles when helpful. This is heuristic coaching for club players, not engine analysis — be direct but do not overstate certainty, and do not hedge every sentence. If the question is not about chess, briefly say you only help with chess strategy.
+When the context says who played the move under discussion and who is asking, keep the perspective straight: "I/me/my" is the asker's side, and judge the move from its mover's point of view.
+When the context includes the app's shown coaching, questions about "the suggestion", "the recommendation" or "that move you gave" refer to EXACTLY that — engage with it specifically (you may agree or point out its risks; if the engine's move loses material to a simple capture, call it the engine's tactical/sacrifice idea rather than defending it with invented safety).
+When a Stockfish continuation line is provided, treat it as ground truth for what happens next: base concrete claims on that line and cite a move or two from it; never invent a different engine verdict. Note the continuation starts from the position BEFORE the move under discussion (its FEN is provided when available) — its first move replaces the played one when they differ. Verify any square-level claim (attacked, defended, protected, hanging) against the relevant FEN before asserting it.
 When the context includes a position (FEN) and showing beats telling, also fill "graphics": tinted squares and arrows on that position. ${GRAPHICS_LEGEND} Several arrows are fine when the answer describes a sequence or manoeuvre. Derive every square from the FEN; omit "graphics" when no position is in context or nothing visual would help.`)
 
   // Rebuild the thread: earlier exchanges (bounded), then the new question.
