@@ -85,6 +85,10 @@ function devApi(): import('vite').Plugin {
               res.end(JSON.stringify({ enabled: true, meta: await store.getCloudMeta() }))
               return
             }
+            if (url.searchParams.get('summaries') === '1') {
+              res.end(JSON.stringify({ enabled: true, summaries: await store.listCloudSummaries() }))
+              return
+            }
             if (key) {
               res.end(JSON.stringify({ enabled: true, game: await store.getCloudGame(key) }))
               return

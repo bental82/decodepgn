@@ -8,6 +8,7 @@ import {
   cloudGet,
   cloudGetMeta,
   cloudList,
+  cloudListSummaries,
   cloudSave,
   cloudSaveMeta,
   type CloudGameMeta,
@@ -32,6 +33,7 @@ import type {
   EngineEval,
   Focus,
   GameOverview,
+  MetaGameSummary,
   MoveResult,
   ParsedMove,
   QuizKind,
@@ -137,6 +139,9 @@ export default function App() {
   // Games saved in the cloud (Supabase via /api/games); null while loading or
   // when the deployment has no database configured.
   const [cloudGames, setCloudGames] = useState<CloudGameMeta[] | null>(null)
+  // Digests of the cloud archive (server-computed) so cross-game stats and
+  // history rows cover games this browser doesn't hold locally.
+  const [cloudSummaries, setCloudSummaries] = useState<MetaGameSummary[] | null>(null)
   // The current game's generated quiz (persisted alongside the analysis).
   // Owned here — NOT in the Quiz tab — so generation keeps running and nothing
   // is lost when the user switches tabs mid-way.
@@ -187,6 +192,9 @@ export default function App() {
   // lightly staggered so a big history doesn't burst the connection.
   useEffect(() => {
     let cancelled = false
+    void cloudListSummaries().then((sums) => {
+      if (!cancelled && sums) setCloudSummaries(sums)
+    })
     void cloudList().then((games) => {
       if (cancelled || !games) return
       setCloudGames(games)
@@ -742,6 +750,13 @@ export default function App() {
       history.filter((g) => Object.keys(g.results).length > 0).map(summarizeGame),
     [history],
   )
+  // Local + cloud-archive digests, deduped (local wins) — the live cross-game
+  // stats and history rows cover the WHOLE backlog, not just this browser.
+  const allSummaries = useMemo(() => {
+    if (!cloudSummaries?.length) return metaSummaries
+    const localKeys = new Set(metaSummaries.map((s) => s.key))
+    return [...metaSummaries, ...cloudSummaries.filter((s) => !localKeys.has(s.key))]
+  }, [metaSummaries, cloudSummaries])
 
   // Cross-game meta-analysis: the server merges the cloud archive on top and
   // asks Claude for the patterns. The report persists locally until regenerated.
@@ -785,8 +800,11 @@ export default function App() {
     headers: Record<string, string>
     savedAt: number
     /** when the game happened: the PGN's Date header, else when it was added
-     * to the app — never when it was (re-)analysed */
+     * to the app — never when it was (re-)analysed. Shown on the row. */
     date: number
+    /** list position: when the game was ADDED to the app — stable across
+     * re-analysis (which bumps savedAt but must not reorder the list) */
+    sortKey: number
     result?: 'won' | 'lost' | 'draw'
     analysed: number
     hasQuiz: boolean
@@ -795,6 +813,8 @@ export default function App() {
     inCloud: boolean
     /** which side is the user (from the local save; cloud listings don't carry it) */
     me?: Color
+    /** chess.com-style accuracy % for the player's side, when engine-checked */
+    accuracy?: number
   }
   // Result from the player's own perspective (me flag, else the studied side).
   const resultFor = (
@@ -819,6 +839,7 @@ export default function App() {
     return addedAt ?? savedAt ?? 0
   }
   const historyItems = useMemo<HistoryItem[]>(() => {
+    const accByKey = new Map(allSummaries.map((s) => [s.key, s.engine?.accuracy]))
     const byKey = new Map<string, HistoryItem>()
     for (const g of history) {
       byKey.set(g.key, {
@@ -828,12 +849,14 @@ export default function App() {
         headers: g.headers,
         savedAt: g.savedAt,
         date: gameDate(g.headers, g.addedAt, g.savedAt),
+        sortKey: g.addedAt ?? gameDate(g.headers, undefined, g.savedAt),
         result: resultFor(g.headers, g.me, g.focus),
         analysed: Object.keys(g.results).length,
         hasQuiz: !!g.quiz,
         cloudOnly: false,
         inCloud: syncedKeys.has(g.key),
         me: g.me,
+        accuracy: accByKey.get(g.key),
       })
     }
     for (const c of cloudGames ?? []) {
@@ -843,9 +866,11 @@ export default function App() {
         byKey.set(c.key, {
           ...c,
           date: gameDate(c.headers, c.addedAt, c.savedAt),
+          sortKey: c.addedAt ?? gameDate(c.headers, undefined, c.savedAt),
           result: resultFor(c.headers, undefined, c.focus),
           cloudOnly: true,
           inCloud: true,
+          accuracy: accByKey.get(c.key),
         })
       } else if (c.savedAt > local.savedAt) {
         byKey.set(c.key, {
@@ -856,8 +881,10 @@ export default function App() {
         })
       }
     }
-    return [...byKey.values()].sort((a, b) => b.date - a.date)
-  }, [history, cloudGames, syncedKeys])
+    // newest ADDED first; the key tiebreak keeps equal stamps stable no matter
+    // what order the LRU index delivered them in
+    return [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1))
+  }, [history, cloudGames, syncedKeys, allSummaries])
 
   // Every analysed move flagged dubious — or costing 1+ pawn by the engine —
   // becomes a practice position for the Drill screen, as long as we know a
@@ -1504,6 +1531,17 @@ export default function App() {
                       </span>
                       <span className="history-meta">
                         as {colorName(g.focus)} · {g.analysed} analysed
+                        {g.accuracy != null ? (
+                          <>
+                            {' · '}
+                            <span
+                              className="hist-acc"
+                              title="Engine accuracy for your side (chess.com-style scale)"
+                            >
+                              {g.accuracy}%
+                            </span>
+                          </>
+                        ) : null}
                         {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
                         {g.inCloud || g.cloudOnly ? ' · ☁' : ''} ·{' '}
@@ -1550,7 +1588,7 @@ export default function App() {
               if (item) void openSaved(item, ply).then(() => setFromMeta(true))
             }}
             onOpenRule={openRule}
-            summaries={metaSummaries}
+            summaries={allSummaries}
             apiKey={apiKey}
             onNeedKey={() => setShowSettings(true)}
           />
