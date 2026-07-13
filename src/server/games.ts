@@ -7,6 +7,7 @@
 // This module is server-only (it reads the service-role key). It must never be
 // imported by browser code.
 
+import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
 import type { Focus } from '../shared/types'
 
 const LIST_LIMIT = 100
@@ -151,6 +152,24 @@ export async function listCloudGameData(limit = 60): Promise<unknown[]> {
   const resp = await sb(`games?select=data&key=neq.__meta__&order=saved_at.desc&limit=${limit}`)
   const rows = (await resp.json()) as Array<{ data?: unknown }>
   return Array.isArray(rows) ? rows.map((r) => r?.data).filter(Boolean) : []
+}
+
+/** Compact digests of the whole cloud archive, computed fresh (so stats like
+    accuracy always use the current formula) — powers the client's live
+    cross-game numbers without downloading full games. */
+export async function listCloudSummaries(limit = 60): Promise<unknown[]> {
+  const out: unknown[] = []
+  for (const data of await listCloudGameData(limit)) {
+    const g = data as SummarizableGame
+    if (!g || typeof g.key !== 'string' || !g.results || typeof g.results !== 'object') continue
+    try {
+      const s = summarizeGame(g)
+      if (s.analysed > 0) out.push(s)
+    } catch {
+      /* skip malformed rows */
+    }
+  }
+  return out
 }
 
 /** The saved cross-game report (whatever the client stored), or null. */

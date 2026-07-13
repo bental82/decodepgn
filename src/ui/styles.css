@@ -134,6 +134,7 @@ a { color: var(--accent-ink); }
 .hf-clear { padding: 6px 10px; flex: 0 0 auto; }
 .hf-count { margin: 0 0 8px; }
 .history-title .elo { color: var(--muted); font-weight: 500; }
+.hist-acc { color: var(--accent-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .history-list li { display: flex; align-items: stretch; gap: 6px; }
 .history-row { flex: 1; min-width: 0; position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 44px 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }

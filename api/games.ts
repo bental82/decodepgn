@@ -26,6 +26,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(200).json({ enabled: true, meta: await store.getCloudMeta() })
         return
       }
+      if (req.query.summaries === '1') {
+        res.status(200).json({ enabled: true, summaries: await store.listCloudSummaries() })
+        return
+      }
       if (key) {
         res.status(200).json({ enabled: true, game: await store.getCloudGame(key) })
         return

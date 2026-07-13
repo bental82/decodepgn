@@ -5,7 +5,7 @@
 // working from localStorage exactly as before.
 
 import type { SavedGame } from './store'
-import type { Focus } from '../shared/types'
+import type { Focus, MetaGameSummary } from '../shared/types'
 import type { SavedMetaReport } from '../ui/MetaCard'
 
 export interface CloudGameMeta {
@@ -33,6 +33,15 @@ async function fetchJson(url: string, init?: RequestInit): Promise<any | null> {
 export async function cloudList(): Promise<CloudGameMeta[] | null> {
   const d = await fetchJson('/api/games')
   return d && d.enabled === true && Array.isArray(d.games) ? (d.games as CloudGameMeta[]) : null
+}
+
+/** Digests of every cloud game (server-computed, current formulas) — feeds
+    the live cross-game stats. Null when the feature is off. */
+export async function cloudListSummaries(): Promise<MetaGameSummary[] | null> {
+  const d = await fetchJson('/api/games?summaries=1')
+  return d && d.enabled === true && Array.isArray(d.summaries)
+    ? (d.summaries as MetaGameSummary[])
+    : null
 }
 
 /** The full saved game, or null when missing/off. */
