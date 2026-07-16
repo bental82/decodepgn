@@ -34,13 +34,15 @@ function stdev(xs: number[]): number {
 }
 
 /**
- * Whole-game accuracy over the engine-checked moves, IN GAME ORDER.
- * Lichess's recipe: each move's accuracy is weighted by how much the win%
- * trajectory around it actually swung (clamped stdev over a sliding window),
- * so the moves that decided the game count more and long quiet stretches
- * can't drown an error out; the final score is the mean of that weighted
- * average and the unweighted harmonic mean (a blunder drags the score
- * without zeroing a clean game).
+ * Whole-game accuracy over the engine-checked moves, IN GAME ORDER: a
+ * volatility-weighted mean of per-move accuracies — each move weighted by
+ * how much the win% trajectory around it swung (clamped stdev over a
+ * centered window), so decisive moments count a bit more and quiet padding
+ * can't inflate the score.
+ * Deliberately NO harmonic term: harmonic means collapse near zero, and a
+ * real 25-move game with one mate blunder scored 52% where chess.com said
+ * ~80%. CAPS2's stated behaviour — every move roughly equal influence,
+ * blunders smoothed rather than catastrophic — matches the weighted mean.
  * Returns one decimal (e.g. 87.4), or null when no moves were checked.
  */
 export function gameAccuracy(evals: EngineEval[]): number | null {
@@ -50,9 +52,9 @@ export function gameAccuracy(evals: EngineEval[]): number | null {
   // first scored move, then the position after each scored move.
   const traj = [winPct(evals[0].evalBest), ...evals.map((e) => winPct(e.evalPlayed))]
   // A window CENTERED on each move, wide enough that the weight describes the
-  // phase of the game around it — not just the move's own eval jump (a narrow
-  // trailing window let every mistake maximally weight itself, dragging
-  // scores far below the familiar range). Weight spread is kept gentle.
+  // phase of the game around it — not just the move's own eval jump. Weight
+  // spread kept gentle (1-6): a blunder counts several moves' worth, not the
+  // whole game.
   const windowSize = Math.max(3, Math.min(8, Math.floor(traj.length / 5)))
   const half = Math.floor(windowSize / 2)
   const weights = accs.map((_, i) => {
@@ -62,6 +64,5 @@ export function gameAccuracy(evals: EngineEval[]): number | null {
   })
   const wSum = weights.reduce((a, b) => a + b, 0)
   const weightedMean = accs.reduce((a, acc, i) => a + acc * weights[i], 0) / wSum
-  const harmonic = accs.length / accs.reduce((a, b) => a + 1 / Math.max(b, 1), 0)
-  return Math.round(((weightedMean + harmonic) / 2) * 10) / 10
+  return Math.round(weightedMean * 10) / 10
 }
