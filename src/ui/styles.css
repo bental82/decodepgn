@@ -421,6 +421,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .overview-summary { margin: 0 0 8px; font-size: 15.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 14.5px; color: var(--muted); }
 .overview-phases { margin: 6px 0 4px; font-size: 14.5px; }
+.overview-regen { margin-top: 10px; }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .overview-ask[hidden] { display: none; }
 .overview-ask .askbox { margin-top: 12px; padding-top: 12px; }
