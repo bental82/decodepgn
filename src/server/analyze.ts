@@ -24,6 +24,7 @@ import type {
   Color,
   EngineEval,
   GameMove,
+  GameOverview,
   MetaGameSummary,
   MetaInsight,
   MetaRequest,
@@ -860,7 +861,7 @@ ${lines}`
 
 const OVERVIEW_TOOL = {
   name: 'report_overview',
-  description: 'Report a short overview of the whole game.',
+  description: 'Report a substantial overview of the whole game.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -868,29 +869,34 @@ const OVERVIEW_TOOL = {
       summary: {
         type: 'string',
         description:
-          "2-4 decisive sentences on what decided the game from the studied side's perspective: what won it, what lost it.",
+          "4-6 decisive sentences on what decided the game from the studied side's perspective: the concrete cause (name the moves), the turning point, what the player did well, and the one skill to practise.",
       },
       trend: {
         type: 'string',
         description:
-          '1-2 sentences on the arc of the game: who stood better in which phase and where the momentum shifted.',
+          '2-4 sentences on the arc of the game: who stood better in which phase, where the momentum shifted and WHY — anchored to the eval trajectory when one is provided.',
+      },
+      phases: {
+        type: 'string',
+        description:
+          '3-5 sentences reading the game phase by phase: how the OPENING went (name it if you recognise it, and where theory was left), what the MIDDLEGAME hinged on (plans, pawn structure, king safety), and how the ENDGAME (or the finish) was handled. Cite concrete moves.',
       },
       keyMoments: {
         type: 'array',
-        description: '2-4 pivotal moments, in game order.',
+        description: '3-6 pivotal moments, in game order — prefer the real eval swings when a trajectory is provided.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
             ply: { type: 'integer', description: 'The ply of the pivotal move.' },
             title: { type: 'string', description: 'A 2-5 word label, e.g. "The decisive sacrifice".' },
-            why: { type: 'string', description: 'One line on why this moment mattered.' },
+            why: { type: 'string', description: '1-2 lines on why this moment mattered and what should have happened.' },
           },
           required: ['ply', 'title', 'why'],
         },
       },
     },
-    required: ['summary', 'trend', 'keyMoments'],
+    required: ['summary', 'trend', 'phases', 'keyMoments'],
   },
 }
 
@@ -906,22 +912,74 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
   const black = clip(h.Black, 40) || 'Black'
   const result = clip(h.Result, 8)
 
-  const system = systemWith(`Write a short OVERVIEW of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. Concrete and instructive — this is the opening word a coach gives before going move by move, and it sets the tone for the whole review.
-- "summary": what decided the game and the lesson in it (2-4 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack) and the skill to practise, citing rule numbers where natural. Remember your voice: diagnose decisions, no scolding words.
-- "trend": the arc of the game — who stood better in which phase and where the momentum shifted (1-2 sentences).
-- "keyMoments": 2-4 pivotal plies in game order, each with a short title and a one-line why. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
+  // Ground the overview in the ENGINE's story of the game: the win%
+  // trajectory's real swings, computed here from the client's eval sweep.
+  // Without this the model narrates from bare SAN and the overview reads
+  // thin and speculative.
+  const evalLines: string[] = []
+  if (input.evals && typeof input.evals === 'object') {
+    const byPly = new Map(game.map((g) => [g.ply, g]))
+    const pts: Array<{ ply: number; pct: number }> = []
+    for (const [k, v] of Object.entries(input.evals)) {
+      const ply = Number(k)
+      if (!Number.isInteger(ply) || !byPly.has(ply) || !Number.isFinite(v)) continue
+      const capped = Math.max(-1000, Math.min(1000, v as number))
+      pts.push({ ply, pct: Math.round(50 + 50 * (2 / (1 + Math.exp(-0.00368208 * capped)) - 1)) })
+    }
+    pts.sort((a, b) => a.ply - b.ply)
+    if (pts.length >= 4) {
+      const label = (ply: number) => {
+        const m = byPly.get(ply)
+        return m ? `${m.moveNumber}${m.color === 'w' ? '.' : '...'} ${m.san}` : `ply ${ply}`
+      }
+      // the significant swings, biggest first, capped — plus start and finish
+      const swings: Array<{ ply: number; from: number; to: number }> = []
+      for (let i = 1; i < pts.length; i++) {
+        const d = pts[i].pct - pts[i - 1].pct
+        if (Math.abs(d) >= 12) swings.push({ ply: pts[i].ply, from: pts[i - 1].pct, to: pts[i].pct })
+      }
+      swings.sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from))
+      const shown = swings.slice(0, 8).sort((a, b) => a.ply - b.ply)
+      evalLines.push(
+        `Engine eval trajectory (Stockfish; White's winning chances after the move). Treat this as ground truth for who stood better when — anchor "trend", "phases" and the keyMoments to it and never contradict it:`,
+      )
+      for (const s of shown) {
+        evalLines.push(
+          `- after ${label(s.ply)} (ply ${s.ply}): ${s.from}% -> ${s.to}% for White (${s.to - s.from > 0 ? '+' : ''}${s.to - s.from})`,
+        )
+      }
+      if (shown.length === 0) evalLines.push('- no swing above 12 percentage points: a stable game — say so.')
+      evalLines.push(`- final position: ${pts[pts.length - 1].pct}% for White`)
+    }
+  }
+  const acc = input.accuracy
+  const accLine =
+    acc && (Number.isFinite(acc.w) || Number.isFinite(acc.b))
+      ? `Engine accuracy (chess.com-style): ${[
+          Number.isFinite(acc.w) ? `White ${acc.w}%` : '',
+          Number.isFinite(acc.b) ? `Black ${acc.b}%` : '',
+        ]
+          .filter(Boolean)
+          .join(', ')}.`
+      : ''
+
+  const system = systemWith(`Write a substantial OVERVIEW of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. Concrete and instructive — this is the opening word a coach gives before going move by move, and it sets the tone for the whole review. It must feel like the coach actually studied the game: name moves, name squares, name plans.
+- "summary": what decided the game and the lesson in it (4-6 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack), what the player did WELL, and the skill to practise, citing rule numbers where natural. Remember your voice: diagnose decisions, no scolding words.
+- "trend": the arc of the game — who stood better in which phase and where the momentum shifted, and why (2-4 sentences). When an eval trajectory is provided, follow it exactly.
+- "phases": the game phase by phase (3-5 sentences): the opening (name it if recognisable, where the game left known paths), the middlegame battle (plans, structure, king safety), and the endgame or finish.
+- "keyMoments": 3-6 pivotal plies in game order, each with a short title and 1-2 lines on why it mattered and what should have happened. When an eval trajectory is provided, pick the real swings. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
 
   const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The side under study: ${sideName}.
 Moves (SAN):
 ${moveTextOf(game)}
-
+${evalLines.length ? `\n${evalLines.join('\n')}\n` : ''}${accLine ? `${accLine}\n` : ''}
 Give the overview.`
 
   const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 1200,
+    maxTokens: 2500,
     tool: OVERVIEW_TOOL,
     toolName: 'report_overview',
-  })) as { summary?: unknown; trend?: unknown; keyMoments?: unknown }
+  })) as { summary?: unknown; trend?: unknown; phases?: unknown; keyMoments?: unknown }
 
   const rawMoments = Array.isArray(data.keyMoments) ? data.keyMoments : []
   const keyMoments = rawMoments
@@ -933,18 +991,20 @@ Give the overview.`
         typeof m.title === 'string' &&
         typeof m.why === 'string',
     )
-    .slice(0, 4)
+    .slice(0, 6)
     .map((m: { ply: number; title: string; why: string }) => ({
       ply: m.ply,
       title: cleanClip(m.title, 60),
-      why: cleanClip(m.why, 240),
+      why: cleanClip(m.why, 300),
     }))
 
-  const overview = {
-    summary: cleanClip(data.summary, 900),
-    trend: cleanClip(data.trend, 400),
+  const overview: GameOverview = {
+    summary: cleanClip(data.summary, 1400),
+    trend: cleanClip(data.trend, 700),
     keyMoments,
   }
+  const phases = cleanClip(data.phases, 900)
+  if (phases) overview.phases = phases
   if (!overview.summary) throw new AnalyzeError('Claude did not return an overview.', 502)
   return { overview }
 }

@@ -186,6 +186,8 @@ export interface GameOverview {
   summary: string
   /** the arc of the game: who stood better when, where momentum shifted */
   trend: string
+  /** phase-by-phase read: opening, middlegame, endgame (absent on old saves) */
+  phases?: string
   keyMoments: KeyMoment[]
 }
 
@@ -194,6 +196,11 @@ export interface OverviewRequest {
   focus: Focus
   game: GameMove[]
   headers?: Record<string, string>
+  /** ply -> centipawns after that move from WHITE's perspective (the client's
+      engine sweep) — grounds the overview in the real eval story */
+  evals?: Record<number, number>
+  /** chess.com-style accuracy per side, when engine-checked */
+  accuracy?: { w?: number; b?: number }
   apiKey?: string
 }
 
