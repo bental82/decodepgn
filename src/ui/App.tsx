@@ -617,6 +617,11 @@ export default function App() {
     [moves, focus, apiKey, quizLoading, bestMoveTargets],
   )
 
+  // Sweep bookkeeping (declared here because the overview wait below re-arms
+  // on it): "Re-analyse all" forces a full sweep redo via these.
+  const forceSweepRef = useRef(false)
+  const [sweepGen, setSweepGen] = useState(0)
+
   // Every analysis starts with the whole-game overview — but a GROUNDED one:
   // wait for the engine sweep to cover most of the game so the eval
   // trajectory rides along, capped at 30s so a missing engine can't stall it.
@@ -626,7 +631,8 @@ export default function App() {
     setOverviewWaitExpired(false)
     const t = setTimeout(() => setOverviewWaitExpired(true), 30_000)
     return () => clearTimeout(t)
-  }, [phase, moves])
+    // sweepGen: a forced re-analysis clears the evals and re-arms this wait
+  }, [phase, moves, sweepGen])
   const overviewWaiting =
     phase === 'game' &&
     !gameOverview &&
@@ -671,6 +677,10 @@ export default function App() {
       setEvals({})
       forceSweepRef.current = true
       setSweepGen((g) => g + 1)
+      // the overview is part of the analysis — rebuild it too, grounded in
+      // the fresh sweep (the auto-generate effect waits for coverage)
+      setGameOverview(null)
+      setOverviewError(null)
     }
     const gen = genRef.current
     const runKey = storeRef.current?.key
@@ -740,8 +750,6 @@ export default function App() {
   // the whole game. Shares the engine's FEN cache with the per-move checks.
   // "Re-analyse all" forces a full redo (forceSweepRef + sweepGen bump).
   const sweepRef = useRef<string | null>(null)
-  const forceSweepRef = useRef(false)
-  const [sweepGen, setSweepGen] = useState(0)
   useEffect(() => {
     if (phase !== 'game' || moves.length === 0) return
     const key = storeRef.current?.key ?? ''

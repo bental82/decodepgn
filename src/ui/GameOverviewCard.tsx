@@ -113,6 +113,13 @@ export default function GameOverviewCard({
               })}
             </div>
           ) : null}
+          <button
+            className="linkbtn overview-regen"
+            onClick={onRetry}
+            title="Rewrite this overview from the latest analysis and engine data"
+          >
+            ↻ Regenerate this overview
+          </button>
         </>
       ) : null}
       {/* Stays mounted while collapsed so the thread (and an in-flight
