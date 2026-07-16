@@ -89,6 +89,11 @@ export default function GameOverviewCard({
               <MoveText text={overview.trend} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
             </p>
           ) : null}
+          {overview.phases ? (
+            <p className="overview-phases">
+              <MoveText text={overview.phases} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
+            </p>
+          ) : null}
           {overview.keyMoments.length > 0 ? (
             <div className="overview-moments">
               {overview.keyMoments.map((k) => {

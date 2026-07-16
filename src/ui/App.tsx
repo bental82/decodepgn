@@ -471,17 +471,51 @@ export default function App() {
     cloudSave(game, markSynced)
   }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide])
 
+  // Chess.com-style per-side accuracy from the engine-checked moves — shown
+  // in the Game overview header and fed to the overview generation. Only
+  // studied sides carry engine data.
+  const overviewAccuracy = useMemo(() => {
+    const forSide = (c: Color) => {
+      const evs: EngineEval[] = []
+      for (const r of Object.values(results)) {
+        if (r.engine && moves[r.ply]?.color === c) evs.push(r.engine)
+      }
+      return gameAccuracy(evs)
+    }
+    const out: Array<{ key: string; label: string; value: number }> = []
+    for (const c of ['w', 'b'] as const) {
+      const v = forSide(c)
+      if (v == null) continue
+      out.push({ key: c, label: mySide === c ? 'You' : colorName(c), value: v })
+    }
+    return out
+  }, [results, moves, mySide])
+
   const fetchOverview = useCallback(async () => {
     if (!moves.length) return
     const gen = genRef.current
     setOverviewLoading(true)
     setOverviewError(null)
     try {
+      // Ground the overview in the engine's story: the sweep's evals, with
+      // per-move engine checks filling any gaps the sweep hasn't reached.
+      const evs: Record<number, number> = {}
+      for (const m of moves) {
+        if (evals[m.ply] !== undefined) {
+          evs[m.ply] = evals[m.ply]
+        } else {
+          const e = results[m.ply]?.engine
+          if (e) evs[m.ply] = m.color === 'w' ? e.evalPlayed : -e.evalPlayed
+        }
+      }
+      const accOf = (c: Color) => overviewAccuracy.find((a) => a.key === c)?.value
       const resp = await fetchOverviewApi({
         mode: 'overview',
         focus,
         game: toGameMoves(moves),
         headers,
+        evals: Object.keys(evs).length ? evs : undefined,
+        accuracy: accOf('w') != null || accOf('b') != null ? { w: accOf('w'), b: accOf('b') } : undefined,
         apiKey: apiKey.trim() || undefined,
       })
       if (genRef.current !== gen) return
@@ -494,7 +528,7 @@ export default function App() {
     } finally {
       if (genRef.current === gen) setOverviewLoading(false)
     }
-  }, [moves, focus, headers, apiKey])
+  }, [moves, focus, headers, apiKey, evals, results, overviewAccuracy])
 
   // Positions the best-move quiz can draw on: analysed moves of the studied
   // side that carry an engine check or an AI alternative. Missed better moves
@@ -583,13 +617,31 @@ export default function App() {
     [moves, focus, apiKey, quizLoading, bestMoveTargets],
   )
 
-  // Every analysis starts with the whole-game overview — generate it once per
-  // loaded game (restored games already have it and skip the call).
+  // Every analysis starts with the whole-game overview — but a GROUNDED one:
+  // wait for the engine sweep to cover most of the game so the eval
+  // trajectory rides along, capped at 30s so a missing engine can't stall it.
+  const [overviewWaitExpired, setOverviewWaitExpired] = useState(false)
+  useEffect(() => {
+    if (phase !== 'game') return
+    setOverviewWaitExpired(false)
+    const t = setTimeout(() => setOverviewWaitExpired(true), 30_000)
+    return () => clearTimeout(t)
+  }, [phase, moves])
+  const overviewWaiting =
+    phase === 'game' &&
+    !gameOverview &&
+    !overviewLoading &&
+    !overviewError &&
+    !restoringKey &&
+    !overviewWaitExpired &&
+    moves.length > 0 &&
+    Object.keys(evals).length / moves.length < 0.8
   useEffect(() => {
     if (phase !== 'game' || gameOverview || overviewLoading || overviewError) return
     if (restoringKey) return // the restored save carries its overview
+    if (overviewWaiting) return // sweep still filling in the eval story
     void fetchOverview()
-  }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview, restoringKey])
+  }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview, restoringKey, overviewWaiting])
 
   // Auto-analyse the selected move when it belongs to the studied colour and
   // hasn't been analysed (or errored) yet.
@@ -1121,25 +1173,6 @@ export default function App() {
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
 
-  // Chess.com-style per-side accuracy from the engine-checked moves — shown
-  // in the Game overview header. Only studied sides carry engine data.
-  const overviewAccuracy = useMemo(() => {
-    const forSide = (c: Color) => {
-      const evs: EngineEval[] = []
-      for (const r of Object.values(results)) {
-        if (r.engine && moves[r.ply]?.color === c) evs.push(r.engine)
-      }
-      return gameAccuracy(evs)
-    }
-    const out: Array<{ key: string; label: string; value: number }> = []
-    for (const c of ['w', 'b'] as const) {
-      const v = forSide(c)
-      if (v == null) continue
-      out.push({ key: c, label: mySide === c ? 'You' : colorName(c), value: v })
-    }
-    return out
-  }, [results, moves, mySide])
-
   // Moves worth revisiting: judged dubious, or a 1.5+ pawn engine loss.
   const dubiousPlies = useMemo(
     () =>
@@ -1615,7 +1648,7 @@ export default function App() {
             <>
               <GameOverviewCard
                 overview={gameOverview}
-                loading={overviewLoading}
+                loading={overviewLoading || overviewWaiting}
                 error={overviewError}
                 moves={moves}
                 onJump={jumpTo}
