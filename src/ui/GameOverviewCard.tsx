@@ -7,6 +7,8 @@ import MoveText from './MoveText'
 interface Props {
   overview: GameOverview | null
   loading: boolean
+  /** the move-by-move analysis is still running; the overview follows it */
+  waiting?: boolean
   error: string | null
   moves: ParsedMove[]
   onJump: (ply: number) => void
@@ -28,6 +30,7 @@ const OPEN_STORAGE = 'decodepgn.overviewOpen'
 export default function GameOverviewCard({
   overview,
   loading,
+  waiting,
   error,
   moves,
   onJump,
@@ -40,7 +43,7 @@ export default function GameOverviewCard({
   onOpenRule,
 }: Props) {
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_STORAGE) !== '0')
-  if (!overview && !loading && !error) return null
+  if (!overview && !loading && !waiting && !error) return null
 
   const toggle = () => {
     setOpen((v) => {
@@ -67,10 +70,10 @@ export default function GameOverviewCard({
         ) : null}
         <span className="overview-chevron">{open ? '▾' : '▸'}</span>
       </button>
-      {!open ? null : loading ? (
+      {!open ? null : loading || waiting ? (
         <div className="loading-row">
           <span className="spinner" />
-          Reading the whole game…
+          {loading ? 'Reading the whole game…' : 'Comes up when every move has been analysed…'}
         </div>
       ) : error ? (
         <>
