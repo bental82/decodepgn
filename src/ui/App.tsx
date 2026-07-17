@@ -109,6 +109,10 @@ export default function App() {
   // Game keys with an analyse-all run still going (survives leaving the game
   // view; the landing list shows a live badge for them).
   const [bgAnalysing, setBgAnalysing] = useState<Set<string>>(new Set())
+  // Game keys whose analyse-all run FINISHED this session. The overview
+  // auto-generates the moment a game's run completes — keyed on the run, not
+  // per-ply results, so a ply that errored can't hold the overview hostage.
+  const [analysisRunDone, setAnalysisRunDone] = useState<Set<string>>(new Set())
   // While set, we're checking the cloud for this game's saved analysis —
   // auto-analysis waits so a stored game is never re-analysed from scratch.
   const [restoringKey, setRestoringKey] = useState<string | null>(null)
@@ -161,6 +165,10 @@ export default function App() {
   )
   // ply -> centipawns after that move, from White's perspective (eval bar).
   const [evals, setEvals] = useState<Record<number, number>>({})
+  // Share of moves whose eval shipped INSIDE the PGN ([%eval] comments, as in
+  // lichess exports) — near-full coverage lets the overview fire immediately
+  // instead of waiting for our own move-by-move analysis.
+  const [pgnEvalCoverage, setPgnEvalCoverage] = useState(0)
   const explainRef = useRef<HTMLDivElement | null>(null)
   const stickyRef = useRef<HTMLDivElement | null>(null)
   const [showToTop, setShowToTop] = useState(false)
@@ -402,6 +410,7 @@ export default function App() {
       // PGN-shipped evals (lichess analysis) give instant full coverage; our
       // own engine's numbers (saved sweep) win where both exist.
       setEvals({ ...(g.evals ?? {}), ...(saved?.evals ?? {}) })
+      setPgnEvalCoverage(Object.keys(g.evals ?? {}).length / g.moves.length)
       // The studied side IS the user unless they said otherwise; when both
       // sides are studied we can't guess — ask right away.
       setMySide(saved?.me ?? (f !== 'both' ? f : undefined))
@@ -619,35 +628,37 @@ export default function App() {
     [moves, focus, apiKey, quizLoading, bestMoveTargets],
   )
 
-  // Sweep bookkeeping (declared here because the overview wait below re-arms
-  // on it): "Re-analyse all" forces a full sweep redo via these.
+  // Sweep bookkeeping: "Re-analyse all" forces a full sweep redo via these.
   const forceSweepRef = useRef(false)
   const [sweepGen, setSweepGen] = useState(0)
 
-  // Every analysis starts with the whole-game overview — but a GROUNDED one:
-  // wait for the engine sweep to cover most of the game so the eval
-  // trajectory rides along, capped at 30s so a missing engine can't stall it.
-  const [overviewWaitExpired, setOverviewWaitExpired] = useState(false)
-  useEffect(() => {
-    if (phase !== 'game') return
-    setOverviewWaitExpired(false)
-    const t = setTimeout(() => setOverviewWaitExpired(true), 30_000)
-    return () => clearTimeout(t)
-    // sweepGen: a forced re-analysis clears the evals and re-arms this wait
-  }, [phase, moves, sweepGen])
+  // The whole-game overview fires the moment the move-by-move analysis run
+  // completes — or immediately when the PGN itself shipped near-full [%eval]
+  // coverage (lichess exports), since the eval story is already on hand. The
+  // Stockfish eval-bar sweep never gates it: the overview just rides on
+  // whatever evals exist when it fires.
+  const overviewGameKey = storeRef.current?.key ?? ''
+  const focusDone =
+    moves.length > 0 && moves.every((m) => !isStudied(m.color, focus) || !!results[m.ply])
+  const analysisSettled =
+    // an in-flight run vetoes: a forced re-analysis keeps old results on
+    // screen until each is replaced, so "every ply has a result" alone would
+    // fire the overview off stale data
+    !bgAnalysing.has(overviewGameKey) &&
+    (focusDone || analysisRunDone.has(overviewGameKey))
   const overviewWaiting =
     phase === 'game' &&
     !gameOverview &&
     !overviewLoading &&
     !overviewError &&
     !restoringKey &&
-    !overviewWaitExpired &&
     moves.length > 0 &&
-    Object.keys(evals).length / moves.length < 0.8
+    pgnEvalCoverage < 0.9 &&
+    !analysisSettled
   useEffect(() => {
     if (phase !== 'game' || gameOverview || overviewLoading || overviewError) return
     if (restoringKey) return // the restored save carries its overview
-    if (overviewWaiting) return // sweep still filling in the eval story
+    if (overviewWaiting) return // the move-by-move run is still going
     void fetchOverview()
   }, [phase, gameOverview, overviewLoading, overviewError, fetchOverview, restoringKey, overviewWaiting])
 
@@ -672,20 +683,28 @@ export default function App() {
       .filter((m) => isStudied(m.color, focus) && (force || !results[m.ply]))
       .map((m) => m.ply)
     if (!plies.length) return
+    const gen = genRef.current
+    const runKey = storeRef.current?.key
     if (force) {
       // Explicit repair: recompute every engine check and the eval bar from a
       // clean cache, so a bad saved evaluation cannot survive re-analysis.
       clearEngineCache()
       setEvals({})
+      setPgnEvalCoverage(0) // the PGN's own evals were just wiped with the rest
       forceSweepRef.current = true
       setSweepGen((g) => g + 1)
-      // the overview is part of the analysis — rebuild it too, grounded in
-      // the fresh sweep (the auto-generate effect waits for coverage)
+      // the overview is part of the analysis — rebuild it too, once this
+      // fresh run completes (the auto-generate effect waits for it)
       setGameOverview(null)
       setOverviewError(null)
+      if (runKey) {
+        setAnalysisRunDone((prev) => {
+          const c = new Set(prev)
+          c.delete(runKey)
+          return c
+        })
+      }
     }
-    const gen = genRef.current
-    const runKey = storeRef.current?.key
     const run: AnalysisRun = {
       gen,
       key: runKey ?? '',
@@ -727,6 +746,8 @@ export default function App() {
         c.delete(runKey)
         return c
       })
+      // this unblocks the overview — the analysis of every move is in
+      setAnalysisRunDone((prev) => new Set(prev).add(runKey))
     }
     setHistory(listGames())
     if (genRef.current === gen) {
@@ -798,6 +819,7 @@ export default function App() {
     setQuizError(null)
     setGameOverview(null)
     setEvals({})
+    setPgnEvalCoverage(0)
     setOverviewLoading(false)
     setOverviewError(null)
     setJumpBack(null)
@@ -1658,7 +1680,8 @@ export default function App() {
             <>
               <GameOverviewCard
                 overview={gameOverview}
-                loading={overviewLoading || overviewWaiting}
+                loading={overviewLoading}
+                waiting={overviewWaiting}
                 error={overviewError}
                 moves={moves}
                 onJump={jumpTo}
