@@ -399,7 +399,9 @@ export default function App() {
       setQuizLoading(false)
       setQuizError(null)
       setGameOverview(saved?.overview ?? null)
-      setEvals(saved?.evals ?? {})
+      // PGN-shipped evals (lichess analysis) give instant full coverage; our
+      // own engine's numbers (saved sweep) win where both exist.
+      setEvals({ ...(g.evals ?? {}), ...(saved?.evals ?? {}) })
       // The studied side IS the user unless they said otherwise; when both
       // sides are studied we can't guess — ask right away.
       setMySide(saved?.me ?? (f !== 'both' ? f : undefined))

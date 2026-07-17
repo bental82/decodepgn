@@ -8,6 +8,27 @@ import type { AnalyzeTarget, GameMove, ParsedMove } from './shared/types'
 export interface ParsedGame {
   headers: Record<string, string>
   moves: ParsedMove[]
+  /** ply -> centipawns after that move from WHITE's perspective, parsed from
+      the PGN's [%eval] comments (lichess-analysed games carry them) */
+  evals?: Record<number, number>
+}
+
+// Lichess writes "[%eval 0.18]" (pawns, White's perspective) or "[%eval #-5]"
+// (mate in 5 against White) into move comments. #-1,1 style variants exist.
+const EVAL_TAG_RE = /\[%eval\s+(#?-?\d+(?:[.,]\d+)?)/
+const PGN_MATE_CP = 10_000
+
+function evalFromComment(comment: string): number | undefined {
+  const m = comment.match(EVAL_TAG_RE)
+  if (!m) return undefined
+  const raw = m[1]
+  if (raw.startsWith('#')) {
+    const n = parseInt(raw.slice(1), 10)
+    if (!Number.isFinite(n) || n === 0) return undefined
+    return n > 0 ? PGN_MATE_CP : -PGN_MATE_CP
+  }
+  const pawns = parseFloat(raw.replace(',', '.'))
+  return Number.isFinite(pawns) ? Math.round(pawns * 100) : undefined
 }
 
 export class PgnError extends Error {}
@@ -49,7 +70,24 @@ export function parsePgn(pgn: string): ParsedGame {
       fenAfter: m.after,
     }
   })
-  return { headers: chess.getHeaders() as Record<string, string>, moves }
+
+  // Evals shipped inside the PGN (lichess analysis): comments are keyed by
+  // the position they follow, which is each move's fenAfter.
+  let evals: Record<number, number> | undefined
+  try {
+    const byFen = new Map(chess.getComments().map((c) => [c.fen, c.comment]))
+    for (const m of moves) {
+      const comment = byFen.get(m.fenAfter)
+      if (!comment) continue
+      const cp = evalFromComment(comment)
+      if (cp === undefined) continue
+      ;(evals ??= {})[m.ply] = cp
+    }
+  } catch {
+    /* comments are a bonus — never fail the parse over them */
+  }
+
+  return { headers: chess.getHeaders() as Record<string, string>, moves, evals }
 }
 
 export function toGameMoves(moves: ParsedMove[]): GameMove[] {
