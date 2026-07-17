@@ -250,6 +250,10 @@ export default function App() {
   // Latest headers, for background writes after the user leaves the game view.
   const headersRef = useRef(headers)
   headersRef.current = headers
+  // Latest phase, so a background batch can tell whether its game is the one
+  // currently on screen (re-entering a game mid-run must go live again).
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
 
   interface AnalysisRun {
     gen: number
@@ -339,7 +343,14 @@ export default function App() {
           return analyze(req)
         })
         const returned = new Set(resp.results.map((r) => r.ply))
-        if (genRef.current === gen) {
+        // "On screen" covers re-entry: leaving a game and reopening it bumps
+        // the gen, but the run's results still belong on the live view — the
+        // key match says so. Without this the reopened game looks frozen while
+        // the background run quietly fills its save.
+        const onScreen =
+          genRef.current === gen ||
+          (phaseRef.current === 'game' && storeRef.current?.key === origin.key)
+        if (onScreen) {
           // still looking at this game — update the view (persistence follows
           // via the save effect)
           setResults((prev) => {
@@ -421,6 +432,9 @@ export default function App() {
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
+      // a counter from a previous view's run would freeze here (its updates
+      // are gen-guarded) — never show a stale one on a fresh view
+      setAllProgress(null)
       setParseError(null)
       setHighlightRule(undefined)
       const first = g.moves.find((m) => isStudied(m.color, f))?.ply ?? 0
@@ -1682,6 +1696,7 @@ export default function App() {
                 overview={gameOverview}
                 loading={overviewLoading}
                 waiting={overviewWaiting}
+                waitingProgress={{ done: analyzedFocus, total: studiedPlies.length }}
                 error={overviewError}
                 moves={moves}
                 onJump={jumpTo}

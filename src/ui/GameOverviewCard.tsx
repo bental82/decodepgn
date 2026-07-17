@@ -9,6 +9,8 @@ interface Props {
   loading: boolean
   /** the move-by-move analysis is still running; the overview follows it */
   waiting?: boolean
+  /** live analysed/total counts for the waiting message */
+  waitingProgress?: { done: number; total: number }
   error: string | null
   moves: ParsedMove[]
   onJump: (ply: number) => void
@@ -31,6 +33,7 @@ export default function GameOverviewCard({
   overview,
   loading,
   waiting,
+  waitingProgress,
   error,
   moves,
   onJump,
@@ -73,7 +76,13 @@ export default function GameOverviewCard({
       {!open ? null : loading || waiting ? (
         <div className="loading-row">
           <span className="spinner" />
-          {loading ? 'Reading the whole game…' : 'Comes up when every move has been analysed…'}
+          {loading
+            ? 'Reading the whole game…'
+            : `Analysing every move first${
+                waitingProgress && waitingProgress.total > 0
+                  ? ` (${waitingProgress.done}/${waitingProgress.total} done)`
+                  : ''
+              }…`}
         </div>
       ) : error ? (
         <>
