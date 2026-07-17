@@ -927,6 +927,14 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
       pts.push({ ply, pct: Math.round(50 + 50 * (2 / (1 + Math.exp(-0.00368208 * capped)) - 1)) })
     }
     pts.sort((a, b) => a.ply - b.ply)
+    // A PARTIAL trajectory (the sweep still running when the overview was
+    // requested) must never be narrated as the whole game — that produced
+    // "a stable game, final 50%" for a game that was -6 from move 5.
+    const lastGamePly = game[game.length - 1].ply
+    const full =
+      pts.length >= 4 &&
+      pts[pts.length - 1].ply >= lastGamePly - 3 &&
+      pts.length >= Math.floor(game.length * 0.7)
     if (pts.length >= 4) {
       const label = (ply: number) => {
         const m = byPly.get(ply)
@@ -943,13 +951,25 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
       evalLines.push(
         `Engine eval trajectory (Stockfish; White's winning chances after the move). Treat this as ground truth for who stood better when — anchor "trend", "phases" and the keyMoments to it and never contradict it:`,
       )
+      if (!full) {
+        evalLines.push(
+          `- NOTE: the trajectory covers only ${pts.length} of ${game.length} positions, up to ${label(pts[pts.length - 1].ply)}. Say NOTHING about the eval of the rest of the game or the final position — judge those from the moves alone.`,
+        )
+      }
       for (const s of shown) {
         evalLines.push(
           `- after ${label(s.ply)} (ply ${s.ply}): ${s.from}% -> ${s.to}% for White (${s.to - s.from > 0 ? '+' : ''}${s.to - s.from})`,
         )
       }
-      if (shown.length === 0) evalLines.push('- no swing above 12 percentage points: a stable game — say so.')
-      evalLines.push(`- final position: ${pts[pts.length - 1].pct}% for White`)
+      if (shown.length === 0) {
+        evalLines.push(
+          full
+            ? '- no swing above 12 percentage points: a stable game — say so.'
+            : '- no swing above 12 percentage points within the covered stretch.',
+        )
+      }
+      if (full) evalLines.push(`- final position: ${pts[pts.length - 1].pct}% for White`)
+      else evalLines.push(`- latest covered position (${label(pts[pts.length - 1].ply)}): ${pts[pts.length - 1].pct}% for White`)
     }
   }
   const acc = input.accuracy
