@@ -173,9 +173,11 @@ export function removeGame(key: string) {
 }
 
 export function saveGame(game: SavedGame) {
-  // addedAt is stable: keep the first save's value across every later write
+  // addedAt is stable: keep the first save's value across every later write.
+  // A pre-existing save that PREDATES the addedAt field inherits its own old
+  // savedAt — stamping "now" would bump it to the top of the list on open.
   const prev = loadGame(game.key)
-  game = { ...game, addedAt: prev?.addedAt ?? game.addedAt ?? Date.now() }
+  game = { ...game, addedAt: prev?.addedAt ?? prev?.savedAt ?? game.addedAt ?? Date.now() }
   const write = () => localStorage.setItem(GAME_PREFIX + game.key, JSON.stringify(game))
   try {
     write()
