@@ -66,6 +66,10 @@ import Settings from './Settings'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
 const META_KEY = 'decodepgn.meta.v1'
+
+/** An empty placeholder recorded when a model skipped a ply — it renders as a
+    blank card, so the repair paths treat it as "not analysed yet". */
+const isEmptyResult = (r?: MoveResult) => !!r && r.rules.length === 0 && !r.lesson
 type Tab = 'move' | 'quiz' | 'map' | 'rules'
 type Phase = 'input' | 'game' | 'drill'
 
@@ -351,11 +355,22 @@ export default function App() {
         }
         // One retry: a transient stall (or a response that never finishes
         // arriving) costs one timeout instead of losing the whole batch.
-        const resp = await analyze(req).catch(async () => {
+        let resp = await analyze(req).catch(async () => {
           await new Promise((r) => setTimeout(r, 2000))
           return analyze(req)
         })
-        const returned = new Set(resp.results.map((r) => r.ply))
+        let returned = new Set(resp.results.map((r) => r.ply))
+        // Models sometimes SKIP plies inside a batch, which used to surface as
+        // blank "no rule stood out" cards. One targeted follow-up for just the
+        // missing plies recovers them before any placeholder is recorded.
+        const missing = targetObjs.filter((t) => !returned.has(t.ply))
+        if (missing.length > 0) {
+          const extra = await analyze({ ...req, targets: missing }).catch(() => null)
+          if (extra?.results?.length) {
+            resp = { results: [...resp.results, ...extra.results] }
+            returned = new Set(resp.results.map((r) => r.ply))
+          }
+        }
         // "On screen" covers re-entry: leaving a game and reopening it bumps
         // the gen, but the run's results still belong on the live view — the
         // key match says so. Without this the reopened game looks frozen while
@@ -745,7 +760,9 @@ export default function App() {
     // moves go first: the coaching the user came for lands before the context.
     const plies = moves
       .filter(
-        (m) => (isStudied(m.color, focus) || hasLiteKey) && (force || !results[m.ply]),
+        (m) =>
+          (isStudied(m.color, focus) || hasLiteKey) &&
+          (force || !results[m.ply] || isEmptyResult(results[m.ply])),
       )
       .map((m) => m.ply)
       .sort(
@@ -1281,7 +1298,9 @@ export default function App() {
     if (e) return m.color === 'w' ? e.evalPlayed : -e.evalPlayed
     return undefined
   }, [selectedPly, moves, evals, results])
-  const focusMovesRemaining = moves.filter((m) => isStudied(m.color, focus) && !results[m.ply]).length
+  const focusMovesRemaining = moves.filter(
+    (m) => isStudied(m.color, focus) && (!results[m.ply] || isEmptyResult(results[m.ply])),
+  ).length
   const studiedPlies = useMemo(
     () => moves.filter((m) => isStudied(m.color, focus)).map((m) => m.ply),
     [moves, focus],

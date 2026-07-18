@@ -121,8 +121,20 @@ export default function MoveAnalysis({
 
       <div className="findings">
         <h3>Relevant rules of thumb</h3>
-        {result.rules.length === 0 ? (
-          <p className="note">No single rule stood out for this move.</p>
+        {result.rules.length === 0 && !result.lesson ? (
+          // an empty shell (the model skipped this ply and no retry recovered
+          // it) — offer the repair instead of pretending it was analysed
+          <p className="note">
+            The analysis for this move came back empty.{' '}
+            <button className="linkbtn" onClick={onReanalyze} disabled={loading}>
+              ↻ Re-analyse this move
+            </button>
+          </p>
+        ) : result.rules.length === 0 ? (
+          <p className="note">
+            A quiet move — no rule of thumb argues for or against it here. The takeaway above is
+            the whole story.
+          </p>
         ) : (
           [...result.rules]
             // most important first (server pre-sorts; this also covers older saved results)
