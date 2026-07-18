@@ -160,6 +160,8 @@ export interface SettingsProps {
   onTheme: (t: 'dark' | 'light') => void
   /** the deployed API's build marker (from GET /api/analyze) — shows what's live */
   serverBuild?: string
+  /** the lite model analysing opponent moves, when the server has its key */
+  liteModel?: string
   onSave: (key: string) => void
   onClose: () => void
 }

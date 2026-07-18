@@ -137,6 +137,7 @@ export default function App() {
   // Server has an OpenRouter key -> the NON-studied side's moves get analysed
   // too, on the bargain lite model. Kept in a ref for the analysis callbacks.
   const [hasLiteKey, setHasLiteKey] = useState(false)
+  const [liteModel, setLiteModel] = useState<string | undefined>(undefined)
   const liteKeyRef = useRef(false)
   liteKeyRef.current = hasLiteKey
   // Light/dark theme — applied to <html data-theme> (index.html sets it before
@@ -200,6 +201,7 @@ export default function App() {
         if (cancelled || !d) return
         if (typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
         if (typeof d.hasLiteKey === 'boolean') setHasLiteKey(d.hasLiteKey)
+        if (d.hasLiteKey === true && typeof d.modelLite === 'string') setLiteModel(d.modelLite)
         if (typeof d.build === 'string') setServerBuild(d.build)
       })
       .catch(() => {})
@@ -846,16 +848,19 @@ export default function App() {
 
   // Analyse the WHOLE game automatically after a load: browsing stays instant
   // because every move is already (being) analysed in background batches.
+  // The marker includes the lite flag: it loads async from the server, and a
+  // game opened before it lands must re-run once it does, or the opponent
+  // moves would silently stay unanalysed for the whole session.
   const autoRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (phase !== 'game' || moves.length === 0) return
     if (restoringKey) return // the cloud may have this analysis — don't redo it
-    const key = storeRef.current?.key ?? ''
+    const key = (storeRef.current?.key ?? '') + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
     void handleAnalyzeAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, moves, restoringKey])
+  }, [phase, moves, restoringKey, hasLiteKey])
 
   // Background Stockfish sweep: one eval per position so the eval bar covers
   // the whole game. Shares the engine's FEN cache with the per-move checks.
@@ -2175,6 +2180,7 @@ export default function App() {
           apiKey={apiKey}
           hasServerKey={hasServerKey}
           serverBuild={serverBuild}
+          liteModel={liteModel}
           theme={theme}
           onTheme={setTheme}
           onSave={saveKey}
