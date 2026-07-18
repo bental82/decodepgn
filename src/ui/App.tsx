@@ -66,7 +66,6 @@ import Settings from './Settings'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
 const META_KEY = 'decodepgn.meta.v1'
-const ORDER_KEY = 'decodepgn.gameOrder.v1'
 
 /** An empty placeholder recorded when a model skipped a ply — it renders as a
     blank card, so the repair paths treat it as "not analysed yet". */
@@ -162,27 +161,6 @@ export default function App() {
   // Identity of the current game in local storage, for persisting analysis.
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
   const [history, setHistory] = useState<SavedGame[]>(() => listGames())
-  // The user's hand-dragged order of the games list (empty = date order).
-  const [manualOrder, setManualOrder] = useState<string[]>(() => {
-    try {
-      const a = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]')
-      return Array.isArray(a) ? a.filter((k) => typeof k === 'string') : []
-    } catch {
-      return []
-    }
-  })
-  const commitOrder = (keys: string[]) => {
-    setManualOrder(keys)
-    try {
-      localStorage.setItem(ORDER_KEY, JSON.stringify(keys))
-    } catch {
-      /* best-effort */
-    }
-  }
-  // live drag state: which row is being dragged, and where it would drop
-  const [dragKey, setDragKey] = useState<string | null>(null)
-  const [dropIdx, setDropIdx] = useState<number | null>(null)
-  const histListRef = useRef<HTMLUListElement | null>(null)
   // Games saved in the cloud (Supabase via /api/games); null while loading or
   // when the deployment has no database configured.
   const [cloudGames, setCloudGames] = useState<CloudGameMeta[] | null>(null)
@@ -1104,19 +1082,9 @@ export default function App() {
       }
     }
     // newest ADDED first; the key tiebreak keeps equal stamps stable no matter
-    // what order the LRU index delivered them in. A manual drag-order wins
-    // where the user set one: those games keep their hand-picked sequence,
-    // games added since then stack on top (newest first) until re-dragged.
-    const orderIdx = new Map(manualOrder.map((k, i) => [k, i]))
-    return [...byKey.values()].sort((a, b) => {
-      const ai = orderIdx.get(a.key)
-      const bi = orderIdx.get(b.key)
-      if (ai !== undefined && bi !== undefined) return ai - bi
-      if (ai !== undefined) return 1
-      if (bi !== undefined) return -1
-      return b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1)
-    })
-  }, [history, cloudGames, syncedKeys, allSummaries, manualOrder])
+    // what order the LRU index delivered them in
+    return [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1))
+  }, [history, cloudGames, syncedKeys, allSummaries])
 
   // Every analysed move flagged dubious — or costing 1+ pawn by the engine —
   // becomes a practice position for the Drill screen, as long as we know a
@@ -1756,63 +1724,9 @@ export default function App() {
                 </p>
               ) : null}
               {histOpen ? (
-              <ul className="history-list" ref={histListRef}>
-                {visibleHistory.map((g, i) => (
-                  <li
-                    key={g.key}
-                    className={
-                      (dragKey === g.key ? 'dragging' : '') +
-                      (dropIdx === i ? ' drop-before' : '') +
-                      (dropIdx === visibleHistory.length && i === visibleHistory.length - 1
-                        ? ' drop-after'
-                        : '')
-                    }
-                  >
-                    {!histFilterActive ? (
-                      <span
-                        className="drag-handle"
-                        title="Drag to reorder"
-                        aria-hidden="true"
-                        onPointerDown={(e) => {
-                          e.preventDefault()
-                          ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-                          setDragKey(g.key)
-                          setDropIdx(null)
-                        }}
-                        onPointerMove={(e) => {
-                          if (dragKey !== g.key) return
-                          const lis = [...(histListRef.current?.children ?? [])] as HTMLElement[]
-                          let idx = lis.length
-                          for (let j = 0; j < lis.length; j++) {
-                            const r = lis[j].getBoundingClientRect()
-                            if (e.clientY < r.top + r.height / 2) {
-                              idx = j
-                              break
-                            }
-                          }
-                          setDropIdx(idx)
-                        }}
-                        onPointerUp={() => {
-                          if (dragKey === g.key && dropIdx !== null) {
-                            const keys = visibleHistory.map((h) => h.key)
-                            const from = keys.indexOf(g.key)
-                            if (from !== -1) {
-                              keys.splice(from, 1)
-                              keys.splice(dropIdx > from ? dropIdx - 1 : dropIdx, 0, g.key)
-                              commitOrder(keys)
-                            }
-                          }
-                          setDragKey(null)
-                          setDropIdx(null)
-                        }}
-                        onPointerCancel={() => {
-                          setDragKey(null)
-                          setDropIdx(null)
-                        }}
-                      >
-                        ⠿
-                      </span>
-                    ) : null}
+              <ul className="history-list">
+                {visibleHistory.map((g) => (
+                  <li key={g.key}>
                     <button className="history-row" onClick={() => void openSaved(g)}>
                       <span className="history-title">
                         {g.headers.White ?? 'White'}
