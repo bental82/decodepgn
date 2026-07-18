@@ -36,18 +36,64 @@ export interface SavedQuiz {
   v: 2
   positions: QuizPosition[]
   current: number
+  /** round identity — a dangling async patch from a previous round (or another
+      game) must never land on a freshly started quiz */
+  round: number
 }
 
-/** Validate a stored quiz; older multiple-choice saves are discarded. */
+/** Validate a stored quiz FIELD BY FIELD; older multiple-choice saves (and
+    any malformed blob, e.g. a truncated cloud write) are discarded rather
+    than left to crash the Quiz tab on every open. */
 export function sanitizeQuiz(q: unknown): SavedQuiz | null {
   const s = q as SavedQuiz | null
   if (!s || s.v !== 2 || !Array.isArray(s.positions)) return null
-  const positions = s.positions.filter(
-    (p) => p && Number.isInteger(p.ply) && p.ply >= 0 && Array.isArray(p.attempts),
-  )
+  const attempt = (a: unknown): QuizAttempt | null => {
+    const x = a as QuizAttempt | null
+    if (!x || typeof x.san !== 'string' || !x.san.trim()) return null
+    return {
+      san: x.san.slice(0, 12),
+      ...(Number.isFinite(x.cpLoss) ? { cpLoss: Math.max(0, Math.trunc(x.cpLoss as number)) } : {}),
+      ...(x.isGameMove === true ? { isGameMove: true } : {}),
+    }
+  }
+  const positions: QuizPosition[] = []
+  for (const raw of s.positions) {
+    const p = raw as QuizPosition | null
+    if (!p || !Number.isInteger(p.ply) || p.ply < 0 || !Array.isArray(p.attempts)) continue
+    const sol = p.solution ? attempt(p.solution) : null
+    const ex = p.explanation
+    const explanation =
+      ex && typeof ex.whyPlayed === 'string' && typeof ex.whyBest === 'string'
+        ? {
+            whyPlayed: ex.whyPlayed,
+            whyBest: ex.whyBest,
+            ...(Array.isArray(ex.attemptNotes)
+              ? {
+                  attemptNotes: ex.attemptNotes.filter(
+                    (n) => n && typeof n.san === 'string' && typeof n.note === 'string',
+                  ),
+                }
+              : {}),
+          }
+        : undefined
+    positions.push({
+      ply: p.ply,
+      attempts: p.attempts.map(attempt).filter((a): a is QuizAttempt => a !== null),
+      solved: p.solved === true,
+      revealed: p.revealed === true,
+      hintUsed: p.hintUsed === true,
+      ...(sol ? { solution: sol } : {}),
+      ...(explanation ? { explanation } : {}),
+    })
+  }
   if (!positions.length) return null
   const cur = Number.isInteger(s.current) ? s.current : 0
-  return { v: 2, positions, current: Math.min(positions.length - 1, Math.max(0, cur)) }
+  return {
+    v: 2,
+    positions,
+    current: Math.min(positions.length - 1, Math.max(0, cur)),
+    round: Number.isInteger(s.round) ? s.round : 1,
+  }
 }
 
 export interface SavedGame {

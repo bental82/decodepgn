@@ -22,6 +22,8 @@ function devApi(): import('vite').Plugin {
               build: 'dev',
               hasServerKey: !!process.env.ANTHROPIC_API_KEY,
               model: mod.MODEL,
+              hasLiteKey: !!process.env.OPENROUTER_API_KEY,
+              modelLite: mod.MODEL_LITE,
               runtime: process.version,
             }),
           )

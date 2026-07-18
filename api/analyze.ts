@@ -20,6 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
         modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5',
+        // opponent-move (lite) tier via OpenRouter — on only when its key is set
+        hasLiteKey: !!process.env.OPENROUTER_API_KEY,
+        modelLite: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
         runtime: process.version,
       })
       return

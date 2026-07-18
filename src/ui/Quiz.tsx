@@ -9,11 +9,14 @@ import { winPct } from '../shared/accuracy'
 
 // A try this close to the engine's best (in centipawns) also solves the
 // position — several moves are often equally strong, and demanding the
-// engine's exact pick would mark good chess as wrong.
-const GOOD_ENOUGH_CP = 30
+// engine's exact pick would mark good chess as wrong. Kept just below the
+// 30cp mistake bar that puts a position in the quiz at all.
+const GOOD_ENOUGH_CP = 25
 
 const plain = (san: string) => san.replace(/[+#]/g, '')
 const pawns = (cp: number) => (cp / 100).toFixed(1)
+// mate-scale evals (±10000ish) read as nonsense in pawns — say what they mean
+const lossText = (cp: number) => (cp >= 5000 ? 'a forced win' : `≈${pawns(cp)} pawns`)
 
 /** Latest attempt's transient feedback (solved state lives in the save). */
 interface Verdict {
@@ -46,7 +49,9 @@ export default function Quiz({
   onOpenRule,
   onJump,
 }: QuizProps) {
-  const [busy, setBusy] = useState(false) // an engine grade is running
+  // the ply whose engine grade is in flight — keyed so the spinner (and the
+  // verdict when it lands) attach to THAT position, not whichever is on screen
+  const [gradingPly, setGradingPly] = useState<number | null>(null)
   const [verdict, setVerdict] = useState<Verdict | null>(null)
   const [explainBusy, setExplainBusy] = useState(false)
   const [explainError, setExplainError] = useState<string | null>(null)
@@ -56,6 +61,15 @@ export default function Quiz({
   const move = pos ? moves[pos.ply] : undefined
   const engine = pos ? results[pos.ply]?.engine : undefined
   const finished = !!pos && (pos.solved || pos.revealed)
+  const busy = gradingPly !== null && gradingPly === pos?.ply
+
+  // feedback never carries over to a different position
+  useEffect(() => {
+    setVerdict(null)
+  }, [pos?.ply])
+  // the ply on screen right now, readable after an await (stale closures)
+  const curPlyRef = useRef<number | null>(null)
+  curPlyRef.current = pos?.ply ?? null
 
   // Legal moves of the current puzzle position: powers tap/drag input and the
   // hint/reveal graphics.
@@ -87,11 +101,16 @@ export default function Quiz({
     return m ? { from: m.from, to: m.to } : null
   }
 
+  // Patches carry the round they were made for: a slow grade or explanation
+  // resolving after "New quiz" must bounce off the fresh round, not write
+  // stale progress into it.
+  const round = saved?.round ?? 0
   const patchPos = (ply: number, patch: (p: QuizPosition) => QuizPosition) =>
-    onChange((q) => ({
-      ...q,
-      positions: q.positions.map((p) => (p.ply === ply ? patch(p) : p)),
-    }))
+    onChange((q) =>
+      q.round !== round
+        ? q
+        : { ...q, positions: q.positions.map((p) => (p.ply === ply ? patch(p) : p)) },
+    )
 
   const fetchExplain = async (p: QuizPosition) => {
     if (fetchingRef.current.has(p.ply)) return
@@ -120,7 +139,9 @@ export default function Quiz({
 
   if (!saved) {
     const total = candidates.length
-    const canStart = total > 0 && analysisPending === 0
+    // engineBusy: candidates are still landing — starting now would freeze a
+    // half-baked pick of positions into the quiz
+    const canStart = total > 0 && analysisPending === 0 && !engineBusy
     const hasEngine = Object.values(results).some((r) => r.engine)
     return (
       <div className="quiz quiz-intro">
@@ -170,6 +191,8 @@ export default function Quiz({
     setExplainError(null)
     onChange((q) => ({ ...q, current: Math.min(q.positions.length - 1, Math.max(0, idx)) }))
   }
+  // restarting mid-analysis (or mid-backfill) would freeze half-baked picks
+  const canRestart = candidates.length > 0 && analysisPending === 0 && !engineBusy
 
   // Chips: one per position. Unfinished ones stay unlabelled (the move itself
   // is the puzzle); finished ones show what the moment was.
@@ -205,7 +228,7 @@ export default function Quiz({
           The analysis behind this quiz changed, so this position can't be graded any more. Start a
           fresh quiz from the current analysis.
         </p>
-        <button className="btn primary" disabled={!candidates.length} onClick={onStart}>
+        <button className="btn primary" disabled={!canRestart} onClick={onStart}>
           Start a fresh quiz
         </button>
       </div>
@@ -214,21 +237,25 @@ export default function Quiz({
 
   const allDone = saved.positions.every((p) => p.solved || p.revealed)
   const firstTry = saved.positions.filter(
-    (p) => p.solved && p.attempts.length === 0 && !p.hintUsed,
+    (p) => p.solved && !p.revealed && p.attempts.length === 0 && !p.hintUsed,
   ).length
   const moverName = move.color === 'w' ? 'White' : 'Black'
 
+  // Finishing patches FUNCTIONALLY: a hint or reveal tapped while the engine
+  // was grading must survive, not be wiped by a pre-grade snapshot. The
+  // explanation payload only needs ply/attempts/solution, all stable here
+  // (attempts are single-flight via the grade lock).
   const finish = (san: string, cpLoss: number) => {
-    const next: QuizPosition = { ...pos, solved: true, solution: { san, cpLoss } }
-    patchPos(pos.ply, () => next)
+    patchPos(pos.ply, (p) => ({ ...p, solved: true, solution: { san, cpLoss } }))
     setVerdict(null)
-    void fetchExplain(next)
+    void fetchExplain({ ...pos, solved: true, solution: { san, cpLoss } })
   }
 
   const attempt = async (from: string, to: string) => {
-    if (busy || finished) return
+    if (gradingPly !== null || finished) return
     const san = sanFor(from, to)
     if (!san) return
+    const ply = pos.ply
     setVerdict(null)
     if (plain(san) === plain(engine.bestSan)) {
       finish(san, 0)
@@ -236,38 +263,40 @@ export default function Quiz({
     }
     if (plain(san) === plain(move.san)) {
       // the very move from the game — the one this quiz exists to improve on
-      patchPos(pos.ply, (p) => ({
+      patchPos(ply, (p) => ({
         ...p,
         attempts: [...p.attempts, { san, cpLoss: engine.cpLoss, isGameMove: true }],
       }))
       setVerdict({ kind: 'game', san, cpLoss: engine.cpLoss })
       return
     }
-    setBusy(true)
+    setGradingPly(ply)
     let cp: number | null = null
     try {
       cp = await gradeMove(move.fenBefore, san)
     } finally {
-      setBusy(false)
+      setGradingPly(null)
     }
     const cpLoss = cp === null ? undefined : Math.max(0, engine.evalBest - cp)
     if (cpLoss !== undefined && cpLoss <= GOOD_ENOUGH_CP) {
       finish(san, cpLoss)
       return
     }
-    patchPos(pos.ply, (p) => ({
+    patchPos(ply, (p) => ({
       ...p,
       attempts: [...p.attempts, { san, ...(cpLoss !== undefined ? { cpLoss } : {}) }],
     }))
-    setVerdict({ kind: cpLoss === undefined ? 'unchecked' : 'wrong', san, cpLoss })
+    // the transient feedback only belongs on the position that was graded
+    if (curPlyRef.current === ply) {
+      setVerdict({ kind: cpLoss === undefined ? 'unchecked' : 'wrong', san, cpLoss })
+    }
   }
 
   const useHint = () => patchPos(pos.ply, (p) => ({ ...p, hintUsed: true }))
   const reveal = () => {
-    const next: QuizPosition = { ...pos, revealed: true }
-    patchPos(pos.ply, () => next)
+    patchPos(pos.ply, (p) => ({ ...p, revealed: true }))
     setVerdict(null)
-    void fetchExplain(next)
+    void fetchExplain({ ...pos, revealed: true })
   }
 
   // Board graphics: the hint tints the best move's from-square; a finished
@@ -297,7 +326,7 @@ export default function Quiz({
   const chancesPlayed = Math.round(winPct(engine.evalPlayed))
 
   const ex = pos.explanation
-  const solvedFirstTry = pos.solved && pos.attempts.length === 0 && !pos.hintUsed
+  const solvedFirstTry = pos.solved && !pos.revealed && pos.attempts.length === 0 && !pos.hintUsed
 
   return (
     <div className="quiz">
@@ -321,7 +350,7 @@ export default function Quiz({
               onStart()
             }
           }}
-          disabled={!candidates.length}
+          disabled={!canRestart}
         >
           ↻ New quiz
         </button>
@@ -353,8 +382,8 @@ export default function Quiz({
       {!finished ? (
         <>
           <p className="quiz-prompt">
-            {moverName} to move — this moment cost ≈{pawns(engine.cpLoss)} pawns in the game. Find
-            the strongest move.{' '}
+            {moverName} to move — this moment cost {lossText(engine.cpLoss)} in the game. Find the
+            strongest move.{' '}
             <span className="muted small">
               Tap a piece to see its moves, then tap the target — or drag it there.
             </span>
@@ -369,13 +398,13 @@ export default function Quiz({
               {verdict.kind === 'game' ? (
                 <p>
                   <strong>{verdict.san}</strong> — that's exactly what you played in the game, and
-                  it's the move that cost ≈{pawns(verdict.cpLoss ?? 0)} pawns. There's something
+                  it's the move that cost {lossText(verdict.cpLoss ?? 0)}. There's something
                   stronger here — try again.
                 </p>
               ) : verdict.kind === 'wrong' ? (
                 <p>
-                  <strong>{verdict.san}</strong> isn't it either — Stockfish puts it ≈
-                  {pawns(verdict.cpLoss ?? 0)} pawns below the best move. Try again.
+                  <strong>{verdict.san}</strong> isn't it either — Stockfish puts it{' '}
+                  {lossText(verdict.cpLoss ?? 0)} below the best move. Try again.
                 </p>
               ) : (
                 <p>
@@ -426,9 +455,12 @@ export default function Quiz({
 
           <div className="quiz-numbers">
             <p>
-              In the game you played <strong>{move.san}</strong> — it gave up ≈
-              {pawns(engine.cpLoss)} pawns, dropping your winning chances from about{' '}
-              {chancesBest}% to {chancesPlayed}%.
+              In the game you played <strong>{move.san}</strong> — it gave up{' '}
+              {lossText(engine.cpLoss)}
+              {chancesBest !== chancesPlayed
+                ? `, dropping your winning chances from about ${chancesBest}% to ${chancesPlayed}%`
+                : ''}
+              .
             </p>
             {pos.attempts.filter((a) => !a.isGameMove).length ? (
               <ul className="quiz-tries">
@@ -502,7 +534,7 @@ export default function Quiz({
               : ''}
             .
           </p>
-          <button className="btn" disabled={!candidates.length} onClick={onStart}>
+          <button className="btn" disabled={!canRestart} onClick={onStart}>
             Restart from scratch
           </button>
         </div>

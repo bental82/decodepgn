@@ -130,6 +130,11 @@ export default function App() {
   }, [])
   const [hasServerKey, setHasServerKey] = useState(false)
   const [serverBuild, setServerBuild] = useState<string | undefined>(undefined)
+  // Server has an OpenRouter key -> the NON-studied side's moves get analysed
+  // too, on the bargain lite model. Kept in a ref for the analysis callbacks.
+  const [hasLiteKey, setHasLiteKey] = useState(false)
+  const liteKeyRef = useRef(false)
+  liteKeyRef.current = hasLiteKey
   // Light/dark theme — applied to <html data-theme> (index.html sets it before
   // first paint) and remembered across sessions.
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -190,6 +195,7 @@ export default function App() {
       .then((d) => {
         if (cancelled || !d) return
         if (typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
+        if (typeof d.hasLiteKey === 'boolean') setHasLiteKey(d.hasLiteKey)
         if (typeof d.build === 'string') setServerBuild(d.build)
       })
       .catch(() => {})
@@ -275,7 +281,9 @@ export default function App() {
       run?: AnalysisRun,
       opts?: { freshEngine?: boolean },
     ) => {
-      const targets = plies.filter((ply) => mvs[ply] && isStudied(mvs[ply].color, f))
+      const targets = plies.filter(
+        (ply) => mvs[ply] && (isStudied(mvs[ply].color, f) || liteKeyRef.current),
+      )
       if (!targets.length) return
       // The run context is captured when the RUN starts (game on screen), not
       // when this batch starts: an analyse-all keeps dispatching batches after
@@ -562,7 +570,8 @@ export default function App() {
   // Guess-the-move candidates: the studied side's engine-flagged moves that
   // cost the most, capped at 5 and presented in game order. A position only
   // quizzes something if there was a real choice — automatic recaptures and
-  // (near-)forced positions teach nothing.
+  // (near-)forced positions teach nothing. Underpromotion answers are also
+  // skipped: board input always promotes to a queen, so they'd be unsolvable.
   const quizCandidates = useMemo<number[]>(() => {
     const isObvious = (m: ParsedMove) => {
       const prev = moves[m.ply - 1]
@@ -578,7 +587,7 @@ export default function App() {
       .map((m) => ({ m, e: results[m.ply]?.engine }))
       .filter(
         (x): x is { m: ParsedMove; e: EngineEval } =>
-          !!x.e && !x.e.isBest && x.e.cpLoss >= 30 && !isObvious(x.m),
+          !!x.e && !x.e.isBest && x.e.cpLoss >= 30 && !/=[RNB]/.test(x.e.bestSan) && !isObvious(x.m),
       )
       .sort((a, b) => b.e.cpLoss - a.e.cpLoss)
       .slice(0, 5)
@@ -622,10 +631,12 @@ export default function App() {
   }, [moves, focus, quizEngineBusy])
 
   // Starting (or restarting) freezes the current picks into the save, so a
-  // later re-analysis can't silently swap positions mid-round.
+  // later re-analysis can't silently swap positions mid-round. The round
+  // counter gives each start a fresh identity: async patches from an older
+  // round (a slow grade or explanation) bounce off instead of corrupting it.
   const startQuiz = useCallback(() => {
     if (!quizCandidates.length) return
-    setQuizSaved({
+    setQuizSaved((prev) => ({
       v: 2,
       positions: quizCandidates.map((ply) => ({
         ply,
@@ -635,18 +646,30 @@ export default function App() {
         hintUsed: false,
       })),
       current: 0,
-    })
+      round: (prev?.round ?? 0) + 1,
+    }))
   }, [quizCandidates])
 
   // The coaching for one finished quiz position, grounded in the stored
-  // engine numbers (the server never re-derives them).
+  // engine numbers (the server never re-derives them). In-flight calls are
+  // shared per game+ply: the Quiz component unmounts on tab switches, and a
+  // remount must adopt the pending fetch, not start a duplicate one.
+  const explainInFlight = useRef(new Map<string, Promise<QuizExplanation>>())
   const explainQuiz = useCallback(
-    async (pos: QuizPosition): Promise<QuizExplanation> => {
+    (pos: QuizPosition): Promise<QuizExplanation> => {
       const m = moves[pos.ply]
       const e = results[pos.ply]?.engine
-      if (!m || !e) throw new Error("This position's analysis is missing — re-analyse the game.")
-      const attempts = pos.attempts.map((a) => ({ san: a.san, cpLoss: a.cpLoss }))
-      const resp = await fetchQuizApi({
+      if (!m || !e) {
+        return Promise.reject(new Error("This position's analysis is missing — re-analyse the game."))
+      }
+      const flightKey = `${storeRef.current?.key ?? ''}:${pos.ply}`
+      const pending = explainInFlight.current.get(flightKey)
+      if (pending) return pending
+      // the game move is covered by whyPlayed — no attempt note for it
+      const attempts = pos.attempts
+        .filter((a) => !a.isGameMove)
+        .map((a) => ({ san: a.san, cpLoss: a.cpLoss }))
+      const p = fetchQuizApi({
         mode: 'quiz',
         focus,
         me: mySide,
@@ -658,8 +681,10 @@ export default function App() {
         ...(attempts.length ? { attempts } : {}),
         ...(pos.solution ? { solvedWith: { san: pos.solution.san, cpLoss: pos.solution.cpLoss } } : {}),
         apiKey: apiKey.trim() || undefined,
-      })
-      return resp.explanation
+      }).then((resp) => resp.explanation)
+      explainInFlight.current.set(flightKey, p)
+      p.finally(() => explainInFlight.current.delete(flightKey)).catch(() => {})
+      return p
     },
     [moves, results, focus, mySide, apiKey],
   )
@@ -703,7 +728,7 @@ export default function App() {
   useEffect(() => {
     if (phase !== 'game' || restoringKey) return
     const m = moves[selectedPly]
-    if (!m || !isStudied(m.color, focus)) return
+    if (!m || !(isStudied(m.color, focus) || hasLiteKey)) return
     if (
       results[selectedPly] ||
       loadingPlies.has(selectedPly) ||
@@ -712,12 +737,22 @@ export default function App() {
     )
       return
     void analyzePlies(moves, focus, [selectedPly])
-  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey])
+  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey])
 
   const handleAnalyzeAll = async (force = false) => {
+    // With the lite tier available the run covers EVERY move — the studied
+    // side on the Claude tiers, the opponent on the bargain model. Studied
+    // moves go first: the coaching the user came for lands before the context.
     const plies = moves
-      .filter((m) => isStudied(m.color, focus) && (force || !results[m.ply]))
+      .filter(
+        (m) => (isStudied(m.color, focus) || hasLiteKey) && (force || !results[m.ply]),
+      )
       .map((m) => m.ply)
+      .sort(
+        (a, b) =>
+          (isStudied(moves[a].color, focus) ? 0 : 1) - (isStudied(moves[b].color, focus) ? 0 : 1) ||
+          a - b,
+      )
     if (!plies.length) return
     const gen = genRef.current
     const runKey = storeRef.current?.key
@@ -971,7 +1006,7 @@ export default function App() {
         sortKey: g.addedAt ?? gameDate(g.headers, undefined, g.savedAt),
         result: resultFor(g.headers, g.me, g.focus),
         analysed: Object.keys(g.results).length,
-        hasQuiz: !!g.quiz,
+        hasQuiz: sanitizeQuiz(g.quiz) !== null, // old-format quizzes are gone on load
         cloudOnly: false,
         inCloud: syncedKeys.has(g.key),
         me: g.me,
@@ -1220,7 +1255,20 @@ export default function App() {
     const r = results[selectedPly]
     if (!r) return undefined
     if (gfx.kind === 'rule') return r.rules.find((h) => h.id === gfx.id)?.graphics
-    return autoGfxRule?.graphics
+    // auto: the key rule's graphics PLUS the better-move arrow, chess.com
+    // style — Stockfish's best in blue whenever the played move wasn't it,
+    // falling back to the coach's cleaner alternative (green) when there is
+    // no engine check. No tapping a chip required; "off" still hides all.
+    const base = autoGfxRule?.graphics
+    const better = engineArrow
+      ? { from: engineArrow.from, to: engineArrow.to, color: 'blue' as const }
+      : !r.engine && altArrow
+        ? { from: altArrow.from, to: altArrow.to, color: 'green' as const }
+        : null
+    if (!better) return base
+    const arrows = [...(base?.arrows ?? [])]
+    if (!arrows.some((a) => a.from === better.from && a.to === better.to)) arrows.push(better)
+    return { ...(base?.squares?.length ? { squares: base.squares } : {}), arrows }
   }, [gfx, altArrow, engineArrow, results, selectedPly, autoGfxRule])
 
   // Eval (White's perspective) after the current move: sweep result first,
@@ -1701,12 +1749,24 @@ export default function App() {
                 <div
                   className="ana-fill"
                   style={{
-                    width: `${Math.round((100 * analyzedFocus) / Math.max(1, studiedPlies.length))}%`,
+                    // the RUN's own counter when one is on screen — a forced
+                    // re-analysis keeps old results visible, which would pin a
+                    // results-based bar at 100% for the whole redo
+                    width: `${Math.round(
+                      allProgress
+                        ? (100 * allProgress.done) / Math.max(1, allProgress.total)
+                        : (100 * (hasLiteKey ? Object.keys(results).length : analyzedFocus)) /
+                            Math.max(1, hasLiteKey ? moves.length : studiedPlies.length),
+                    )}%`,
                   }}
                 />
               </div>
               <span className="ana-text">
-                Analysing your moves · {analyzedFocus}/{studiedPlies.length}
+                {allProgress
+                  ? `Analysing · ${allProgress.done}/${allProgress.total}`
+                  : hasLiteKey
+                    ? `Analysing · ${Object.keys(results).length}/${moves.length}`
+                    : `Analysing your moves · ${analyzedFocus}/${studiedPlies.length}`}
                 {Object.keys(evals).length < moves.length
                   ? ` · eval bar ${Object.keys(evals).length}/${moves.length}`
                   : ''}
@@ -1930,7 +1990,9 @@ export default function App() {
                 </div>
               </div>
               <div className="explain-panel" ref={explainRef}>
-                {isStudied(move.color, focus) ? (
+                {isStudied(move.color, focus) ||
+                results[selectedPly] ||
+                (hasLiteKey && (loadingPlies.has(selectedPly) || queuedPlies.has(selectedPly))) ? (
                   <MoveAnalysis
                     move={move}
                     focus={focus}
@@ -1982,16 +2044,24 @@ export default function App() {
 
           {tab === 'quiz' && (
             <Quiz
+              key={overviewGameKey} // a different game must not inherit quiz UI state
               moves={moves}
               results={results}
               saved={quizSaved}
               candidates={quizCandidates}
-              analysisPending={focusMovesRemaining}
+              // pending only while a run is actually going: an errored or
+              // never-run analysis must not block starting forever
+              analysisPending={bgAnalysing.has(overviewGameKey) ? focusMovesRemaining : 0}
               missingEngine={quizEngineMissing}
               engineBusy={quizEngineBusy}
               onAddEngine={() => void addQuizEngine()}
               onStart={startQuiz}
-              onChange={(update) => setQuizSaved((q) => (q ? update(q) : q))}
+              // guarded by the game key captured NOW: a slow grade/explanation
+              // resolving after the user opened another game patches nothing
+              onChange={((key) => (update: (q: SavedQuiz) => SavedQuiz) =>
+                setQuizSaved((q) => (q && storeRef.current?.key === key ? update(q) : q)))(
+                overviewGameKey,
+              )}
               gradeMove={evalCandidateMove}
               explain={explainQuiz}
               onOpenRule={openRule}

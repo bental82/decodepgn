@@ -8,7 +8,7 @@
 
 import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
-import { stripToolLeak } from '../shared/types.js'
+import { isStudied, stripToolLeak } from '../shared/types.js'
 import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
 import { cloudConfigured, listCloudGameData } from './games.js'
 import type {
@@ -44,6 +44,11 @@ export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
     engine loss, or no engine check to vouch for the move) stay on MODEL, as
     do the game overview, the cross-game meta report, quiz and ask. */
 export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5'
+/** Bargain-bin model (via OpenRouter) for the NON-studied side's moves —
+    context the reader browses past, not the coaching itself. Only used when
+    OPENROUTER_API_KEY is configured; without it those moves stay unanalysed. */
+export const MODEL_LITE = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash'
+export const hasLiteKey = () => !!process.env.OPENROUTER_API_KEY
 /** Engine loss (centipawns) from which a move counts as a key moment. */
 const KEY_MOVE_CP_LOSS = 60
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
@@ -240,6 +245,95 @@ async function callClaude(
   }
   const textBlock = message.content?.find((b) => b.type === 'text')
   return typeof textBlock?.text === 'string' ? textBlock.text : ''
+}
+
+/** OpenRouter (OpenAI-compatible) twin of callClaude, for the lite tier.
+    Takes the same system blocks + forced-tool contract and returns the parsed
+    tool input, so callers can swap providers per target group. */
+async function callOpenRouter(
+  system: unknown,
+  user: string,
+  opts: {
+    maxTokens: number
+    tool: { name: string; description: string; input_schema: unknown }
+    timeoutMs?: number
+  },
+): Promise<unknown> {
+  const key = process.env.OPENROUTER_API_KEY
+  if (!key) throw new AnalyzeError('No OpenRouter API key configured on the server.', 401)
+  // our system prompt is Anthropic-style text blocks — flatten to one string
+  const sysText = Array.isArray(system)
+    ? system
+        .map((b) => (b && typeof (b as { text?: unknown }).text === 'string' ? (b as { text: string }).text : ''))
+        .join('\n\n')
+    : String(system)
+  let resp: Response
+  try {
+    resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: MODEL_LITE,
+        max_tokens: opts.maxTokens,
+        messages: [
+          { role: 'system', content: sysText },
+          { role: 'user', content: user },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: opts.tool.name,
+              description: opts.tool.description,
+              parameters: opts.tool.input_schema,
+            },
+          },
+        ],
+        tool_choice: { type: 'function', function: { name: opts.tool.name } },
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
+    })
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    throw new AnalyzeError(
+      timedOut
+        ? 'The OpenRouter request timed out. Try again in a moment.'
+        : 'Could not reach OpenRouter. Please try again shortly.',
+      timedOut ? 504 : 502,
+    )
+  }
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      const j = (await resp.json()) as { error?: { message?: string } }
+      detail = j?.error?.message || JSON.stringify(j)
+    } catch {
+      detail = await resp.text().catch(() => '')
+    }
+    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
+    throw new AnalyzeError(`OpenRouter error (${status}): ${clip(detail, 200)}`, status)
+  }
+  const msg = (await resp.json()) as {
+    choices?: Array<{
+      message?: { content?: unknown; tool_calls?: Array<{ function?: { arguments?: unknown } }> }
+    }>
+  }
+  const choice = msg.choices?.[0]?.message
+  let raw = choice?.tool_calls?.[0]?.function?.arguments
+  if (typeof raw !== 'string' || !raw.trim()) {
+    // some models put the JSON in content despite a forced tool choice
+    const content = typeof choice?.content === 'string' ? choice.content : ''
+    const m = content.match(/\{[\s\S]*\}/)
+    raw = m?.[0]
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new AnalyzeError('The lite model did not return structured output.', 502)
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new AnalyzeError('The lite model returned unreadable output.', 502)
+  }
 }
 
 // ---- Board graphics (shared by the analyse and ask schemas) ----
@@ -495,11 +589,22 @@ Some moves come with an "Engine check" (Stockfish evaluation). Treat it as groun
 - Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.
 - GROUND every square-level claim in the FEN: before saying a square is protected, safe, or controlled, verify from the FEN which pieces actually attack and defend it. If the engine's best move can simply be captured, it is a SACRIFICE line — say so and name the concrete follow-up (check the position!) instead of inventing positional cover for it; if you cannot see the compensation, give your own principled alternative and mention the engine move only as "the engine's tactical suggestion". A confidently wrong claim about the board is the worst mistake you can make.`)
 
-  const userOf = (ts: typeof targets) => `Full game in SAN:
+  const userOf = (ts: typeof targets, label = `${sideName} `) => `Full game in SAN:
 ${moveText}
 
-Analyse the following ${sideName} move(s); return exactly one result object per ply listed:
+Analyse the following ${label}move(s); return exactly one result object per ply listed:
 ${targetLinesOf(ts)}`
+
+  // The NON-studied side's moves are context, not coaching — they go to the
+  // bargain lite model (OpenRouter) when a key for it is configured, and are
+  // simply dropped when not. Everything the reader actually studies stays on
+  // the Claude tiers below.
+  const isLite = (t: (typeof targets)[number]) => {
+    const m = byPly.get(t.ply)
+    return !!m && !isStudied(m.color, input.focus)
+  }
+  const liteTargets = hasLiteKey() ? targets.filter(isLite) : []
+  const claudeTargets = targets.filter((t) => !isLite(t))
 
   // Model tiering (engine-gated): moves the engine vouches for (its top choice,
   // or a small loss) are routine and go to the cheaper model; key moments — a
@@ -507,12 +612,14 @@ ${targetLinesOf(ts)}`
   const isKey = (t: (typeof targets)[number]) =>
     !t.engine || (!t.engine.isBest && t.engine.cpLoss >= KEY_MOVE_CP_LOSS)
   const groups = [
-    { targets: targets.filter(isKey), model: MODEL },
-    { targets: targets.filter((t) => !isKey(t)), model: MODEL_FAST },
+    { targets: claudeTargets.filter(isKey), model: MODEL },
+    { targets: claudeTargets.filter((t) => !isKey(t)), model: MODEL_FAST },
   ].filter((g) => g.targets.length > 0)
 
-  const parts = (await Promise.all(
-    groups.map((g) =>
+  const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
+
+  const parts = (await Promise.all([
+    ...groups.map((g) =>
       callClaude(apiKey, system, userOf(g.targets), {
         maxTokens: 8000,
         tool: OUTPUT_TOOL,
@@ -520,7 +627,19 @@ ${targetLinesOf(ts)}`
         model: g.model,
       }),
     ),
-  )) as AnalyzeResponse[]
+    // Best-effort: a lite-provider failure must never sink the Claude results.
+    ...(liteTargets.length
+      ? [
+          callOpenRouter(liteSystem, userOf(liteTargets, 'opponent '), {
+            maxTokens: 6000,
+            tool: OUTPUT_TOOL as { name: string; description: string; input_schema: unknown },
+          }).catch((e) => {
+            console.error('[analyze] lite tier failed:', e)
+            return { results: [] }
+          }),
+        ]
+      : []),
+  ])) as AnalyzeResponse[]
   const data: AnalyzeResponse = { results: parts.flatMap((p) => p.results || []) }
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
@@ -625,7 +744,8 @@ export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
   const apiKey = resolveKey(input)
   const game = sanitizeGame(input.game)
   if (game.length === 0) throw new AnalyzeError('A game is required.')
-  const fen = clip(input.fenBefore, 100)
+  // normalise whitespace so a crafted FEN can't smuggle its own prompt lines
+  const fen = clip(input.fenBefore, 100).replace(/\s+/g, ' ').trim()
   const played = legalSan(fen, clip(input.played?.san, 12))
   const best = legalSan(fen, clip(input.best?.san, 12))
   if (!played || !best) {
@@ -660,7 +780,7 @@ export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
   ]
   if (pv) {
     lines.push(
-      `Engine's expected continuation after ${best}: ${pv.join(' ')} — treat this line as ground truth for what happens next; do not invent a different continuation.`,
+      `Engine's expected line from this position (it BEGINS with the best move itself): ${pv.join(' ')} — treat this line as ground truth for what happens next; do not invent a different continuation.`,
     )
   }
   if (tries.length) {
@@ -670,9 +790,14 @@ export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
         .join(', ')}.`,
     )
   }
-  if (solvedWith && solvedWith !== best) {
+  // Only relay the "equally strong" claim when the client sent the grade that
+  // backs it — an unverified claim would have the coach praising anything.
+  const solvedLoss = Number.isFinite(input.solvedWith?.cpLoss)
+    ? Math.max(0, Math.trunc(input.solvedWith!.cpLoss as number))
+    : undefined
+  if (solvedWith && solvedWith !== best && solvedLoss !== undefined && solvedLoss <= 60) {
     lines.push(
-      `The player solved it with ${solvedWith}, which Stockfish rates about as strong as ${best} — acknowledge their move alongside the engine's in whyBest.`,
+      `The player solved it with ${solvedWith}, which Stockfish graded within ${pawns(solvedLoss)} pawns of ${best} — acknowledge their move alongside the engine's in whyBest.`,
     )
   }
 
@@ -701,12 +826,22 @@ Explain it.`
   }
   const explanation: QuizExplanation = { whyPlayed, whyBest }
   const rawNotes = Array.isArray(data.attemptNotes) ? data.attemptNotes : []
+  const notedSans = new Set<string>()
   const notes = rawNotes
     .map((n: { san?: unknown; note?: unknown }) => ({
       san: typeof n?.san === 'string' ? clip(n.san, 12) : '',
       note: cleanClip(n?.note, 300).trim(),
     }))
-    .filter((n) => n.san && n.note && tries.some((t) => t.san === n.san))
+    // one note per LISTED try, nothing invented, nothing repeated
+    .filter(
+      (n) =>
+        n.san &&
+        n.note &&
+        tries.some((t) => t.san === n.san) &&
+        !notedSans.has(n.san) &&
+        (notedSans.add(n.san), true),
+    )
+    .slice(0, 6)
   if (notes.length) explanation.attemptNotes = notes
   return { explanation }
 }
