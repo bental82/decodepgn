@@ -129,48 +129,38 @@ export interface AnalyzeResponse {
   results: MoveResult[]
 }
 
-// ---- Quiz mode ----
+// ---- Quiz mode (guess the move) ----
 
-export interface QuizOption {
-  text: string
-  correct: boolean
-}
-
-export interface QuizQuestion {
-  prompt: string
-  options: QuizOption[]
-  explanation: string
-  ruleId?: number // main rule the question is about (1..RULE_COUNT)
-  ply?: number // game ply the question references, if any
-  /** best-move questions: the position to solve (side to move is quizzed) */
-  fen?: string
-}
-
-export type QuizKind = 'rules' | 'bestmove'
-
-/** A position for the best-move quiz: what was played, and what was better. */
-export interface BestMoveTarget {
-  ply: number
-  fenBefore: string
-  played: string // SAN actually played
-  best?: string // engine's best move (SAN), when an engine check ran
-  cpLoss?: number // centipawns the played move gave up vs best
-  alternative?: string // AI-suggested cleaner move (SAN)
+/** Coaching for one finished guess-the-move position. */
+export interface QuizExplanation {
+  /** why the move played in the game fell short — names it and the mechanism */
+  whyPlayed: string
+  /** why the engine's move works, grounded in its continuation */
+  whyBest: string
+  /** one short note per other move the player tried in the quiz */
+  attemptNotes?: Array<{ san: string; note: string }>
 }
 
 export interface QuizRequest {
   mode: 'quiz'
-  kind?: QuizKind // default 'rules'
   focus: Focus
+  /** which side the player is — the "you" the explanation addresses */
+  me?: Color
   game: GameMove[]
-  /** kind "bestmove": the positions to quiz, chosen client-side from the analysis */
-  targets?: BestMoveTarget[]
-  count?: number
+  /** the quizzed moment */
+  ply: number
+  fenBefore: string
+  played: { san: string; cpLoss: number }
+  best: { san: string; evalBest: number; pv?: string[] }
+  /** wrong tries made in the quiz, in order, with engine cost when graded */
+  attempts?: Array<{ san: string; cpLoss?: number }>
+  /** the move that solved it (may be a near-best move rather than `best`) */
+  solvedWith?: { san: string; cpLoss?: number }
   apiKey?: string
 }
 
 export interface QuizResponse {
-  questions: QuizQuestion[]
+  explanation: QuizExplanation
 }
 
 // ---- Game overview ----

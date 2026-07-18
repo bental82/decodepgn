@@ -2,19 +2,52 @@
 // by the move sequence + studied side, so re-loading the same PGN (or resuming
 // after a reload) restores every analysed move instead of re-asking Claude.
 
-import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizKind, QuizQuestion } from '../shared/types'
+import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizExplanation } from '../shared/types'
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
 const MAX_GAMES = 30 // LRU cap (quota-evict fallback below handles overflow)
 
-/** A generated quiz plus the player's progress through it. */
+/** One try in a guess-the-move position. */
+export interface QuizAttempt {
+  san: string
+  /** centipawns the try gives up vs the engine's best (absent when ungraded) */
+  cpLoss?: number
+  /** this try was the very move played in the game */
+  isGameMove?: boolean
+}
+
+/** One guess-the-move position and the player's progress on it. */
+export interface QuizPosition {
+  ply: number
+  /** wrong tries, in order (the solving move is `solution`, not listed here) */
+  attempts: QuizAttempt[]
+  solved: boolean
+  /** the player gave up and asked for the answer */
+  revealed: boolean
+  hintUsed: boolean
+  /** the move that solved it (the engine's best, or one just as strong) */
+  solution?: QuizAttempt
+  explanation?: QuizExplanation
+}
+
+/** The guess-the-move quiz: the game's costliest moments, frozen at start. */
 export interface SavedQuiz {
-  questions: QuizQuestion[]
-  answers: (number | null)[]
+  v: 2
+  positions: QuizPosition[]
   current: number
-  /** which quiz this is (older saves have none = 'rules') */
-  kind?: QuizKind
+}
+
+/** Validate a stored quiz; older multiple-choice saves are discarded. */
+export function sanitizeQuiz(q: unknown): SavedQuiz | null {
+  const s = q as SavedQuiz | null
+  if (!s || s.v !== 2 || !Array.isArray(s.positions)) return null
+  const positions = s.positions.filter(
+    (p) => p && Number.isInteger(p.ply) && p.ply >= 0 && Array.isArray(p.attempts),
+  )
+  if (!positions.length) return null
+  const cur = Number.isInteger(s.current) ? s.current : 0
+  return { v: 2, positions, current: Math.min(positions.length - 1, Math.max(0, cur)) }
 }
 
 export interface SavedGame {

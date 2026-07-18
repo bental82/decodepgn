@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import { parsePgn, toGameMoves, toTargets } from '../game'
 import { analyze, meta as fetchMetaApi, overview as fetchOverviewApi, quiz as fetchQuizApi } from '../lib/api'
-import { clearEngineCache, engineAvailable, evalAfterMoveWhite, evaluateMove } from '../lib/engine'
+import {
+  clearEngineCache,
+  engineAvailable,
+  evalAfterMoveWhite,
+  evalCandidateMove,
+  evaluateMove,
+} from '../lib/engine'
 import {
   cloudDelete,
   cloudGet,
@@ -18,7 +24,9 @@ import {
   listGames,
   loadGame,
   removeGame,
+  sanitizeQuiz,
   saveGame,
+  type QuizPosition,
   type SavedGame,
   type SavedQuiz,
 } from '../lib/store'
@@ -27,7 +35,6 @@ import { gameAccuracy } from '../shared/accuracy'
 import { summarizeGame } from '../shared/meta'
 import { isStudied } from '../shared/types'
 import type {
-  BestMoveTarget,
   BoardAnnotations,
   Color,
   EngineEval,
@@ -36,7 +43,7 @@ import type {
   MetaGameSummary,
   MoveResult,
   ParsedMove,
-  QuizKind,
+  QuizExplanation,
 } from '../shared/types'
 import { colorName } from './contract'
 import type { GfxSelection } from './contract'
@@ -146,12 +153,10 @@ export default function App() {
   // Digests of the cloud archive (server-computed) so cross-game stats and
   // history rows cover games this browser doesn't hold locally.
   const [cloudSummaries, setCloudSummaries] = useState<MetaGameSummary[] | null>(null)
-  // The current game's generated quiz (persisted alongside the analysis).
-  // Owned here — NOT in the Quiz tab — so generation keeps running and nothing
-  // is lost when the user switches tabs mid-way.
+  // The current game's guess-the-move quiz (persisted alongside the analysis).
+  // Owned here — NOT in the Quiz tab — so progress and in-flight explanations
+  // survive tab switches.
   const [quizSaved, setQuizSaved] = useState<SavedQuiz | null>(null)
-  const [quizLoading, setQuizLoading] = useState(false)
-  const [quizError, setQuizError] = useState<string | null>(null)
   // The whole-game overview (auto-generated on load, persisted with the game).
   const [gameOverview, setGameOverview] = useState<GameOverview | null>(null)
   // Where the user was reading before a chip jump, so one tap brings them back.
@@ -414,9 +419,7 @@ export default function App() {
       setMoves(g.moves)
       setFocus(f)
       setResults(saved?.results ?? {})
-      setQuizSaved(saved?.quiz ?? null)
-      setQuizLoading(false)
-      setQuizError(null)
+      setQuizSaved(sanitizeQuiz(saved?.quiz))
       setGameOverview(saved?.overview ?? null)
       // PGN-shipped evals (lichess analysis) give instant full coverage; our
       // own engine's numbers (saved sweep) win where both exist.
@@ -457,7 +460,7 @@ export default function App() {
             if (remote && remote.key === key) {
               saveGame(remote)
               setResults(remote.results ?? {})
-              setQuizSaved(remote.quiz ?? null)
+              setQuizSaved(sanitizeQuiz(remote.quiz))
               setGameOverview(remote.overview ?? null)
               setEvals(remote.evals ?? {})
               setMySide(remote.me ?? (f !== 'both' ? f : undefined))
@@ -555,17 +558,11 @@ export default function App() {
     }
   }, [moves, focus, headers, apiKey, evals, results, overviewAccuracy])
 
-  // Positions the best-move quiz can draw on: analysed moves of the studied
-  // side that carry an engine check or an AI alternative. Missed better moves
-  // come first (that's the point of the quiz); strong moves the player FOUND
-  // fill a few remaining slots as reinforcement.
-  const bestMoveTargets = useMemo<BestMoveTarget[]>(() => {
-    const cands = moves
-      .filter((m) => isStudied(m.color, focus))
-      .map((m) => ({ m, r: results[m.ply] }))
-      .filter((x): x is { m: ParsedMove; r: MoveResult } => !!x.r && (!!x.r.engine || !!x.r.alternative))
-    // A position only quizzes something if there was a real choice: skip
-    // automatic recaptures and (near-)forced positions — they teach nothing.
+  // Guess-the-move candidates: the studied side's engine-flagged moves that
+  // cost the most, capped at 5 and presented in game order. A position only
+  // quizzes something if there was a real choice — automatic recaptures and
+  // (near-)forced positions teach nothing.
+  const quizCandidates = useMemo<number[]>(() => {
     const isObvious = (m: ParsedMove) => {
       const prev = moves[m.ply - 1]
       if (prev && prev.san.includes('x') && m.san.includes('x') && m.to === prev.to) return true
@@ -575,71 +572,60 @@ export default function App() {
         return true
       }
     }
-    // "Find the better move": every position where one clearly existed — real
-    // mistakes AND smaller inaccuracies, plus the AI's cleaner alternatives.
-    const missed = cands.filter(
-      ({ m, r }) =>
-        m.moveNumber >= 3 &&
-        !isObvious(m) &&
-        ((r.engine && !r.engine.isBest && r.engine.cpLoss >= 30) ||
-          (!r.engine && !!r.alternative) ||
-          r.soundness === 'dubious'),
-    )
-    missed.sort((a, b) => (b.r.engine?.cpLoss ?? 0) - (a.r.engine?.cpLoss ?? 0))
-    // Reinforcement: only once out of the opening book — "what's the best
-    // first move?" is trivia, not training.
-    const MAX = 10
-    const found = cands.filter(
-      (c) =>
-        !missed.includes(c) &&
-        c.m.moveNumber >= 8 &&
-        !isObvious(c.m) &&
-        !!c.r.engine &&
-        (c.r.engine.isBest || c.r.engine.cpLoss < 30),
-    )
-    const picked = missed.slice(0, found.length ? MAX - Math.min(3, found.length) : MAX)
-    picked.push(...found.slice(0, MAX - picked.length))
-    return picked
-      .sort((a, b) => a.m.ply - b.m.ply)
-      .map(({ m, r }) => ({
-        ply: m.ply,
-        fenBefore: m.fenBefore,
-        played: m.san,
-        best: r.engine?.bestSan || undefined,
-        cpLoss: r.engine?.cpLoss,
-        alternative: r.alternative?.move,
-      }))
+    return moves
+      .filter((m) => isStudied(m.color, focus))
+      .map((m) => ({ m, e: results[m.ply]?.engine }))
+      .filter(
+        (x): x is { m: ParsedMove; e: EngineEval } =>
+          !!x.e && !x.e.isBest && x.e.cpLoss >= 30 && !isObvious(x.m),
+      )
+      .sort((a, b) => b.e.cpLoss - a.e.cpLoss)
+      .slice(0, 5)
+      .map((x) => x.m.ply)
+      .sort((a, b) => a - b)
   }, [moves, focus, results])
 
-  const startQuiz = useCallback(
-    async (kind: QuizKind) => {
-      if (!moves.length || quizLoading) return
-      const gen = genRef.current
-      setQuizLoading(true)
-      setQuizError(null)
-      setQuizSaved(null)
-      try {
-        const resp = await fetchQuizApi({
-          mode: 'quiz',
-          kind,
-          focus,
-          game: toGameMoves(moves),
-          targets: kind === 'bestmove' ? bestMoveTargets : undefined,
-          apiKey: apiKey.trim() || undefined,
-        })
-        if (genRef.current !== gen) return
-        // setting quizSaved persists it immediately via the save effect
-        setQuizSaved({ kind, questions: resp.questions, answers: resp.questions.map(() => null), current: 0 })
-      } catch (e) {
-        if (genRef.current !== gen) return
-        const msg = e instanceof Error ? e.message : 'Could not build the quiz.'
-        setQuizError(msg)
-        if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
-      } finally {
-        if (genRef.current === gen) setQuizLoading(false)
-      }
+  // Starting (or restarting) freezes the current picks into the save, so a
+  // later re-analysis can't silently swap positions mid-round.
+  const startQuiz = useCallback(() => {
+    if (!quizCandidates.length) return
+    setQuizSaved({
+      v: 2,
+      positions: quizCandidates.map((ply) => ({
+        ply,
+        attempts: [],
+        solved: false,
+        revealed: false,
+        hintUsed: false,
+      })),
+      current: 0,
+    })
+  }, [quizCandidates])
+
+  // The coaching for one finished quiz position, grounded in the stored
+  // engine numbers (the server never re-derives them).
+  const explainQuiz = useCallback(
+    async (pos: QuizPosition): Promise<QuizExplanation> => {
+      const m = moves[pos.ply]
+      const e = results[pos.ply]?.engine
+      if (!m || !e) throw new Error("This position's analysis is missing — re-analyse the game.")
+      const attempts = pos.attempts.map((a) => ({ san: a.san, cpLoss: a.cpLoss }))
+      const resp = await fetchQuizApi({
+        mode: 'quiz',
+        focus,
+        me: mySide,
+        game: toGameMoves(moves),
+        ply: pos.ply,
+        fenBefore: m.fenBefore,
+        played: { san: m.san, cpLoss: e.cpLoss },
+        best: { san: e.bestSan, evalBest: e.evalBest, pv: e.pv },
+        ...(attempts.length ? { attempts } : {}),
+        ...(pos.solution ? { solvedWith: { san: pos.solution.san, cpLoss: pos.solution.cpLoss } } : {}),
+        apiKey: apiKey.trim() || undefined,
+      })
+      return resp.explanation
     },
-    [moves, focus, apiKey, quizLoading, bestMoveTargets],
+    [moves, results, focus, mySide, apiKey],
   )
 
   // Sweep bookkeeping: "Re-analyse all" forces a full sweep redo via these.
@@ -829,8 +815,6 @@ export default function App() {
     setQueuedPlies(new Set())
     setParseError(null)
     setQuizSaved(null)
-    setQuizLoading(false)
-    setQuizError(null)
     setGameOverview(null)
     setEvals({})
     setPgnEvalCoverage(0)
@@ -1674,6 +1658,24 @@ export default function App() {
         </div>
       ) : phase !== 'game' ? null : (
         <div className="workspace">
+          {(allProgress || bgAnalysing.has(overviewGameKey)) && studiedPlies.length > 0 ? (
+            <div className="ana-progress" role="status">
+              <div className="ana-bar" aria-hidden="true">
+                <div
+                  className="ana-fill"
+                  style={{
+                    width: `${Math.round((100 * analyzedFocus) / Math.max(1, studiedPlies.length))}%`,
+                  }}
+                />
+              </div>
+              <span className="ana-text">
+                Analysing your moves · {analyzedFocus}/{studiedPlies.length}
+                {Object.keys(evals).length < moves.length
+                  ? ` · eval bar ${Object.keys(evals).length}/${moves.length}`
+                  : ''}
+              </span>
+            </div>
+          ) : null}
           <div className="tabs">
             <button className={tab === 'move' ? 'active' : ''} onClick={() => setTab('move')}>
               Study
@@ -1944,14 +1946,19 @@ export default function App() {
           {tab === 'quiz' && (
             <Quiz
               moves={moves}
-              focus={focus}
+              results={results}
               saved={quizSaved}
-              loading={quizLoading}
-              error={quizError}
-              onStart={(kind) => void startQuiz(kind)}
-              onChange={setQuizSaved}
+              candidates={quizCandidates}
+              analysisPending={focusMovesRemaining}
+              onStart={startQuiz}
+              onChange={(update) => setQuizSaved((q) => (q ? update(q) : q))}
+              gradeMove={evalCandidateMove}
+              explain={explainQuiz}
               onOpenRule={openRule}
-              bestMoveReady={bestMoveTargets.length}
+              onJump={(ply) => {
+                setTab('move')
+                jumpTo(ply)
+              }}
             />
           )}
 
