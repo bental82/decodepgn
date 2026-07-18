@@ -1,15 +1,16 @@
 :root {
   color-scheme: dark;
-  --bg: #0f1115;
-  --panel: #181b22;
-  --panel-2: #1f232c;
-  --ink: #e7e9ef;
-  --muted: #9aa1b1;
-  --line: #2a2f3a;
-  --line-2: #363c49;
+  /* chess.com-style warm greys: page a mid dark-grey, cards a shade deeper */
+  --bg: #312e2b;
+  --panel: #262421;
+  --panel-2: #3a3734;
+  --ink: #e8e6e3;
+  --muted: #a5a19d;
+  --line: #43403c;
+  --line-2: #514d49;
   --accent: #fb923c;
   --accent-strong: #f97316;
-  --accent-weak: #2e1d0d;
+  --accent-weak: #3a2913;
   --accent-ink: #fdba74;
   --good: #4ade80;
   --good-bg: rgba(34, 197, 94, 0.14);
@@ -28,7 +29,7 @@
   --anno-red: #dc2626;
   --anno-yellow: #d97706;
   --anno-blue: #2563eb;
-  --evalbar-bg: #14161c;
+  --evalbar-bg: #211f1c;
   --evalbar-fill: #e8ecf2;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
@@ -207,9 +208,10 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .regen-banner .btn { flex-shrink: 0; }
 
 /* Board column fills the viewport HEIGHT (chess.com-review-sized): as tall as
-   fits under the sticky header incl. the nav row, capped so the analysis text
-   keeps a readable column on narrower desktops. */
-.study { display: grid; grid-template-columns: clamp(380px, min(calc(100vh - 200px), 56vw), 800px) 1fr; gap: 24px; align-items: start; }
+   fits under the sticky header incl. the nav row, capped only so the analysis
+   text keeps a readable column on narrower desktops. The 150px budget =
+   74px sticky offset + the nav row + a little slack — measured, not padded. */
+.study { display: grid; grid-template-columns: clamp(380px, min(calc(100vh - 150px), 60vw), 880px) 1fr; gap: 24px; align-items: start; }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .navbtn { border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 8px 12px; font-size: 15px; cursor: pointer; color: var(--ink); }
