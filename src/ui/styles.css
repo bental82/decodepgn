@@ -138,6 +138,13 @@ a { color: var(--accent-ink); }
 .hist-acc { color: var(--accent-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .history-list li { display: flex; align-items: stretch; gap: 6px; }
+/* drag-to-reorder: the handle owns the gesture (touch-action none keeps the
+   list from scrolling under a finger), the accent edge previews the drop */
+.drag-handle { display: grid; place-items: center; width: 26px; flex: none; color: var(--muted); cursor: grab; touch-action: none; user-select: none; font-size: 15px; border-radius: 8px; }
+.drag-handle:hover { color: var(--ink); background: var(--panel-2); }
+.history-list li.dragging { opacity: 0.45; }
+.history-list li.drop-before { box-shadow: 0 -2px 0 0 var(--accent); }
+.history-list li.drop-after { box-shadow: 0 2px 0 0 var(--accent); }
 .history-row { flex: 1; min-width: 0; position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; text-align: left; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 44px 10px 13px; cursor: pointer; font: inherit; color: var(--ink); }
 .history-row .cc-res { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
 .history-row:hover { border-color: var(--accent); }
@@ -487,7 +494,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .rule-ask .askbox { margin-top: 0; padding-top: 0; border-top: 0; }
 
 /* quiz */
-.quiz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; max-width: 720px; margin: 0 auto; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; max-width: 900px; margin: 0 auto; }
 .quiz-intro { text-align: center; }
 .quiz-intro h2 { font-size: 20px; }
 .quiz-intro .btn { margin-top: 12px; }
@@ -498,7 +505,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 .quiz-chip.active { border-color: var(--accent); color: var(--ink); }
 .quiz-chip.ok { color: var(--good); border-color: var(--good); }
 .quiz-chip.shown { color: var(--warn, var(--muted)); }
-.quiz-board { max-width: 360px; margin: 0 auto 14px; }
+.quiz-board { max-width: min(68vh, 640px); margin: 0 auto 14px; }
 .quiz-prompt { font-size: 16px; margin: 6px 0 14px; }
 .quiz-tools { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .quiz-feedback { margin-top: 12px; border-radius: 10px; padding: 12px 14px; font-size: 15px; border-left: 4px solid var(--line-2); background: var(--panel-2); }
@@ -601,7 +608,9 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   /* quiz on phones */
   .quiz { padding: 16px; }
   .quiz-prompt { font-size: 16px; }
-  .quiz-board { max-width: 300px; }
+  /* phones: as wide as the card allows, capped by height so the tools stay
+     reachable without scrolling */
+  .quiz-board { max-width: min(100%, 52vh); }
 }
 
 /* player-names editor (topbar ✎ + modal fields) */

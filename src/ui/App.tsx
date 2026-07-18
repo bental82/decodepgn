@@ -66,6 +66,7 @@ import Settings from './Settings'
 
 const KEY_STORAGE = 'decodepgn.apiKey'
 const META_KEY = 'decodepgn.meta.v1'
+const ORDER_KEY = 'decodepgn.gameOrder.v1'
 
 /** An empty placeholder recorded when a model skipped a ply — it renders as a
     blank card, so the repair paths treat it as "not analysed yet". */
@@ -138,6 +139,10 @@ export default function App() {
   // too, on the bargain lite model. Kept in a ref for the analysis callbacks.
   const [hasLiteKey, setHasLiteKey] = useState(false)
   const [liteModel, setLiteModel] = useState<string | undefined>(undefined)
+  // Whether the server capabilities have been LEARNED (either way). The auto
+  // run waits for this: starting before the lite flag lands would cover only
+  // the studied side, and leaving the game then strands the opponent moves.
+  const [liteKnown, setLiteKnown] = useState(false)
   const liteKeyRef = useRef(false)
   liteKeyRef.current = hasLiteKey
   // Light/dark theme — applied to <html data-theme> (index.html sets it before
@@ -157,6 +162,27 @@ export default function App() {
   // Identity of the current game in local storage, for persisting analysis.
   const storeRef = useRef<{ key: string; pgn: string } | null>(null)
   const [history, setHistory] = useState<SavedGame[]>(() => listGames())
+  // The user's hand-dragged order of the games list (empty = date order).
+  const [manualOrder, setManualOrder] = useState<string[]>(() => {
+    try {
+      const a = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]')
+      return Array.isArray(a) ? a.filter((k) => typeof k === 'string') : []
+    } catch {
+      return []
+    }
+  })
+  const commitOrder = (keys: string[]) => {
+    setManualOrder(keys)
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(keys))
+    } catch {
+      /* best-effort */
+    }
+  }
+  // live drag state: which row is being dragged, and where it would drop
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const [dropIdx, setDropIdx] = useState<number | null>(null)
+  const histListRef = useRef<HTMLUListElement | null>(null)
   // Games saved in the cloud (Supabase via /api/games); null while loading or
   // when the deployment has no database configured.
   const [cloudGames, setCloudGames] = useState<CloudGameMeta[] | null>(null)
@@ -205,6 +231,10 @@ export default function App() {
         if (typeof d.build === 'string') setServerBuild(d.build)
       })
       .catch(() => {})
+      // known (or unknowable) either way — analysis must not wait forever
+      .finally(() => {
+        if (!cancelled) setLiteKnown(true)
+      })
     return () => {
       cancelled = true
     }
@@ -391,23 +421,19 @@ export default function App() {
             return c
           })
         } else if (origin.key) {
-          // the user moved on — merge the batch straight into the game's save
-          // (unless they deleted it meanwhile) and refresh the landing list
-          const saved =
-            loadGame(origin.key) ??
-            ({
-              key: origin.key,
-              pgn: origin.pgn,
-              focus: f,
-              headers: origin.headers,
-              savedAt: Date.now(),
-              results: {},
-            } as SavedGame)
-          const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
-          for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
-          saveGame(merged)
-          cloudSave(merged, markSynced)
-          setHistory(listGames())
+          // The user moved on — merge the batch straight into the game's save
+          // and refresh the landing list. If the local save is GONE (deleted,
+          // or quota-evicted mid-run), DROP the batch: fabricating a shell
+          // save here and cloud-saving it would overwrite the game's full
+          // cloud copy with a nearly-empty one — analysis loss, not repair.
+          const saved = loadGame(origin.key)
+          if (saved) {
+            const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
+            for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
+            saveGame(merged)
+            cloudSave(merged, markSynced)
+            setHistory(listGames())
+          }
         }
       } catch (e) {
         if (genRef.current !== gen) return // background batch failed — retry next open
@@ -446,6 +472,7 @@ export default function App() {
       setResults(saved?.results ?? {})
       setQuizSaved(sanitizeQuiz(saved?.quiz))
       setQuizEngineBusy(null)
+      autoRanRef.current = null // each open re-evaluates what's missing
       setGameOverview(saved?.overview ?? null)
       // PGN-shipped evals (lichess analysis) give instant full coverage; our
       // own engine's numbers (saved sweep) win where both exist.
@@ -756,17 +783,22 @@ export default function App() {
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey])
 
-  const handleAnalyzeAll = async (force = false, opts?: { repairEmpty?: boolean }) => {
-    // With the lite tier available the run covers EVERY move — the studied
+  const handleAnalyzeAll = async (
+    force = false,
+    opts?: { repairEmpty?: boolean; includeLite?: boolean },
+  ) => {
+    // With the lite tier available a run can cover EVERY move — the studied
     // side on the Claude tiers, the opponent on the bargain model. Studied
     // moves go first: the coaching the user came for lands before the context.
-    // Empty-shell repairs run only on EXPLICIT request: if a move's analysis
-    // keeps coming back empty, re-running it on every open of the game would
-    // silently burn tokens forever.
+    // Both extras are opt-in per call: empty-shell repairs and the opponent
+    // tier only run when EXPLICITLY requested (or, for the lite tier, on a
+    // brand-new analysis) — reopening an old game must never start work the
+    // user didn't ask for.
+    const withLite = hasLiteKey && opts?.includeLite === true
     const plies = moves
       .filter(
         (m) =>
-          (isStudied(m.color, focus) || hasLiteKey) &&
+          (isStudied(m.color, focus) || withLite) &&
           (force ||
             !results[m.ply] ||
             (opts?.repairEmpty === true && isEmptyResult(results[m.ply]))),
@@ -856,16 +888,25 @@ export default function App() {
   // The marker includes the lite flag: it loads async from the server, and a
   // game opened before it lands must re-run once it does, or the opponent
   // moves would silently stay unanalysed for the whole session.
+  // An ACTIVE background run for this game blocks a duplicate; a run that
+  // died (reload, phone lock, tab discarded) re-arms on the next open —
+  // handleSubmit clears the marker, so re-entering always self-heals.
   const autoRanRef = useRef<string | null>(null)
   useEffect(() => {
     if (phase !== 'game' || moves.length === 0) return
     if (restoringKey) return // the cloud may have this analysis — don't redo it
-    const key = (storeRef.current?.key ?? '') + (hasLiteKey ? '+lite' : '')
+    if (!liteKnown) return // don't start half-scoped — wait for the server flag
+    const gameK = storeRef.current?.key ?? ''
+    if (bgAnalysing.has(gameK)) return // this game's run is already going
+    const key = gameK + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
-    void handleAnalyzeAll()
+    // Opponent (lite) coverage only for a FRESH analysis: a reopened game
+    // auto-runs nothing beyond its own missing studied moves — extra work on
+    // an old game happens only when the user presses the button.
+    void handleAnalyzeAll(false, { includeLite: Object.keys(results).length === 0 })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, moves, restoringKey, hasLiteKey])
+  }, [phase, moves, restoringKey, hasLiteKey, bgAnalysing, liteKnown])
 
   // Background Stockfish sweep: one eval per position so the eval bar covers
   // the whole game. Shares the engine's FEN cache with the per-move checks.
@@ -1063,9 +1104,19 @@ export default function App() {
       }
     }
     // newest ADDED first; the key tiebreak keeps equal stamps stable no matter
-    // what order the LRU index delivered them in
-    return [...byKey.values()].sort((a, b) => b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1))
-  }, [history, cloudGames, syncedKeys, allSummaries])
+    // what order the LRU index delivered them in. A manual drag-order wins
+    // where the user set one: those games keep their hand-picked sequence,
+    // games added since then stack on top (newest first) until re-dragged.
+    const orderIdx = new Map(manualOrder.map((k, i) => [k, i]))
+    return [...byKey.values()].sort((a, b) => {
+      const ai = orderIdx.get(a.key)
+      const bi = orderIdx.get(b.key)
+      if (ai !== undefined && bi !== undefined) return ai - bi
+      if (ai !== undefined) return 1
+      if (bi !== undefined) return -1
+      return b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1)
+    })
+  }, [history, cloudGames, syncedKeys, allSummaries, manualOrder])
 
   // Every analysed move flagged dubious — or costing 1+ pawn by the engine —
   // becomes a practice position for the Drill screen, as long as we know a
@@ -1311,6 +1362,14 @@ export default function App() {
   const focusMovesRemaining = moves.filter(
     (m) => isStudied(m.color, focus) && (!results[m.ply] || isEmptyResult(results[m.ply])),
   ).length
+  // What "Analyse remaining" will ACTUALLY run (incl. the opponent's moves on
+  // the lite tier and empty-shell repairs) — the button count must match the
+  // progress counter it produces, not just the studied side.
+  const analyseRemainingCount = moves.filter(
+    (m) =>
+      (isStudied(m.color, focus) || hasLiteKey) &&
+      (!results[m.ply] || isEmptyResult(results[m.ply])),
+  ).length
   const studiedPlies = useMemo(
     () => moves.filter((m) => isStudied(m.color, focus)).map((m) => m.ply),
     [moves, focus],
@@ -1528,21 +1587,26 @@ export default function App() {
             </div>
             <button
               className="btn"
-              onClick={() => void handleAnalyzeAll(focusMovesRemaining === 0, { repairEmpty: true })}
-              disabled={!!allProgress}
+              onClick={() =>
+                void handleAnalyzeAll(analyseRemainingCount === 0, {
+                  repairEmpty: true,
+                  includeLite: true,
+                })
+              }
+              disabled={!!allProgress || bgAnalysing.has(overviewGameKey)}
               title={
-                focusMovesRemaining === 0
+                analyseRemainingCount === 0
                   ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
                   : undefined
               }
             >
               {allProgress
                 ? `Analysing… ${allProgress.done}/${allProgress.total}`
-                : focusMovesRemaining === 0
+                : analyseRemainingCount === 0
                   ? '↻ Re-analyse all'
-                  : analyzedFocus > 0
-                    ? `Analyse remaining (${focusMovesRemaining})`
-                    : `Analyse all ${studiedPlies.length} ${focus === 'both' ? '' : colorName(focus) + ' '}moves`}
+                  : analyzedFocus > 0 || focusMovesRemaining === 0
+                    ? `Analyse remaining (${analyseRemainingCount})`
+                    : `Analyse all ${analyseRemainingCount} moves`}
             </button>
             <button
               className="btn ghost"
@@ -1692,9 +1756,63 @@ export default function App() {
                 </p>
               ) : null}
               {histOpen ? (
-              <ul className="history-list">
-                {visibleHistory.map((g) => (
-                  <li key={g.key}>
+              <ul className="history-list" ref={histListRef}>
+                {visibleHistory.map((g, i) => (
+                  <li
+                    key={g.key}
+                    className={
+                      (dragKey === g.key ? 'dragging' : '') +
+                      (dropIdx === i ? ' drop-before' : '') +
+                      (dropIdx === visibleHistory.length && i === visibleHistory.length - 1
+                        ? ' drop-after'
+                        : '')
+                    }
+                  >
+                    {!histFilterActive ? (
+                      <span
+                        className="drag-handle"
+                        title="Drag to reorder"
+                        aria-hidden="true"
+                        onPointerDown={(e) => {
+                          e.preventDefault()
+                          ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+                          setDragKey(g.key)
+                          setDropIdx(null)
+                        }}
+                        onPointerMove={(e) => {
+                          if (dragKey !== g.key) return
+                          const lis = [...(histListRef.current?.children ?? [])] as HTMLElement[]
+                          let idx = lis.length
+                          for (let j = 0; j < lis.length; j++) {
+                            const r = lis[j].getBoundingClientRect()
+                            if (e.clientY < r.top + r.height / 2) {
+                              idx = j
+                              break
+                            }
+                          }
+                          setDropIdx(idx)
+                        }}
+                        onPointerUp={() => {
+                          if (dragKey === g.key && dropIdx !== null) {
+                            const keys = visibleHistory.map((h) => h.key)
+                            const from = keys.indexOf(g.key)
+                            if (from !== -1) {
+                              keys.splice(from, 1)
+                              keys.splice(dropIdx > from ? dropIdx - 1 : dropIdx, 0, g.key)
+                              commitOrder(keys)
+                            }
+                          }
+                          setDragKey(null)
+                          setDropIdx(null)
+                        }}
+                        onPointerCancel={() => {
+                          setDragKey(null)
+                          setDropIdx(null)
+                        }}
+                      >
+                        ⠿
+                      </span>
+                    ) : null}
                     <button className="history-row" onClick={() => void openSaved(g)}>
                       <span className="history-title">
                         {g.headers.White ?? 'White'}
