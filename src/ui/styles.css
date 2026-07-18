@@ -573,9 +573,11 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
     /* vertical drags scroll the page; horizontal drags are ours (move swipe) */
     touch-action: pan-y;
   }
-  /* height-capped: on tall phones the board no longer swallows the screen —
-     the analysis text keeps at least half the viewport */
-  .board { width: min(100%, 46vh); max-width: 100%; margin-left: auto; margin-right: auto; border-radius: 8px; border: 1px solid var(--line-2); box-shadow: none; }
+  /* full-bleed: the board reaches the screen edges (the sticky block already
+     cancels the workspace padding); the height cap only bites on unusually
+     short/wide viewports. Side borders and radius go — they'd read as a
+     hairline "shoulder" at the edge. */
+  .board { width: min(100%, 60vh); max-width: 100%; margin-left: auto; margin-right: auto; border-radius: 0; border: 1px solid var(--line-2); border-left: none; border-right: none; box-shadow: none; }
   /* the nav lives inside the full-bleed sticky block, so it needs its own inset;
      the progress strip is back in normal (padded) flow. */
   .board-nav { width: 100%; max-width: 100%; padding-left: 14px; padding-right: 14px; margin-top: 6px; }
@@ -606,11 +608,12 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
   .history-meta { white-space: normal; }
 
   /* quiz on phones */
-  .quiz { padding: 16px; }
+  /* phones: the quiz card and its board go edge-to-edge — the card sheds the
+     workspace inset, the board sheds the card padding on top of that */
+  .quiz { padding: 16px; margin-left: -14px; margin-right: -14px; border-radius: 0; border-left: none; border-right: none; }
   .quiz-prompt { font-size: 16px; }
-  /* phones: as wide as the card allows, capped by height so the tools stay
-     reachable without scrolling */
-  .quiz-board { max-width: min(100%, 52vh); }
+  .quiz-board { max-width: none; margin-left: -16px; margin-right: -16px; }
+  .quiz-board .board { border-radius: 0; border-left: none; border-right: none; box-shadow: none; }
 }
 
 /* player-names editor (topbar ✎ + modal fields) */
