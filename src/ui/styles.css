@@ -280,8 +280,10 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
 /* interactive board (drill): selection, legal-target dots, dragged piece */
 .board.interactive { touch-action: none; cursor: pointer; user-select: none; }
 .sq.sel { box-shadow: inset 0 0 0 3px var(--accent); }
-.tgt { position: absolute; left: 50%; top: 50%; width: 26%; height: 26%; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(22, 163, 74, 0.55); z-index: 2; pointer-events: none; }
-.tgt.tgt-cap { width: 88%; height: 88%; background: transparent; border: 4px solid rgba(22, 163, 74, 0.55); }
+/* legal-destination markers: neutral grey (chess.com-style) — green would
+   read as a hint, since green arrows mean "the best move" in reveals */
+.tgt { position: absolute; left: 50%; top: 50%; width: 26%; height: 26%; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(20, 24, 30, 0.28); z-index: 2; pointer-events: none; }
+.tgt.tgt-cap { width: 88%; height: 88%; background: transparent; border: 4px solid rgba(20, 24, 30, 0.28); }
 .drag-piece { position: absolute; width: 13.5%; height: 13.5%; transform: translate(-50%, -55%); z-index: 6; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4)); }
 /* move-navigation glide: the destination piece itself FLIPs from the origin
    square to rest (no overlay — an overlay lands with sub-pixel drift) */
