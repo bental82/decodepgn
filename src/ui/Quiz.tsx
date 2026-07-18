@@ -36,6 +36,9 @@ export default function Quiz({
   saved,
   candidates,
   analysisPending,
+  missingEngine,
+  engineBusy,
+  onAddEngine,
   onStart,
   onChange,
   gradeMove,
@@ -133,11 +136,26 @@ export default function Quiz({
             Analysing your game — {analysisPending} move{analysisPending === 1 ? '' : 's'} to go.
             The quiz picks the costliest moments once the analysis is complete.
           </p>
-        ) : total === 0 ? (
+        ) : total === 0 && missingEngine === 0 ? (
           <p className="muted small">
             {hasEngine
               ? 'No serious inaccuracies in the analysed moves — there is nothing to quiz here. Nice game.'
-              : "The quiz builds on Stockfish's checks, and this game has none yet — re-run the analysis with the engine available."}
+              : "The quiz builds on Stockfish's checks, and this game has none to build from."}
+          </p>
+        ) : null}
+        {engineBusy ? (
+          <div className="loading-row">
+            <span className="spinner" />
+            Running Stockfish over your moves… {engineBusy.done}/{engineBusy.total}
+          </div>
+        ) : analysisPending === 0 && missingEngine > 0 ? (
+          <p className="muted small">
+            {missingEngine} analysed move{missingEngine === 1 ? ' is' : 's are'} missing the
+            Stockfish check the quiz builds on (older analysis).{' '}
+            <button className="linkbtn" onClick={onAddEngine}>
+              Add the checks now
+            </button>{' '}
+            — it runs on this device, takes about a minute, and needs no re-analysis.
           </p>
         ) : null}
         <button className="btn primary" disabled={!canStart} onClick={onStart}>
@@ -288,6 +306,25 @@ export default function Quiz({
           Position {saved.current + 1} of {saved.positions.length}
         </span>
         <span className="quiz-score">{firstTry} first-try</span>
+        <button
+          className="linkbtn"
+          title="Rebuild the quiz from the current analysis — no re-analysis needed"
+          onClick={() => {
+            const hasProgress = saved.positions.some(
+              (p) => p.solved || p.revealed || p.attempts.length > 0 || p.hintUsed,
+            )
+            if (
+              allDone ||
+              !hasProgress ||
+              window.confirm('Start a new quiz? Progress on this one is lost.')
+            ) {
+              onStart()
+            }
+          }}
+          disabled={!candidates.length}
+        >
+          ↻ New quiz
+        </button>
       </div>
       <div className="quiz-chips">{chips}</div>
 

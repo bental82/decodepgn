@@ -88,6 +88,12 @@ export interface QuizProps {
   candidates: number[]
   /** studied moves not yet analysed — gates starting until the picks are final */
   analysisPending: number
+  /** analysed moves with no Stockfish check (old saves) — the quiz can mint
+      them locally via onAddEngine, no re-analysis needed */
+  missingEngine: number
+  /** progress of an engine-check backfill run, when one is going */
+  engineBusy: { done: number; total: number } | null
+  onAddEngine: () => void
   onStart: () => void
   /** functional update so concurrent grading/explanations can't drop progress */
   onChange: (update: (quiz: SavedQuiz) => SavedQuiz) => void

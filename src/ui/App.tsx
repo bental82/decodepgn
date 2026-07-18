@@ -420,6 +420,7 @@ export default function App() {
       setFocus(f)
       setResults(saved?.results ?? {})
       setQuizSaved(sanitizeQuiz(saved?.quiz))
+      setQuizEngineBusy(null)
       setGameOverview(saved?.overview ?? null)
       // PGN-shipped evals (lichess analysis) give instant full coverage; our
       // own engine's numbers (saved sweep) win where both exist.
@@ -584,6 +585,41 @@ export default function App() {
       .map((x) => x.m.ply)
       .sort((a, b) => a - b)
   }, [moves, focus, results])
+
+  // Analysed moves with no Stockfish check (saves that predate the engine
+  // integration). The quiz can mint just these locally — no re-analysis.
+  const quizEngineMissing = useMemo(
+    () =>
+      moves.filter((m) => isStudied(m.color, focus) && results[m.ply] && !results[m.ply].engine)
+        .length,
+    [moves, focus, results],
+  )
+  const [quizEngineBusy, setQuizEngineBusy] = useState<{ done: number; total: number } | null>(null)
+  const addQuizEngine = useCallback(async () => {
+    if (quizEngineBusy) return
+    const gen = genRef.current
+    const targets = moves.filter(
+      (m) => isStudied(m.color, focus) && resultsRef.current[m.ply] && !resultsRef.current[m.ply].engine,
+    )
+    if (!targets.length || !(await engineAvailable())) return
+    setQuizEngineBusy({ done: 0, total: targets.length })
+    let done = 0
+    for (const m of targets) {
+      if (genRef.current !== gen) return // a different game took over — stop quietly
+      const ev = await evaluateMove(m)
+      done++
+      if (genRef.current !== gen) return
+      if (ev) {
+        // merge into the EXISTING result only: minting a result for an
+        // unanalysed ply would wrongly mark the move as analysed everywhere
+        setResults((prev) =>
+          prev[m.ply] ? { ...prev, [m.ply]: { ...prev[m.ply], engine: ev } } : prev,
+        )
+      }
+      setQuizEngineBusy({ done, total: targets.length })
+    }
+    setQuizEngineBusy(null)
+  }, [moves, focus, quizEngineBusy])
 
   // Starting (or restarting) freezes the current picks into the save, so a
   // later re-analysis can't silently swap positions mid-round.
@@ -815,6 +851,7 @@ export default function App() {
     setQueuedPlies(new Set())
     setParseError(null)
     setQuizSaved(null)
+    setQuizEngineBusy(null)
     setGameOverview(null)
     setEvals({})
     setPgnEvalCoverage(0)
@@ -1950,6 +1987,9 @@ export default function App() {
               saved={quizSaved}
               candidates={quizCandidates}
               analysisPending={focusMovesRemaining}
+              missingEngine={quizEngineMissing}
+              engineBusy={quizEngineBusy}
+              onAddEngine={() => void addQuizEngine()}
               onStart={startQuiz}
               onChange={(update) => setQuizSaved((q) => (q ? update(q) : q))}
               gradeMove={evalCandidateMove}
