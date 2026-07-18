@@ -574,6 +574,7 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
       : `Analyse strictly from ${sideName}'s perspective — the reader IS the ${sideName} player, so address them as "you".`
   }
 
+Return one result object for EVERY ply listed — never skip a move. When genuinely no rule stands out for a quiet move, return an empty "rules" array but STILL write a real "lesson": one concrete observation about what the move does, keeps flexible, or should keep an eye on. An empty lesson is never acceptable.
 For each move, decide which rules are genuinely relevant (usually 1-4; do not force irrelevant ones) and pick rules that fit this move and phase of the game (opening/development rules early, endgame rules once queens or most pieces are gone).
 Set each rule's status honestly:
 - "follows": clearly upholds the rule.
@@ -616,7 +617,7 @@ ${targetLinesOf(ts)}`
     { targets: claudeTargets.filter((t) => !isKey(t)), model: MODEL_FAST },
   ].filter((g) => g.targets.length > 0)
 
-  const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
+  const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Return one result for EVERY ply listed — a quiet move still gets a real lesson (never empty), with an empty rules array if nothing stands out. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
 
   const parts = (await Promise.all([
     ...groups.map((g) =>
