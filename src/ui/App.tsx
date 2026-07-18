@@ -756,15 +756,20 @@ export default function App() {
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey])
 
-  const handleAnalyzeAll = async (force = false) => {
+  const handleAnalyzeAll = async (force = false, opts?: { repairEmpty?: boolean }) => {
     // With the lite tier available the run covers EVERY move — the studied
     // side on the Claude tiers, the opponent on the bargain model. Studied
     // moves go first: the coaching the user came for lands before the context.
+    // Empty-shell repairs run only on EXPLICIT request: if a move's analysis
+    // keeps coming back empty, re-running it on every open of the game would
+    // silently burn tokens forever.
     const plies = moves
       .filter(
         (m) =>
           (isStudied(m.color, focus) || hasLiteKey) &&
-          (force || !results[m.ply] || isEmptyResult(results[m.ply])),
+          (force ||
+            !results[m.ply] ||
+            (opts?.repairEmpty === true && isEmptyResult(results[m.ply]))),
       )
       .map((m) => m.ply)
       .sort(
@@ -1523,7 +1528,7 @@ export default function App() {
             </div>
             <button
               className="btn"
-              onClick={() => void handleAnalyzeAll(focusMovesRemaining === 0)}
+              onClick={() => void handleAnalyzeAll(focusMovesRemaining === 0, { repairEmpty: true })}
               disabled={!!allProgress}
               title={
                 focusMovesRemaining === 0
