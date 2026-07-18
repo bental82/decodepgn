@@ -25,7 +25,7 @@ async function hardRefresh() {
   window.location.replace(u.toString())
 }
 
-export default function Settings({ apiKey, hasServerKey, serverBuild, theme, onTheme, onSave, onClose }: SettingsProps) {
+export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel, theme, onTheme, onSave, onClose }: SettingsProps) {
   const [value, setValue] = useState(apiKey)
   const [refreshing, setRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -119,7 +119,15 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, theme, onT
                 {' '}
                 · server: <code>{serverBuild}</code>
               </>
-            ) : null}
+            ) : null}{' '}
+            · opponent-move analysis:{' '}
+            {liteModel ? (
+              <>
+                on (<code>{liteModel}</code>)
+              </>
+            ) : (
+              'off — set OPENROUTER_API_KEY on the server to enable it'
+            )}
             . Seeing something stale? Force-load the newest version — your saved games and key are
             kept.
           </span>
