@@ -228,6 +228,27 @@ interface MoveToEvaluate {
   promotion?: string
 }
 
+/**
+ * Deep eval of one candidate move in a position, in centipawns from the
+ * MOVER's perspective — grades guess-the-move quiz tries on the same budget
+ * as the stored per-move checks, so cpLoss comparisons stay apples-to-apples.
+ * Null when the engine is unavailable or the move doesn't parse.
+ */
+export async function evalCandidateMove(fenBefore: string, san: string): Promise<number | null> {
+  if (!(await engineAvailable())) return null
+  try {
+    const g = new Chess(fenBefore)
+    const mv = g.move(san, { strict: false })
+    if (!mv) return null
+    if (g.isCheckmate()) return MATE_CP // the candidate delivers mate
+    if (g.isDraw()) return 0
+    const sc = await scorePosition(g.fen(), DEEP_MOVETIME_MS) // opponent to move
+    return -sc.cp
+  } catch {
+    return null
+  }
+}
+
 /** Drop every cached score. Explicit re-analysis calls this path (via
     evaluateMove's fresh option) so bad cached data cannot resurface. */
 export function clearEngineCache(): void {

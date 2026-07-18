@@ -9,11 +9,11 @@ import type {
   MetaGameSummary,
   MoveResult,
   ParsedMove,
-  QuizKind,
+  QuizExplanation,
   RuleStatus,
   Soundness,
 } from '../shared/types'
-import type { SavedQuiz } from '../lib/store'
+import type { QuizPosition, SavedQuiz } from '../lib/store'
 
 export type Orientation = 'w' | 'b'
 
@@ -80,16 +80,30 @@ export interface RulesReferenceProps {
 
 export interface QuizProps {
   moves: ParsedMove[]
-  focus: Focus
-  /** the quiz + progress (owned by App so generation survives tab switches) */
+  /** ply -> analysis (the quiz reads the engine checks) */
+  results: Record<number, MoveResult>
+  /** the quiz + progress (owned by App, persisted with the game) */
   saved: SavedQuiz | null
-  loading: boolean
-  error: string | null
-  onStart: (kind: QuizKind) => void
-  onChange: (quiz: SavedQuiz) => void
+  /** plies eligible for a NEW quiz: the costliest engine-flagged moves, game order */
+  candidates: number[]
+  /** studied moves not yet analysed — gates starting until the picks are final */
+  analysisPending: number
+  /** analysed moves with no Stockfish check (old saves) — the quiz can mint
+      them locally via onAddEngine, no re-analysis needed */
+  missingEngine: number
+  /** progress of an engine-check backfill run, when one is going */
+  engineBusy: { done: number; total: number } | null
+  onAddEngine: () => void
+  onStart: () => void
+  /** functional update so concurrent grading/explanations can't drop progress */
+  onChange: (update: (quiz: SavedQuiz) => SavedQuiz) => void
+  /** deep engine eval of a candidate try (mover's perspective); null = engine unavailable */
+  gradeMove: (fenBefore: string, san: string) => Promise<number | null>
+  /** fetch the AI coaching for a finished position */
+  explain: (pos: QuizPosition) => Promise<QuizExplanation>
   onOpenRule: (id: number) => void
-  /** how many analysed positions the best-move quiz can draw on right now */
-  bestMoveReady: number
+  /** open this moment in the game reader */
+  onJump: (ply: number) => void
 }
 
 export interface AskContext {

@@ -44,7 +44,14 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
   const meSide = g.me ?? (g.focus !== 'both' ? g.focus : undefined)
   const ownEvals: EngineEval[] = []
 
-  for (const r of Object.values(g.results ?? {})) {
+  // Only the STUDIED side's moves feed the reader-facing stats: with the lite
+  // analysis tier the opponent's moves carry results too, and their broken
+  // rules and blunders are not the player's patterns. (Ply parity maps to the
+  // mover for standard games — same assumption as the accuracy split below.)
+  const studiedResults = Object.values(g.results ?? {}).filter(
+    (r) => g.focus === 'both' || (r.ply % 2 === 0 ? 'w' : 'b') === g.focus,
+  )
+  for (const r of studiedResults) {
     for (const h of r.rules ?? []) {
       if (h.status === 'violates') broken.set(h.id, (broken.get(h.id) ?? 0) + 1)
       else if (h.status === 'follows') followed.set(h.id, (followed.get(h.id) ?? 0) + 1)
@@ -66,7 +73,7 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
     black: g.headers?.Black || 'Black',
     focus: g.focus,
     opening,
-    analysed: Object.keys(g.results ?? {}).length,
+    analysed: studiedResults.length,
     ruleBroken: top5(broken),
     ruleFollowed: top5(followed),
     soundness,

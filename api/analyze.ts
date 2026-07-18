@@ -16,10 +16,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // if you see this JSON the function itself is fine.
       res.status(200).json({
         ok: true,
-        build: 'overview-3', // bump on deploys to confirm the live version (shown in Settings)
+        build: 'quiz-2', // bump on deploys to confirm the live version (shown in Settings)
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
         modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5',
+        // opponent-move (lite) tier via OpenRouter — on only when its key is set
+        hasLiteKey: !!process.env.OPENROUTER_API_KEY,
+        modelLite: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
         runtime: process.version,
       })
       return

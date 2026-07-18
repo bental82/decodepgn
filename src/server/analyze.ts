@@ -8,7 +8,7 @@
 
 import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
-import { stripToolLeak } from '../shared/types.js'
+import { isStudied, stripToolLeak } from '../shared/types.js'
 import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
 import { cloudConfigured, listCloudGameData } from './games.js'
 import type {
@@ -19,7 +19,6 @@ import type {
   AnnoSquare,
   AskRequest,
   AskResponse,
-  BestMoveTarget,
   BoardAnnotations,
   Color,
   EngineEval,
@@ -33,7 +32,7 @@ import type {
   OverviewResponse,
   MoveAlternative,
   MoveResult,
-  QuizQuestion,
+  QuizExplanation,
   QuizResponse,
   QuizRequest,
   RuleHit,
@@ -45,6 +44,11 @@ export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
     engine loss, or no engine check to vouch for the move) stay on MODEL, as
     do the game overview, the cross-game meta report, quiz and ask. */
 export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5'
+/** Bargain-bin model (via OpenRouter) for the NON-studied side's moves —
+    context the reader browses past, not the coaching itself. Only used when
+    OPENROUTER_API_KEY is configured; without it those moves stay unanalysed. */
+export const MODEL_LITE = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash'
+export const hasLiteKey = () => !!process.env.OPENROUTER_API_KEY
 /** Engine loss (centipawns) from which a move counts as a key moment. */
 const KEY_MOVE_CP_LOSS = 60
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
@@ -241,6 +245,95 @@ async function callClaude(
   }
   const textBlock = message.content?.find((b) => b.type === 'text')
   return typeof textBlock?.text === 'string' ? textBlock.text : ''
+}
+
+/** OpenRouter (OpenAI-compatible) twin of callClaude, for the lite tier.
+    Takes the same system blocks + forced-tool contract and returns the parsed
+    tool input, so callers can swap providers per target group. */
+async function callOpenRouter(
+  system: unknown,
+  user: string,
+  opts: {
+    maxTokens: number
+    tool: { name: string; description: string; input_schema: unknown }
+    timeoutMs?: number
+  },
+): Promise<unknown> {
+  const key = process.env.OPENROUTER_API_KEY
+  if (!key) throw new AnalyzeError('No OpenRouter API key configured on the server.', 401)
+  // our system prompt is Anthropic-style text blocks — flatten to one string
+  const sysText = Array.isArray(system)
+    ? system
+        .map((b) => (b && typeof (b as { text?: unknown }).text === 'string' ? (b as { text: string }).text : ''))
+        .join('\n\n')
+    : String(system)
+  let resp: Response
+  try {
+    resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: MODEL_LITE,
+        max_tokens: opts.maxTokens,
+        messages: [
+          { role: 'system', content: sysText },
+          { role: 'user', content: user },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: opts.tool.name,
+              description: opts.tool.description,
+              parameters: opts.tool.input_schema,
+            },
+          },
+        ],
+        tool_choice: { type: 'function', function: { name: opts.tool.name } },
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
+    })
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    throw new AnalyzeError(
+      timedOut
+        ? 'The OpenRouter request timed out. Try again in a moment.'
+        : 'Could not reach OpenRouter. Please try again shortly.',
+      timedOut ? 504 : 502,
+    )
+  }
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      const j = (await resp.json()) as { error?: { message?: string } }
+      detail = j?.error?.message || JSON.stringify(j)
+    } catch {
+      detail = await resp.text().catch(() => '')
+    }
+    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
+    throw new AnalyzeError(`OpenRouter error (${status}): ${clip(detail, 200)}`, status)
+  }
+  const msg = (await resp.json()) as {
+    choices?: Array<{
+      message?: { content?: unknown; tool_calls?: Array<{ function?: { arguments?: unknown } }> }
+    }>
+  }
+  const choice = msg.choices?.[0]?.message
+  let raw = choice?.tool_calls?.[0]?.function?.arguments
+  if (typeof raw !== 'string' || !raw.trim()) {
+    // some models put the JSON in content despite a forced tool choice
+    const content = typeof choice?.content === 'string' ? choice.content : ''
+    const m = content.match(/\{[\s\S]*\}/)
+    raw = m?.[0]
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    throw new AnalyzeError('The lite model did not return structured output.', 502)
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new AnalyzeError('The lite model returned unreadable output.', 502)
+  }
 }
 
 // ---- Board graphics (shared by the analyse and ask schemas) ----
@@ -496,11 +589,22 @@ Some moves come with an "Engine check" (Stockfish evaluation). Treat it as groun
 - Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.
 - GROUND every square-level claim in the FEN: before saying a square is protected, safe, or controlled, verify from the FEN which pieces actually attack and defend it. If the engine's best move can simply be captured, it is a SACRIFICE line — say so and name the concrete follow-up (check the position!) instead of inventing positional cover for it; if you cannot see the compensation, give your own principled alternative and mention the engine move only as "the engine's tactical suggestion". A confidently wrong claim about the board is the worst mistake you can make.`)
 
-  const userOf = (ts: typeof targets) => `Full game in SAN:
+  const userOf = (ts: typeof targets, label = `${sideName} `) => `Full game in SAN:
 ${moveText}
 
-Analyse the following ${sideName} move(s); return exactly one result object per ply listed:
+Analyse the following ${label}move(s); return exactly one result object per ply listed:
 ${targetLinesOf(ts)}`
+
+  // The NON-studied side's moves are context, not coaching — they go to the
+  // bargain lite model (OpenRouter) when a key for it is configured, and are
+  // simply dropped when not. Everything the reader actually studies stays on
+  // the Claude tiers below.
+  const isLite = (t: (typeof targets)[number]) => {
+    const m = byPly.get(t.ply)
+    return !!m && !isStudied(m.color, input.focus)
+  }
+  const liteTargets = hasLiteKey() ? targets.filter(isLite) : []
+  const claudeTargets = targets.filter((t) => !isLite(t))
 
   // Model tiering (engine-gated): moves the engine vouches for (its top choice,
   // or a small loss) are routine and go to the cheaper model; key moments — a
@@ -508,12 +612,14 @@ ${targetLinesOf(ts)}`
   const isKey = (t: (typeof targets)[number]) =>
     !t.engine || (!t.engine.isBest && t.engine.cpLoss >= KEY_MOVE_CP_LOSS)
   const groups = [
-    { targets: targets.filter(isKey), model: MODEL },
-    { targets: targets.filter((t) => !isKey(t)), model: MODEL_FAST },
+    { targets: claudeTargets.filter(isKey), model: MODEL },
+    { targets: claudeTargets.filter((t) => !isKey(t)), model: MODEL_FAST },
   ].filter((g) => g.targets.length > 0)
 
-  const parts = (await Promise.all(
-    groups.map((g) =>
+  const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
+
+  const parts = (await Promise.all([
+    ...groups.map((g) =>
       callClaude(apiKey, system, userOf(g.targets), {
         maxTokens: 8000,
         tool: OUTPUT_TOOL,
@@ -521,7 +627,19 @@ ${targetLinesOf(ts)}`
         model: g.model,
       }),
     ),
-  )) as AnalyzeResponse[]
+    // Best-effort: a lite-provider failure must never sink the Claude results.
+    ...(liteTargets.length
+      ? [
+          callOpenRouter(liteSystem, userOf(liteTargets, 'opponent '), {
+            maxTokens: 6000,
+            tool: OUTPUT_TOOL as { name: string; description: string; input_schema: unknown },
+          }).catch((e) => {
+            console.error('[analyze] lite tier failed:', e)
+            return { results: [] }
+          }),
+        ]
+      : []),
+  ])) as AnalyzeResponse[]
   const data: AnalyzeResponse = { results: parts.flatMap((p) => p.results || []) }
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
@@ -571,118 +689,9 @@ ${targetLinesOf(ts)}`
   return { results }
 }
 
-// ---- Quiz mode ----
-
-const QUIZ_TOOL = {
-  name: 'make_quiz',
-  description: 'Return short multiple-choice quiz questions about the rules of thumb.',
-  input_schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      questions: {
-        type: 'array',
-        description: 'The quiz questions.',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            prompt: { type: 'string', description: 'The question text.' },
-            options: {
-              type: 'array',
-              description: '3 to 4 answer options; exactly one has correct=true.',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  text: { type: 'string', description: 'A short answer option.' },
-                  correct: { type: 'boolean', description: 'True for the single correct option.' },
-                },
-                required: ['text', 'correct'],
-              },
-            },
-            explanation: { type: 'string', description: 'One line explaining the correct answer.' },
-            ruleId: { type: 'integer', description: `Main rule number involved (1-${RULE_COUNT}), if any.` },
-            ply: { type: 'integer', description: 'The game ply referenced, if any.' },
-          },
-          required: ['prompt', 'options', 'explanation'],
-        },
-      },
-    },
-    required: ['questions'],
-  },
-}
-
-export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
-  if (input.kind === 'bestmove') return runBestMoveQuiz(input)
-  const apiKey = resolveKey(input)
-  const focus = input.focus === 'b' ? 'b' : input.focus === 'both' ? 'both' : 'w'
-  const sideName = focus === 'w' ? 'White' : focus === 'b' ? 'Black' : 'both sides'
-  const game = sanitizeGame(input.game)
-  if (game.length === 0) throw new AnalyzeError('A game is required to build a quiz.')
-  const count = Math.min(10, Math.max(1, intOr(input.count, 6)))
-  const moveText = moveTextOf(game)
-
-  const system = systemWith(`Create a short multiple-choice quiz that teaches a player studying ${sideName} the rules of thumb, based on the game below. Use the make_quiz tool.
-
-Each question must have a clear "prompt", 3-4 "options" with EXACTLY ONE having correct=true, and a one-line "explanation" of the correct answer. Make the wrong options plausible but clearly worse. Vary the questions across these kinds:
-- "Which rule does <move> most FOLLOW / BREAK here?" (options are rule titles).
-- "Which of these moves best follows rule #NN (<title>)?" (options are moves that appear in the game).
-- A concept check about what a specific rule means.
-Only reference moves that actually appear in the game, citing them by move number and SAN. Set "ruleId" to the main rule number (1-${RULE_COUNT}) and "ply" to the referenced game ply when applicable. Keep prompts and options concise.`)
-
-  const user = `The player being quizzed is studying ${sideName}. Base the quiz on this game.
-Game (SAN):
-${moveText}
-
-Create ${count} questions.`
-
-  const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 4000,
-    tool: QUIZ_TOOL,
-    toolName: 'make_quiz',
-  })) as { questions?: unknown }
-
-  const rawQuestions = Array.isArray(data.questions) ? data.questions : []
-  const questions: QuizQuestion[] = []
-  for (const q of rawQuestions) {
-    if (!q || typeof q.prompt !== 'string' || !q.prompt.trim()) continue
-    const rawOpts = Array.isArray(q.options) ? q.options : []
-    const valid: { text: string; correct: boolean }[] = rawOpts
-      .filter((o: { text?: unknown }) => o && typeof o.text === 'string' && o.text.trim())
-      .map((o: { text: string; correct?: unknown }) => ({ text: cleanClip(o.text, 160), correct: o.correct === true }))
-    // Find the answer BEFORE trimming (so an over-long list can't drop it), and
-    // enforce exactly one correct option — the schema only "describes" that.
-    const correctIdx = valid.findIndex((o) => o.correct)
-    if (correctIdx === -1) continue
-    valid.forEach((o, i) => (o.correct = i === correctIdx))
-    let options = valid
-    if (valid.length > 5) {
-      options = valid.filter((o, i) => o.correct || i < (correctIdx < 5 ? 5 : 4)).slice(0, 5)
-    }
-    if (options.length < 2) continue
-    // Shuffle: models habitually write the correct option FIRST, so without
-    // this the right answer is almost always "A".
-    for (let i = options.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[options[i], options[j]] = [options[j], options[i]]
-    }
-    const out: QuizQuestion = {
-      prompt: cleanClip(q.prompt, 400),
-      options,
-      explanation: cleanClip(q.explanation, 300),
-    }
-    if (Number.isInteger(q.ruleId) && q.ruleId >= 1 && q.ruleId <= RULE_COUNT) out.ruleId = q.ruleId
-    // Only keep plies that actually exist in the supplied game.
-    if (Number.isInteger(q.ply) && q.ply >= 0 && game.some((m) => m.ply === q.ply)) out.ply = q.ply
-    questions.push(out)
-    if (questions.length >= 10) break
-  }
-  if (questions.length === 0) throw new AnalyzeError('Could not generate quiz questions. Try again.', 502)
-  return { questions }
-}
-
-// ---- Best-move quiz ----
+// ---- Quiz mode (guess the move) ----
+// The client runs the quiz itself (board input, engine grading, retries);
+// the server's one job is the coaching explanation once a position is done.
 
 /** Parse a move (SAN or coordinate notation) against a FEN; returns canonical SAN or null. */
 function legalSan(fen: string, move: string): string | null {
@@ -695,166 +704,146 @@ function legalSan(fen: string, move: string): string | null {
   }
 }
 
-const BESTMOVE_TOOL = {
-  name: 'make_bestmove_quiz',
-  description: 'Return distractor moves and an explanation for each quiz position.',
+const QUIZ_TOOL = {
+  name: 'explain_quiz_move',
+  description: 'Return the coaching explanation for one guess-the-move position.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
     properties: {
-      items: {
+      whyPlayed: {
+        type: 'string',
+        description:
+          '2-4 sentences on the move PLAYED in the game: name it, give the concrete mechanism of why it fell short (what it allowed, missed or gave up — not just a judgment), and the habit that would catch it next time. Cite a rule number where natural (e.g. "rule 17").',
+      },
+      whyBest: {
+        type: 'string',
+        description:
+          "2-4 sentences on the engine's move: what it concretely achieves, grounding every claim about what happens next in the engine continuation when one is given. End with the transferable idea to look for in positions like this.",
+      },
+      attemptNotes: {
         type: 'array',
-        description: 'Exactly one item per listed position, in the given order.',
+        description:
+          'Exactly one entry per listed quiz try: one sentence on why that specific move is inferior here. Omit when no tries are listed.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
-            ply: { type: 'integer', description: 'The ply of the position, as listed.' },
-            distractors: {
-              type: 'array',
-              description:
-                '1-2 plausible but inferior LEGAL moves (SAN) a club player would seriously consider — tempting captures, natural developing moves. NEVER the played or target move.',
-              items: { type: 'string' },
-            },
-            explanation: {
-              type: 'string',
-              description:
-                '2-3 sentences: why the target move is strongest (cite rule numbers where natural), and — when the game move differed — why the game move fell short, naming it.',
-            },
+            san: { type: 'string', description: 'The tried move, exactly as listed.' },
+            note: { type: 'string', description: 'One concrete sentence on this try.' },
           },
-          required: ['ply', 'distractors', 'explanation'],
+          required: ['san', 'note'],
         },
       },
     },
-    required: ['items'],
+    required: ['whyPlayed', 'whyBest'],
   },
 }
 
-async function runBestMoveQuiz(input: QuizRequest): Promise<QuizResponse> {
+export async function runQuiz(input: QuizRequest): Promise<QuizResponse> {
   const apiKey = resolveKey(input)
   const game = sanitizeGame(input.game)
-
-  // Verify every target on a real board: the position must parse, the played
-  // and correct moves must be legal there. The correct answer is decided HERE
-  // (engine best > AI alternative > the played move), never by the quiz model.
-  interface Verified {
-    ply: number
-    fen: string
-    played: string
-    correct: string
-    cpLoss?: number
-    mover: 'White' | 'Black'
+  if (game.length === 0) throw new AnalyzeError('A game is required.')
+  // normalise whitespace so a crafted FEN can't smuggle its own prompt lines
+  const fen = clip(input.fenBefore, 100).replace(/\s+/g, ' ').trim()
+  const played = legalSan(fen, clip(input.played?.san, 12))
+  const best = legalSan(fen, clip(input.best?.san, 12))
+  if (!played || !best) {
+    throw new AnalyzeError('A valid position with the played and best moves is required.')
   }
-  const targets: Verified[] = []
-  for (const raw of Array.isArray(input.targets) ? input.targets : []) {
-    const t = raw as BestMoveTarget
-    if (!t || !Number.isInteger(t.ply) || typeof t.fenBefore !== 'string' || typeof t.played !== 'string') continue
-    const fen = clip(t.fenBefore, 100)
-    const played = legalSan(fen, clip(t.played, 12))
-    if (!played) continue
-    const correctRaw =
-      (typeof t.best === 'string' && t.best.trim()) ||
-      (typeof t.alternative === 'string' && t.alternative.trim()) ||
-      t.played
-    const correct = legalSan(fen, clip(correctRaw, 12))
-    if (!correct) continue
-    targets.push({
-      ply: t.ply,
-      fen,
-      played,
-      correct,
-      cpLoss: Number.isFinite(t.cpLoss) ? Math.max(0, Math.trunc(t.cpLoss as number)) : undefined,
-      mover: fen.split(' ')[1] === 'b' ? 'Black' : 'White',
-    })
-    if (targets.length >= 10) break
+  const ply = intOr(input.ply, -1)
+  const mv = game.find((m) => m.ply === ply)
+  const moverName = fen.split(' ')[1] === 'b' ? 'Black' : 'White'
+  const label = mv ? `${mv.moveNumber}${mv.color === 'w' ? '.' : '…'} ${mv.san}` : played
+  const pawns = (cp: number) => (cp / 100).toFixed(1)
+  const playedLoss = Math.max(0, intOr(input.played?.cpLoss, 0))
+
+  // The player's quiz tries: legality-checked against the position, the best
+  // move excluded (it needs no "why was this inferior" note).
+  const tries: Array<{ san: string; cpLoss?: number }> = []
+  for (const a of Array.isArray(input.attempts) ? input.attempts : []) {
+    const san = legalSan(fen, clip(a?.san, 12))
+    if (!san || san === best || tries.some((t) => t.san === san)) continue
+    const cpLoss = Number.isFinite(a?.cpLoss) ? Math.max(0, Math.trunc(a.cpLoss as number)) : undefined
+    tries.push({ san, ...(cpLoss !== undefined ? { cpLoss } : {}) })
+    if (tries.length >= 6) break
   }
-  if (!targets.length) {
-    throw new AnalyzeError('No usable positions for a best-move quiz — analyse some moves first.')
+  const solvedWith = legalSan(fen, clip(input.solvedWith?.san, 12))
+  const pv = sanitizePv(input.best?.pv)
+
+  const lines = [
+    `Position (FEN, ${moverName} to move): ${fen}`,
+    `Played in the game: ${played}${
+      playedLoss > 0 ? ` — Stockfish: it gave up about ${pawns(playedLoss)} pawns vs the best move` : ''
+    }.`,
+    `Engine best move: ${best}.`,
+  ]
+  if (pv) {
+    lines.push(
+      `Engine's expected line from this position (it BEGINS with the best move itself): ${pv.join(' ')} — treat this line as ground truth for what happens next; do not invent a different continuation.`,
+    )
+  }
+  if (tries.length) {
+    lines.push(
+      `Moves the player tried in the quiz before finishing (in order): ${tries
+        .map((t) => t.san + (t.cpLoss !== undefined ? ` (≈${pawns(t.cpLoss)} pawns below best)` : ''))
+        .join(', ')}.`,
+    )
+  }
+  // Only relay the "equally strong" claim when the client sent the grade that
+  // backs it — an unverified claim would have the coach praising anything.
+  const solvedLoss = Number.isFinite(input.solvedWith?.cpLoss)
+    ? Math.max(0, Math.trunc(input.solvedWith!.cpLoss as number))
+    : undefined
+  if (solvedWith && solvedWith !== best && solvedLoss !== undefined && solvedLoss <= 60) {
+    lines.push(
+      `The player solved it with ${solvedWith}, which Stockfish graded within ${pawns(solvedLoss)} pawns of ${best} — acknowledge their move alongside the engine's in whyBest.`,
+    )
   }
 
-  const lines = targets
-    .map((t) => {
-      let line = `- ply ${t.ply} — ${t.mover} to move. FEN: ${t.fen}. Played in the game: ${t.played}. Target move: ${t.correct}.`
-      if (t.correct === t.played) line += ' (The player FOUND the target move — write the explanation as reinforcement.)'
-      else if (t.cpLoss !== undefined)
-        line += ` (Stockfish: the played move gave up about ${(t.cpLoss / 100).toFixed(1)} pawns vs the target.)`
-      return line
-    })
-    .join('\n')
+  const system = systemWith(`A player is training on the costliest moments of their OWN game: they just tried to find the strongest move in the position below ("guess the move"), and you now explain the moment with the explain_quiz_move tool.
+Address the player who had ${moverName} as "you" — they made the game move being discussed.
+Verify any claim about a piece or a square against the FEN before writing it. Keep every field tight and concrete; no square brackets, markdown or headings.`)
 
-  const system = systemWith(`You are building a "find the strongest move" quiz from the player's OWN game, using the make_bestmove_quiz tool. Each listed position gives the move actually PLAYED and the TARGET move — the strongest or clearly cleaner move (sometimes the played move itself, when the player found it).
-Return exactly one item per listed ply:
-- "distractors": 1-2 plausible but inferior LEGAL moves in that position (SAN) that a club player would seriously consider — tempting captures, checks, natural developing moves. Never include the played or target move, and never a move that is equally strong. The question must not be solvable by elimination: a distractor that is obviously bad (hangs a piece for nothing, retreats for no reason) gives the answer away.
-- "explanation": 2-3 sentences that TEACH, not just judge. Name the principle at work and ALWAYS cite at least one rule by number (e.g. "rule 17" — the app turns citations into tappable links), say concretely what the target move achieves, and end with the transferable idea: what the player should look for in positions like this. When the game move differed, say plainly why it fell short, naming it (e.g. "In the game, Nf3 let Black free the bishop"). When the game move IS the target, reinforce what made it right so the player repeats it on purpose. Do not give the answer away in a distractor.`)
-
-  const user = `Full game in SAN (for context):
+  const user = `Full game (SAN) for context:
 ${moveTextOf(game)}
 
-The positions:
-${lines}`
+The quizzed moment is ${mv ? `move ${label}` : `ply ${ply}`}.
+${lines.join('\n')}
+
+Explain it.`
 
   const data = (await callClaude(apiKey, system, user, {
-    maxTokens: 3000,
-    tool: BESTMOVE_TOOL,
-    toolName: 'make_bestmove_quiz',
-  })) as { items?: unknown }
+    maxTokens: 1200,
+    tool: QUIZ_TOOL,
+    toolName: 'explain_quiz_move',
+  })) as { whyPlayed?: unknown; whyBest?: unknown; attemptNotes?: unknown }
 
-  const rawItems = Array.isArray(data.items) ? data.items : []
-  const itemByPly = new Map<number, { distractors?: unknown; explanation?: unknown }>()
-  for (const it of rawItems) {
-    if (it && Number.isInteger(it.ply) && !itemByPly.has(it.ply)) itemByPly.set(it.ply, it)
+  const whyPlayed = cleanClip(data.whyPlayed, 700).trim()
+  const whyBest = cleanClip(data.whyBest, 700).trim()
+  if (!whyPlayed || !whyBest) {
+    throw new AnalyzeError('Could not generate the explanation. Try again.', 502)
   }
-
-  const questions: QuizQuestion[] = []
-  for (const t of targets) {
-    const item = itemByPly.get(t.ply)
-    // Options: the correct move, the game move (when different), then verified
-    // distractors — all legality-checked against the position.
-    const options: string[] = [t.correct]
-    if (t.played !== t.correct) options.push(t.played)
-    for (const d of Array.isArray(item?.distractors) ? item.distractors : []) {
-      if (options.length >= 4) break
-      if (typeof d !== 'string') continue
-      const san = legalSan(t.fen, clip(d, 12))
-      if (san && !options.includes(san)) options.push(san)
-    }
-    // Top up from the position's legal moves if the model came up short.
-    if (options.length < 4) {
-      try {
-        const all = new Chess(t.fen).moves()
-        for (const i of [0, Math.floor(all.length / 2), all.length - 1, ...all.keys()]) {
-          if (options.length >= 4) break
-          const san = all[i]
-          if (san && !options.includes(san)) options.push(san)
-        }
-      } catch {
-        /* keep what we have */
-      }
-    }
-    if (options.length < 2) continue
-    // Fisher-Yates shuffle so the answer isn't always option A.
-    for (let i = options.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[options[i], options[j]] = [options[j], options[i]]
-    }
-    const cleanedExpl = cleanClip(item?.explanation, 600).trim()
-    let explanation = cleanedExpl || `${t.correct} was the strongest move here.`
-    if (t.played !== t.correct && !explanation.includes(t.played)) {
-      explanation += ` In the game, ${t.played} was played.`
-    }
-    questions.push({
-      prompt:
-        t.mover +
-        ' to move — what is the strongest move here?' +
-        (t.played === t.correct ? '' : ' (One of these was played in the game.)'),
-      options: options.map((text) => ({ text, correct: text === t.correct })),
-      explanation,
-      ply: t.ply,
-      fen: t.fen,
-    })
-  }
-  if (!questions.length) throw new AnalyzeError('Could not build best-move questions. Try again.', 502)
-  return { questions }
+  const explanation: QuizExplanation = { whyPlayed, whyBest }
+  const rawNotes = Array.isArray(data.attemptNotes) ? data.attemptNotes : []
+  const notedSans = new Set<string>()
+  const notes = rawNotes
+    .map((n: { san?: unknown; note?: unknown }) => ({
+      san: typeof n?.san === 'string' ? clip(n.san, 12) : '',
+      note: cleanClip(n?.note, 300).trim(),
+    }))
+    // one note per LISTED try, nothing invented, nothing repeated
+    .filter(
+      (n) =>
+        n.san &&
+        n.note &&
+        tries.some((t) => t.san === n.san) &&
+        !notedSans.has(n.san) &&
+        (notedSans.add(n.san), true),
+    )
+    .slice(0, 6)
+  if (notes.length) explanation.attemptNotes = notes
+  return { explanation }
 }
 
 // ---- Game overview ----

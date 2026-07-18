@@ -2,19 +2,98 @@
 // by the move sequence + studied side, so re-loading the same PGN (or resuming
 // after a reload) restores every analysed move instead of re-asking Claude.
 
-import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizKind, QuizQuestion } from '../shared/types'
+import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizExplanation } from '../shared/types'
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
 const MAX_GAMES = 30 // LRU cap (quota-evict fallback below handles overflow)
 
-/** A generated quiz plus the player's progress through it. */
+/** One try in a guess-the-move position. */
+export interface QuizAttempt {
+  san: string
+  /** centipawns the try gives up vs the engine's best (absent when ungraded) */
+  cpLoss?: number
+  /** this try was the very move played in the game */
+  isGameMove?: boolean
+}
+
+/** One guess-the-move position and the player's progress on it. */
+export interface QuizPosition {
+  ply: number
+  /** wrong tries, in order (the solving move is `solution`, not listed here) */
+  attempts: QuizAttempt[]
+  solved: boolean
+  /** the player gave up and asked for the answer */
+  revealed: boolean
+  hintUsed: boolean
+  /** the move that solved it (the engine's best, or one just as strong) */
+  solution?: QuizAttempt
+  explanation?: QuizExplanation
+}
+
+/** The guess-the-move quiz: the game's costliest moments, frozen at start. */
 export interface SavedQuiz {
-  questions: QuizQuestion[]
-  answers: (number | null)[]
+  v: 2
+  positions: QuizPosition[]
   current: number
-  /** which quiz this is (older saves have none = 'rules') */
-  kind?: QuizKind
+  /** round identity — a dangling async patch from a previous round (or another
+      game) must never land on a freshly started quiz */
+  round: number
+}
+
+/** Validate a stored quiz FIELD BY FIELD; older multiple-choice saves (and
+    any malformed blob, e.g. a truncated cloud write) are discarded rather
+    than left to crash the Quiz tab on every open. */
+export function sanitizeQuiz(q: unknown): SavedQuiz | null {
+  const s = q as SavedQuiz | null
+  if (!s || s.v !== 2 || !Array.isArray(s.positions)) return null
+  const attempt = (a: unknown): QuizAttempt | null => {
+    const x = a as QuizAttempt | null
+    if (!x || typeof x.san !== 'string' || !x.san.trim()) return null
+    return {
+      san: x.san.slice(0, 12),
+      ...(Number.isFinite(x.cpLoss) ? { cpLoss: Math.max(0, Math.trunc(x.cpLoss as number)) } : {}),
+      ...(x.isGameMove === true ? { isGameMove: true } : {}),
+    }
+  }
+  const positions: QuizPosition[] = []
+  for (const raw of s.positions) {
+    const p = raw as QuizPosition | null
+    if (!p || !Number.isInteger(p.ply) || p.ply < 0 || !Array.isArray(p.attempts)) continue
+    const sol = p.solution ? attempt(p.solution) : null
+    const ex = p.explanation
+    const explanation =
+      ex && typeof ex.whyPlayed === 'string' && typeof ex.whyBest === 'string'
+        ? {
+            whyPlayed: ex.whyPlayed,
+            whyBest: ex.whyBest,
+            ...(Array.isArray(ex.attemptNotes)
+              ? {
+                  attemptNotes: ex.attemptNotes.filter(
+                    (n) => n && typeof n.san === 'string' && typeof n.note === 'string',
+                  ),
+                }
+              : {}),
+          }
+        : undefined
+    positions.push({
+      ply: p.ply,
+      attempts: p.attempts.map(attempt).filter((a): a is QuizAttempt => a !== null),
+      solved: p.solved === true,
+      revealed: p.revealed === true,
+      hintUsed: p.hintUsed === true,
+      ...(sol ? { solution: sol } : {}),
+      ...(explanation ? { explanation } : {}),
+    })
+  }
+  if (!positions.length) return null
+  const cur = Number.isInteger(s.current) ? s.current : 0
+  return {
+    v: 2,
+    positions,
+    current: Math.min(positions.length - 1, Math.max(0, cur)),
+    round: Number.isInteger(s.round) ? s.round : 1,
+  }
 }
 
 export interface SavedGame {
