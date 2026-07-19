@@ -211,7 +211,7 @@ textarea::placeholder, input::placeholder { color: var(--muted); }
    fits under the sticky header incl. the nav row, capped only so the analysis
    text keeps a readable column on narrower desktops. The 150px budget =
    74px sticky offset + the nav row + a little slack — measured, not padded. */
-.study { display: grid; grid-template-columns: clamp(380px, min(calc(100vh - 150px), 60vw), 880px) 1fr; gap: 24px; align-items: start; }
+.study { display: grid; grid-template-columns: clamp(380px, min(calc(100vh - 170px), 58vw), 800px) 1fr; gap: 24px; align-items: start; }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .navbtn { border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 8px 12px; font-size: 15px; cursor: pointer; color: var(--ink); }
