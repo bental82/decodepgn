@@ -845,6 +845,18 @@ export default function App() {
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+    // A run must not END with blank cards: any ply whose analysis came back
+    // empty (a skipped ply both requests missed) gets ONE final repair pass
+    // here, inside the same run — never again on later opens. Read from the
+    // save when the user has moved on: resultsRef tracks the on-screen game.
+    const onThisGame = genRef.current === gen || storeRef.current?.key === runKey
+    const resultsNow = onThisGame
+      ? resultsRef.current
+      : ((runKey ? loadGame(runKey)?.results : undefined) ?? {})
+    const stillEmpty = plies.filter((p) => isEmptyResult(resultsNow[p]))
+    if (stillEmpty.length > 0) {
+      await analyzePlies(moves, focus, stillEmpty, run)
+    }
     if (runKey) {
       setBgAnalysing((prev) => {
         const c = new Set(prev)
@@ -879,10 +891,12 @@ export default function App() {
     const key = gameK + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
-    // Opponent (lite) coverage only for a FRESH analysis: a reopened game
-    // auto-runs nothing beyond its own missing studied moves — extra work on
-    // an old game happens only when the user presses the button.
-    void handleAnalyzeAll(false, { includeLite: Object.keys(results).length === 0 })
+    // Auto-analysis is for BRAND-NEW games only. A game with ANY existing
+    // results — reopened here, or restored from the cloud on another browser —
+    // must never start analysing by itself: whatever is missing is offered on
+    // the "Analyse remaining" button and runs only when pressed.
+    if (Object.keys(results).length > 0) return
+    void handleAnalyzeAll(false, { includeLite: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, moves, restoringKey, hasLiteKey, bgAnalysing, liteKnown])
 

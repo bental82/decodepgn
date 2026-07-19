@@ -47,8 +47,23 @@ let initFailures = 0
 let candidateIdx = 0
 const MAX_INIT_FAILURES = 3 // per candidate build
 let engineId: string | null = null
-// Single worker — serialize evaluations through a promise chain.
-let queue: Promise<unknown> = Promise.resolve()
+// Single worker — searches are serialized through a two-lane queue. QUICK
+// requests (the eval bar sweep) take the fast lane and jump ahead of queued
+// DEEP per-move checks: the user should see the Stockfish score of every
+// position within seconds of loading a game, not after the whole analysis.
+let engineBusyRunning = false
+const quickLane: Array<() => Promise<void>> = []
+const deepLane: Array<() => Promise<void>> = []
+function pumpEngineQueue() {
+  if (engineBusyRunning) return
+  const next = quickLane.shift() ?? deepLane.shift()
+  if (!next) return
+  engineBusyRunning = true
+  void next().finally(() => {
+    engineBusyRunning = false
+    pumpEngineQueue()
+  })
+}
 
 /** Which engine build actually loaded (from the UCI "id name" line). */
 export function engineName(): string | null {
@@ -197,9 +212,11 @@ function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<Score
       w.postMessage(`go movetime ${movetime} depth ${depthCap}`)
     })
   }
-  const p = queue.then(run, run)
-  queue = p.catch(() => {})
-  return p
+  return new Promise<ScoredPosition>((resolve, reject) => {
+    const lane = movetime <= QUICK_MOVETIME_MS ? quickLane : deepLane
+    lane.push(() => run().then(resolve, reject))
+    pumpEngineQueue()
+  })
 }
 
 /**
