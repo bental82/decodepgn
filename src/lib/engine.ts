@@ -279,7 +279,7 @@ export function clearEngineCache(): void {
  */
 export async function evaluateMove(
   m: MoveToEvaluate,
-  opts?: { fresh?: boolean },
+  opts?: { fresh?: boolean; quick?: boolean },
 ): Promise<EngineEval | null> {
   if (!(await engineAvailable())) return null
   try {
@@ -288,10 +288,14 @@ export async function evaluateMove(
       scoreCache.delete(m.fenBefore)
       scoreCache.delete(m.fenAfter)
     }
-    // Deep budget: this search's best move is shown as a recommendation.
-    // (fenAfter of one move IS fenBefore of the next, so deep scores chain
-    // through the cache and most moves cost one deep search, not two.)
-    const before = await scorePosition(m.fenBefore, DEEP_MOVETIME_MS) // the player is to move
+    // Deep budget by default: this search's best move is shown as a
+    // recommendation. The quick option is for the NON-studied side's moves —
+    // context, not coaching — where the eval-bar sweep has usually already
+    // cached both positions, making the check close to free.
+    // (fenAfter of one move IS fenBefore of the next, so scores chain
+    // through the cache and most moves cost one search, not two.)
+    const budget = opts?.quick ? QUICK_MOVETIME_MS : DEEP_MOVETIME_MS
+    const before = await scorePosition(m.fenBefore, budget) // the player is to move
 
     // If the played move ended the game, score it directly instead of asking
     // the engine to search a terminal position.
@@ -302,7 +306,7 @@ export async function evaluateMove(
     } else if (afterGame.isDraw()) {
       evalPlayed = 0
     } else {
-      const after = await scorePosition(m.fenAfter, DEEP_MOVETIME_MS) // opponent to move
+      const after = await scorePosition(m.fenAfter, budget) // opponent to move
       evalPlayed = -after.cp
     }
 
