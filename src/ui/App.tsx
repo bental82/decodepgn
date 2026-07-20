@@ -285,6 +285,11 @@ export default function App() {
     key: string
     pgn: string
     headers: Record<string, string>
+    /** no save existed when the run started — background batches may CREATE
+        one (there is nothing anywhere to clobber). When a save DID exist and
+        is gone mid-run (deleted / quota-evicted), batches are dropped instead:
+        recreating a shell would overwrite the full cloud copy. */
+    freshGame?: boolean
   }
 
   const analyzePlies = useCallback(
@@ -338,10 +343,14 @@ export default function App() {
         if (pending.length > 0 && (await engineAvailable())) {
           for (const t of pending) {
             const pm = mvs[t.ply]
-            // fresh recompute failed → keep the saved check over losing it
+            // fresh recompute failed → keep the saved check over losing it.
+            // Opponent moves take the quick budget: their check is context,
+            // and the sweep has usually cached both positions already.
             const ev =
-              (await evaluateMove(pm, { fresh: opts?.freshEngine })) ??
-              resultsRef.current[t.ply]?.engine
+              (await evaluateMove(pm, {
+                fresh: opts?.freshEngine,
+                quick: !isStudied(pm.color, f),
+              })) ?? resultsRef.current[t.ply]?.engine
             if (ev) {
               t.engine = ev
               engineByPly.set(t.ply, ev)
@@ -404,7 +413,20 @@ export default function App() {
           // or quota-evicted mid-run), DROP the batch: fabricating a shell
           // save here and cloud-saving it would overwrite the game's full
           // cloud copy with a nearly-empty one — analysis loss, not repair.
-          const saved = loadGame(origin.key)
+          // Exception: a FRESH game left before its first save existed gets
+          // its save created here — there is nothing to clobber.
+          const saved =
+            loadGame(origin.key) ??
+            (origin.freshGame
+              ? ({
+                  key: origin.key,
+                  pgn: origin.pgn,
+                  focus: f,
+                  headers: origin.headers,
+                  savedAt: Date.now(),
+                  results: {},
+                } as SavedGame)
+              : null)
           if (saved) {
             const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
             for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
@@ -749,6 +771,9 @@ export default function App() {
   // hasn't been analysed (or errored) yet.
   useEffect(() => {
     if (phase !== 'game' || restoringKey) return
+    // a batch run is (or may be) covering this ply — a single-move request
+    // now would just duplicate its work and its tokens
+    if (bgAnalysing.size > 0) return
     const m = moves[selectedPly]
     if (!m || !(isStudied(m.color, focus) || hasLiteKey)) return
     if (
@@ -759,7 +784,7 @@ export default function App() {
     )
       return
     void analyzePlies(moves, focus, [selectedPly])
-  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey])
+  }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey, bgAnalysing])
 
   const handleAnalyzeAll = async (
     force = false,
@@ -790,6 +815,9 @@ export default function App() {
     if (!plies.length) return
     const gen = genRef.current
     const runKey = storeRef.current?.key
+    // ONE analysis run at a time, across all games: parallel runs would fight
+    // over the single engine worker and double-analyse overlapping plies.
+    if (bgAnalysing.size > 0) return
     if (force) {
       // Explicit repair: recompute every engine check and the eval bar from a
       // clean cache, so a bad saved evaluation cannot survive re-analysis.
@@ -815,6 +843,7 @@ export default function App() {
       key: runKey ?? '',
       pgn: storeRef.current?.pgn ?? '',
       headers: headersRef.current,
+      freshGame: !!runKey && !loadGame(runKey),
     }
     const BATCH = 6
     const CONCURRENCY = 3
@@ -887,7 +916,9 @@ export default function App() {
     if (restoringKey) return // the cloud may have this analysis — don't redo it
     if (!liteKnown) return // don't start half-scoped — wait for the server flag
     const gameK = storeRef.current?.key ?? ''
-    if (bgAnalysing.has(gameK)) return // this game's run is already going
+    // ANY active run defers this one — the effect re-fires when it finishes
+    // (bgAnalysing is a dependency), and the marker below is not yet set.
+    if (bgAnalysing.size > 0) return
     const key = gameK + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
@@ -1575,11 +1606,13 @@ export default function App() {
                   includeLite: true,
                 })
               }
-              disabled={!!allProgress || bgAnalysing.has(overviewGameKey)}
+              disabled={!!allProgress || bgAnalysing.size > 0}
               title={
-                analyseRemainingCount === 0
-                  ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
-                  : undefined
+                bgAnalysing.size > 0 && !bgAnalysing.has(overviewGameKey)
+                  ? 'Another game is being analysed — one analysis runs at a time.'
+                  : analyseRemainingCount === 0
+                    ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
+                    : undefined
               }
             >
               {allProgress
