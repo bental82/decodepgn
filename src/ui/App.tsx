@@ -290,7 +290,15 @@ export default function App() {
         is gone mid-run (deleted / quota-evicted), batches are dropped instead:
         recreating a shell would overwrite the full cloud copy. */
     freshGame?: boolean
+    /** an explicit user click took the engine over — this run stops at the
+        next batch boundary and skips its end-of-run bookkeeping (the takeover
+        already released the lock and stamped pendingRun for the resume). */
+    cancelled?: boolean
   }
+
+  // The run currently holding the one-at-a-time lock, so an explicit click
+  // can cancel it instead of being silently ignored.
+  const activeRunRef = useRef<AnalysisRun | null>(null)
 
   const analyzePlies = useCallback(
     async (
@@ -792,7 +800,7 @@ export default function App() {
 
   const handleAnalyzeAll = async (
     force = false,
-    opts?: { repairEmpty?: boolean; includeLite?: boolean },
+    opts?: { repairEmpty?: boolean; includeLite?: boolean; explicit?: boolean },
   ) => {
     // With the lite tier available a run can cover EVERY move — the studied
     // side on the Claude tiers, the opponent on the bargain model. Studied
@@ -821,7 +829,24 @@ export default function App() {
     const runKey = storeRef.current?.key
     // ONE analysis run at a time, across all games: parallel runs would fight
     // over the single engine worker and double-analyse overlapping plies.
-    if (bgAnalysing.size > 0) return
+    // An EXPLICIT click while another run holds the lock takes it over — a
+    // stalled background run must never leave the user's tap doing nothing.
+    // The cancelled run is stamped to resume on its game's next open; auto
+    // runs still defer (the effect re-fires when the lock frees up).
+    if (bgAnalysing.size > 0) {
+      const prior = activeRunRef.current
+      if (opts?.explicit !== true || !prior) return
+      prior.cancelled = true
+      if (prior.key && prior.key !== runKey) {
+        const s = loadGame(prior.key)
+        if (s && s.pendingRun !== true) saveGame({ ...s, pendingRun: true })
+      }
+      setBgAnalysing((prev) => {
+        const c = new Set(prev)
+        if (prior.key) c.delete(prior.key)
+        return c
+      })
+    }
     // Persist the run's EXISTENCE: if the tab closes mid-run the flag stays
     // set, and reopening the game resumes the work automatically. Cleared on
     // completion below — a run the user watched to the end never resumes.
@@ -856,6 +881,7 @@ export default function App() {
       headers: headersRef.current,
       freshGame: !!runKey && !loadGame(runKey),
     }
+    activeRunRef.current = run
     const BATCH = 6
     const CONCURRENCY = 3
     const batches: number[][] = []
@@ -871,6 +897,7 @@ export default function App() {
     // Only the on-screen indicators are gen-guarded.
     const worker = async () => {
       while (next < batches.length) {
+        if (run.cancelled) return
         const chunk = batches[next++]
         if (genRef.current === gen) {
           setQueuedPlies((prev) => {
@@ -885,6 +912,9 @@ export default function App() {
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
+    // Taken over mid-run: the takeover released the lock and kept pendingRun,
+    // and the NEW run now owns the progress state — touch none of it here.
+    if (run.cancelled) return
     // A run must not END with blank cards: any ply whose analysis came back
     // empty (a skipped ply both requests missed) gets ONE final repair pass
     // here, inside the same run — never again on later opens. Read from the
@@ -897,6 +927,8 @@ export default function App() {
     if (stillEmpty.length > 0) {
       await analyzePlies(moves, focus, stillEmpty, run)
     }
+    if (run.cancelled) return // taken over during the repair pass
+    if (activeRunRef.current === run) activeRunRef.current = null
     if (runKey) {
       setBgAnalysing((prev) => {
         const c = new Set(prev)
@@ -1619,12 +1651,13 @@ export default function App() {
                 void handleAnalyzeAll(analyseRemainingCount === 0, {
                   repairEmpty: true,
                   includeLite: true,
+                  explicit: true,
                 })
               }
-              disabled={!!allProgress || bgAnalysing.size > 0}
+              disabled={!!allProgress || bgAnalysing.has(overviewGameKey)}
               title={
                 bgAnalysing.size > 0 && !bgAnalysing.has(overviewGameKey)
-                  ? 'Another game is being analysed — one analysis runs at a time.'
+                  ? "Another game is being analysed — tapping pauses it and analyses this game instead (the other resumes when it's reopened)."
                   : analyseRemainingCount === 0
                     ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
                     : undefined
@@ -1944,7 +1977,7 @@ export default function App() {
                   </span>
                   <button
                     className="btn"
-                    onClick={() => void handleAnalyzeAll(true)}
+                    onClick={() => void handleAnalyzeAll(true, { explicit: true })}
                     disabled={!!allProgress}
                   >
                     {allProgress
@@ -2204,7 +2237,7 @@ export default function App() {
                 results={results}
                 onJump={jumpTo}
                 onPickRule={openRule}
-                onReanalyzeAll={() => void handleAnalyzeAll(true)}
+                onReanalyzeAll={() => void handleAnalyzeAll(true, { explicit: true })}
                 reanalyzing={!!allProgress}
               />
             </div>
