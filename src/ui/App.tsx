@@ -300,6 +300,25 @@ export default function App() {
   // can cancel it instead of being silently ignored.
   const activeRunRef = useRef<AnalysisRun | null>(null)
 
+  // Manual analyse taps made while another game's run holds the lock: games
+  // still run ONE at a time, but in tap order, chaining automatically — tap
+  // "analyse" on a few games and walk away. A snapshot of everything the run
+  // needs travels with the entry, because by the time it starts the user may
+  // be reading a different game (or the landing page).
+  interface QueuedAnalysis {
+    key: string
+    pgn: string
+    headers: Record<string, string>
+    moves: ParsedMove[]
+    focus: Focus
+    force: boolean
+    repairEmpty: boolean
+    includeLite: boolean
+  }
+  const queueRef = useRef<QueuedAnalysis[]>([])
+  // mirror of the queued KEYS, for rendering (the button's queued state)
+  const [analysisQueue, setAnalysisQueue] = useState<string[]>([])
+
   const analyzePlies = useCallback(
     async (
       mvs: ParsedMove[],
@@ -323,12 +342,22 @@ export default function App() {
         headers: headersRef.current,
       }
       const gen = origin.gen
-      setLoadingPlies((prev) => new Set([...prev, ...targets]))
-      setErrorByPly((prev) => {
-        const c = { ...prev }
-        targets.forEach((p) => delete c[p])
-        return c
-      })
+      // Whether the run's game is on screen RIGHT NOW. Covers re-entry too:
+      // leaving a game and reopening it bumps the gen, but the run's writes
+      // still belong on the live view — the key match says so. A batch whose
+      // game is NOT on screen (queued run, or the user moved on) must keep
+      // its spinners, errors and results out of the visible game's view.
+      const onScreenNow = () =>
+        genRef.current === gen ||
+        (phaseRef.current === 'game' && !!origin.key && storeRef.current?.key === origin.key)
+      if (onScreenNow()) {
+        setLoadingPlies((prev) => new Set([...prev, ...targets]))
+        setErrorByPly((prev) => {
+          const c = { ...prev }
+          targets.forEach((p) => delete c[p])
+          return c
+        })
+      }
       try {
         // Best-effort engine check per target (Stockfish in a worker); the AI
         // weighs it so objectively strong moves don't get scolded.
@@ -338,9 +367,15 @@ export default function App() {
         // position hasn't changed, and re-running Stockfish made "Re-analyse"
         // feel unresponsive). EXPLICIT re-analysis recomputes it instead —
         // it's the repair path when a saved check looks wrong.
+        // Saved engine checks must come from THIS run's game: the on-screen
+        // results belong to whatever the user is looking at, which for a
+        // background batch can be a different game entirely.
+        const knownResults = onScreenNow()
+          ? resultsRef.current
+          : ((origin.key ? loadGame(origin.key)?.results : undefined) ?? {})
         const pending: typeof targetObjs = []
         for (const t of targetObjs) {
-          const prior = opts?.freshEngine ? undefined : resultsRef.current[t.ply]?.engine
+          const prior = opts?.freshEngine ? undefined : knownResults[t.ply]?.engine
           if (prior) {
             t.engine = prior
             engineByPly.set(t.ply, prior)
@@ -358,7 +393,7 @@ export default function App() {
               (await evaluateMove(pm, {
                 fresh: opts?.freshEngine,
                 quick: !isStudied(pm.color, f),
-              })) ?? resultsRef.current[t.ply]?.engine
+              })) ?? knownResults[t.ply]?.engine
             if (ev) {
               t.engine = ev
               engineByPly.set(t.ply, ev)
@@ -367,7 +402,7 @@ export default function App() {
         } else if (opts?.freshEngine) {
           // engine unavailable on this device: keep the saved checks
           for (const t of pending) {
-            const prior = resultsRef.current[t.ply]?.engine
+            const prior = knownResults[t.ply]?.engine
             if (prior) {
               t.engine = prior
               engineByPly.set(t.ply, prior)
@@ -398,13 +433,7 @@ export default function App() {
             returned = new Set(resp.results.map((r) => r.ply))
           }
         }
-        // "On screen" covers re-entry: leaving a game and reopening it bumps
-        // the gen, but the run's results still belong on the live view — the
-        // key match says so. Without this the reopened game looks frozen while
-        // the background run quietly fills its save.
-        const onScreen =
-          genRef.current === gen ||
-          (phaseRef.current === 'game' && storeRef.current?.key === origin.key)
+        const onScreen = onScreenNow()
         if (onScreen) {
           // still looking at this game — update the view (persistence follows
           // via the save effect)
@@ -445,7 +474,7 @@ export default function App() {
           }
         }
       } catch (e) {
-        if (genRef.current !== gen) return // background batch failed — retry next open
+        if (!onScreenNow()) return // background batch failed — retry next open
         const msg = e instanceof Error ? e.message : 'Analysis failed.'
         setErrorByPly((prev) => {
           const c = { ...prev }
@@ -454,7 +483,7 @@ export default function App() {
         })
         if (/api key|401|authentication/i.test(msg)) setShowSettings(true)
       } finally {
-        if (genRef.current === gen) {
+        if (onScreenNow()) {
           setLoadingPlies((prev) => {
             const c = new Set(prev)
             targets.forEach((p) => c.delete(p))
@@ -798,10 +827,33 @@ export default function App() {
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey, bgAnalysing])
 
-  const handleAnalyzeAll = async (
-    force = false,
-    opts?: { repairEmpty?: boolean; includeLite?: boolean; explicit?: boolean },
-  ) => {
+  // Cancel the run holding the engine: its workers stop at the next batch
+  // boundary, and its game is stamped pendingRun so the work resumes on that
+  // game's next open. The lock (activeRunRef) is released synchronously.
+  const cancelActiveRun = () => {
+    const prior = activeRunRef.current
+    if (!prior) return
+    prior.cancelled = true
+    if (prior.key) {
+      const s = loadGame(prior.key)
+      if (s && s.pendingRun !== true) saveGame({ ...s, pendingRun: true })
+    }
+    setBgAnalysing((prev) => {
+      const c = new Set(prev)
+      if (prior.key) c.delete(prior.key)
+      return c
+    })
+    activeRunRef.current = null
+  }
+
+  // The analyse-all core, decoupled from the on-screen state: everything a
+  // run needs travels in `q`, so a QUEUED game can start after the user has
+  // moved to another game (or the landing page). What is already analysed is
+  // re-read at start time — results may have grown since the tap.
+  const startAnalysisRun = async (q: QueuedAnalysis) => {
+    const runKey = q.key || undefined
+    const live = phaseRef.current === 'game' && !!q.key && storeRef.current?.key === q.key
+    const known = live ? resultsRef.current : ((runKey ? loadGame(runKey)?.results : undefined) ?? {})
     // With the lite tier available a run can cover EVERY move — the studied
     // side on the Claude tiers, the opponent on the bargain model. Studied
     // moves go first: the coaching the user came for lands before the context.
@@ -809,44 +861,27 @@ export default function App() {
     // tier only run when EXPLICITLY requested (or, for the lite tier, on a
     // brand-new analysis) — reopening an old game must never start work the
     // user didn't ask for.
-    const withLite = hasLiteKey && opts?.includeLite === true
-    const plies = moves
+    const withLite = liteKeyRef.current && q.includeLite
+    const plies = q.moves
       .filter(
         (m) =>
-          (isStudied(m.color, focus) || withLite) &&
-          (force ||
-            !results[m.ply] ||
-            (opts?.repairEmpty === true && isEmptyResult(results[m.ply]))),
+          (isStudied(m.color, q.focus) || withLite) &&
+          (q.force || !known[m.ply] || (q.repairEmpty && isEmptyResult(known[m.ply]))),
       )
       .map((m) => m.ply)
       .sort(
         (a, b) =>
-          (isStudied(moves[a].color, focus) ? 0 : 1) - (isStudied(moves[b].color, focus) ? 0 : 1) ||
-          a - b,
+          (isStudied(q.moves[a].color, q.focus) ? 0 : 1) -
+            (isStudied(q.moves[b].color, q.focus) ? 0 : 1) || a - b,
       )
-    if (!plies.length) return
-    const gen = genRef.current
-    const runKey = storeRef.current?.key
-    // ONE analysis run at a time, across all games: parallel runs would fight
-    // over the single engine worker and double-analyse overlapping plies.
-    // An EXPLICIT click while another run holds the lock takes it over — a
-    // stalled background run must never leave the user's tap doing nothing.
-    // The cancelled run is stamped to resume on its game's next open; auto
-    // runs still defer (the effect re-fires when the lock frees up).
-    if (bgAnalysing.size > 0) {
-      const prior = activeRunRef.current
-      if (opts?.explicit !== true || !prior) return
-      prior.cancelled = true
-      if (prior.key && prior.key !== runKey) {
-        const s = loadGame(prior.key)
-        if (s && s.pendingRun !== true) saveGame({ ...s, pendingRun: true })
-      }
-      setBgAnalysing((prev) => {
-        const c = new Set(prev)
-        if (prior.key) c.delete(prior.key)
-        return c
-      })
+    if (!plies.length) {
+      startNextQueued() // nothing to do — keep the chain moving
+      return
     }
+    // An off-screen start takes a gen no view ever had: every on-screen
+    // indicator (progress bar, per-ply spinners) stays keyed to the game the
+    // user is actually looking at, not to this background run.
+    const gen = live ? genRef.current : -1
     // Persist the run's EXISTENCE: if the tab closes mid-run the flag stays
     // set, and reopening the game resumes the work automatically. Cleared on
     // completion below — a run the user watched to the end never resumes.
@@ -854,18 +889,20 @@ export default function App() {
       const s = loadGame(runKey)
       if (s && s.pendingRun !== true) saveGame({ ...s, pendingRun: true })
     }
-    if (force) {
+    if (q.force) {
       // Explicit repair: recompute every engine check and the eval bar from a
       // clean cache, so a bad saved evaluation cannot survive re-analysis.
       clearEngineCache()
-      setEvals({})
-      setPgnEvalCoverage(0) // the PGN's own evals were just wiped with the rest
-      forceSweepRef.current = true
-      setSweepGen((g) => g + 1)
-      // the overview is part of the analysis — rebuild it too, once this
-      // fresh run completes (the auto-generate effect waits for it)
-      setGameOverview(null)
-      setOverviewError(null)
+      if (live) {
+        setEvals({})
+        setPgnEvalCoverage(0) // the PGN's own evals were just wiped with the rest
+        forceSweepRef.current = true
+        setSweepGen((g) => g + 1)
+        // the overview is part of the analysis — rebuild it too, once this
+        // fresh run completes (the auto-generate effect waits for it)
+        setGameOverview(null)
+        setOverviewError(null)
+      }
       if (runKey) {
         setAnalysisRunDone((prev) => {
           const c = new Set(prev)
@@ -876,9 +913,9 @@ export default function App() {
     }
     const run: AnalysisRun = {
       gen,
-      key: runKey ?? '',
-      pgn: storeRef.current?.pgn ?? '',
-      headers: headersRef.current,
+      key: q.key,
+      pgn: q.pgn,
+      headers: q.headers,
       freshGame: !!runKey && !loadGame(runKey),
     }
     activeRunRef.current = run
@@ -886,8 +923,10 @@ export default function App() {
     const CONCURRENCY = 3
     const batches: number[][] = []
     for (let i = 0; i < plies.length; i += BATCH) batches.push(plies.slice(i, i + BATCH))
-    setQueuedPlies(new Set(plies))
-    setAllProgress({ done: 0, total: plies.length })
+    if (live) {
+      setQueuedPlies(new Set(plies))
+      setAllProgress({ done: 0, total: plies.length })
+    }
     if (runKey) setBgAnalysing((prev) => new Set(prev).add(runKey))
     let done = 0
     let next = 0
@@ -906,14 +945,15 @@ export default function App() {
             return c
           })
         }
-        await analyzePlies(moves, focus, chunk, run, { freshEngine: force })
+        await analyzePlies(q.moves, q.focus, chunk, run, { freshEngine: q.force })
         done += chunk.length
         if (genRef.current === gen) setAllProgress({ done: Math.min(plies.length, done), total: plies.length })
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker))
     // Taken over mid-run: the takeover released the lock and kept pendingRun,
-    // and the NEW run now owns the progress state — touch none of it here.
+    // and the NEW run now owns the progress state and the queue — touch none
+    // of it here.
     if (run.cancelled) return
     // A run must not END with blank cards: any ply whose analysis came back
     // empty (a skipped ply both requests missed) gets ONE final repair pass
@@ -925,7 +965,7 @@ export default function App() {
       : ((runKey ? loadGame(runKey)?.results : undefined) ?? {})
     const stillEmpty = plies.filter((p) => isEmptyResult(resultsNow[p]))
     if (stillEmpty.length > 0) {
-      await analyzePlies(moves, focus, stillEmpty, run)
+      await analyzePlies(q.moves, q.focus, stillEmpty, run)
     }
     if (run.cancelled) return // taken over during the repair pass
     if (activeRunRef.current === run) activeRunRef.current = null
@@ -946,6 +986,66 @@ export default function App() {
       setAllProgress(null)
       setQueuedPlies(new Set())
     }
+    // one game at a time, in tap order: the next queued game starts the
+    // moment this one finishes
+    startNextQueued()
+  }
+
+  const startNextQueued = () => {
+    while (queueRef.current.length > 0) {
+      const nxt = queueRef.current.shift()!
+      setAnalysisQueue(queueRef.current.map((e) => e.key))
+      if (!loadGame(nxt.key)) continue // deleted while it waited — skip
+      void startAnalysisRun(nxt)
+      return
+    }
+  }
+
+  const handleAnalyzeAll = async (
+    force = false,
+    opts?: { repairEmpty?: boolean; includeLite?: boolean; explicit?: boolean },
+  ) => {
+    const q: QueuedAnalysis = {
+      key: storeRef.current?.key ?? '',
+      pgn: storeRef.current?.pgn ?? '',
+      headers: headersRef.current,
+      moves,
+      focus,
+      force,
+      repairEmpty: opts?.repairEmpty === true,
+      includeLite: opts?.includeLite === true,
+    }
+    // ONE analysis run at a time, across all games: parallel runs would fight
+    // over the single engine worker and double-analyse overlapping plies.
+    // While another game's run holds the lock, an EXPLICIT tap QUEUES this
+    // game (it starts the moment the current run finishes); a second tap on a
+    // queued game jumps the queue — the active run is cancelled and resumes
+    // on its game's next open. Auto runs still defer (their effect re-fires
+    // when the lock frees up). activeRunRef is the synchronous lock — state
+    // (bgAnalysing) can lag a render behind.
+    const prior = activeRunRef.current
+    if (prior) {
+      if (opts?.explicit !== true) return
+      if (prior.key && prior.key === q.key) {
+        // re-analysing the very game that's running: restart it right away
+        cancelActiveRun()
+        await startAnalysisRun(q)
+        return
+      }
+      const idx = queueRef.current.findIndex((e) => e.key === q.key)
+      if (idx === -1) {
+        queueRef.current.push(q)
+        setAnalysisQueue(queueRef.current.map((e) => e.key))
+        return
+      }
+      // second tap: jump the queue
+      queueRef.current.splice(idx, 1)
+      setAnalysisQueue(queueRef.current.map((e) => e.key))
+      cancelActiveRun()
+      await startAnalysisRun(q)
+      return
+    }
+    await startAnalysisRun(q)
   }
 
   // Analyse the WHOLE game automatically after a load: browsing stays instant
@@ -964,7 +1064,9 @@ export default function App() {
     const gameK = storeRef.current?.key ?? ''
     // ANY active run defers this one — the effect re-fires when it finishes
     // (bgAnalysing is a dependency), and the marker below is not yet set.
-    if (bgAnalysing.size > 0) return
+    // activeRunRef is the synchronous check: a queued run chains into the
+    // next one before the state commit lands.
+    if (bgAnalysing.size > 0 || activeRunRef.current) return
     const key = gameK + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
@@ -1657,7 +1759,9 @@ export default function App() {
               disabled={!!allProgress || bgAnalysing.has(overviewGameKey)}
               title={
                 bgAnalysing.size > 0 && !bgAnalysing.has(overviewGameKey)
-                  ? "Another game is being analysed — tapping pauses it and analyses this game instead (the other resumes when it's reopened)."
+                  ? analysisQueue.includes(overviewGameKey)
+                    ? 'Queued after the current analysis — tap again to pause that game and start this one right away.'
+                    : 'Another game is being analysed — tapping queues this game to run next.'
                   : analyseRemainingCount === 0
                     ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
                     : undefined
@@ -1665,11 +1769,13 @@ export default function App() {
             >
               {allProgress
                 ? `Analysing… ${allProgress.done}/${allProgress.total}`
-                : analyseRemainingCount === 0
-                  ? '↻ Re-analyse all'
-                  : analyzedFocus > 0 || focusMovesRemaining === 0
-                    ? `Analyse remaining (${analyseRemainingCount})`
-                    : `Analyse all ${analyseRemainingCount} moves`}
+                : analysisQueue.includes(overviewGameKey)
+                  ? 'Queued — tap to start now'
+                  : analyseRemainingCount === 0
+                    ? '↻ Re-analyse all'
+                    : analyzedFocus > 0 || focusMovesRemaining === 0
+                      ? `Analyse remaining (${analyseRemainingCount})`
+                      : `Analyse all ${analyseRemainingCount} moves`}
             </button>
             <button
               className="btn ghost"
