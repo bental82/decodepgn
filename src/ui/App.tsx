@@ -425,6 +425,7 @@ export default function App() {
                   headers: origin.headers,
                   savedAt: Date.now(),
                   results: {},
+                  pendingRun: true, // created mid-run by definition
                 } as SavedGame)
               : null)
           if (saved) {
@@ -547,10 +548,13 @@ export default function App() {
       overview: gameOverview ?? undefined,
       evals: Object.keys(evals).length ? evals : undefined,
       me: mySide,
+      // a run for THIS game is going: stamp it, so a killed tab resumes on
+      // reopen (undefined inherits the stored flag — see saveGame)
+      pendingRun: bgAnalysing.has(storeRef.current.key) ? true : undefined,
     }
     saveGame(game)
     cloudSave(game, markSynced)
-  }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide])
+  }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide, bgAnalysing])
 
   // Chess.com-style per-side accuracy from the engine-checked moves — shown
   // in the Game overview header and fed to the overview generation. Only
@@ -818,6 +822,13 @@ export default function App() {
     // ONE analysis run at a time, across all games: parallel runs would fight
     // over the single engine worker and double-analyse overlapping plies.
     if (bgAnalysing.size > 0) return
+    // Persist the run's EXISTENCE: if the tab closes mid-run the flag stays
+    // set, and reopening the game resumes the work automatically. Cleared on
+    // completion below — a run the user watched to the end never resumes.
+    if (runKey) {
+      const s = loadGame(runKey)
+      if (s && s.pendingRun !== true) saveGame({ ...s, pendingRun: true })
+    }
     if (force) {
       // Explicit repair: recompute every engine check and the eval bar from a
       // clean cache, so a bad saved evaluation cannot survive re-analysis.
@@ -894,6 +905,9 @@ export default function App() {
       })
       // this unblocks the overview — the analysis of every move is in
       setAnalysisRunDone((prev) => new Set(prev).add(runKey))
+      // the run finished — it must not resume on the next open
+      const endSave = loadGame(runKey)
+      if (endSave?.pendingRun) saveGame({ ...endSave, pendingRun: false })
     }
     setHistory(listGames())
     if (genRef.current === gen) {
@@ -922,11 +936,12 @@ export default function App() {
     const key = gameK + (hasLiteKey ? '+lite' : '')
     if (autoRanRef.current === key) return
     autoRanRef.current = key
-    // Auto-analysis is for BRAND-NEW games only. A game with ANY existing
-    // results — reopened here, or restored from the cloud on another browser —
-    // must never start analysing by itself: whatever is missing is offered on
-    // the "Analyse remaining" button and runs only when pressed.
-    if (Object.keys(results).length > 0) return
+    // Auto-analysis runs for BRAND-NEW games, and RESUMES a run that died
+    // mid-way (tab closed, phone locked — the save still carries its
+    // pendingRun flag). Any other reopened game starts nothing by itself:
+    // whatever is missing waits on the "Analyse remaining" button.
+    const interrupted = gameK ? loadGame(gameK)?.pendingRun === true : false
+    if (Object.keys(results).length > 0 && !interrupted) return
     void handleAnalyzeAll(false, { includeLite: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, moves, restoringKey, hasLiteKey, bgAnalysing, liteKnown])

@@ -105,6 +105,9 @@ export interface SavedGame {
   savedAt: number
   /** when the game was FIRST added — set once, never bumped */
   addedAt?: number
+  /** an analyse-all run is (or was, if it died) in progress for this game —
+      reopening resumes it; cleared when a run finishes */
+  pendingRun?: boolean
   results: Record<number, MoveResult>
   quiz?: SavedQuiz
   overview?: GameOverview
@@ -172,12 +175,31 @@ export function removeGame(key: string) {
   writeIndex(readIndex().filter((k) => k !== key))
 }
 
+/** The PGN's own game date, when parseable — the sort anchor the history list
+    uses for saves that predate the addedAt field. */
+function pgnDateMs(g: SavedGame): number | undefined {
+  const d = g.headers?.Date
+  if (typeof d === 'string' && /^\d{4}\.\d{2}\.\d{2}$/.test(d)) {
+    const t = Date.parse(d.replace(/\./g, '-'))
+    if (Number.isFinite(t)) return t
+  }
+  return undefined
+}
+
 export function saveGame(game: SavedGame) {
   // addedAt is stable: keep the first save's value across every later write.
-  // A pre-existing save that PREDATES the addedAt field inherits its own old
-  // savedAt — stamping "now" would bump it to the top of the list on open.
+  // A pre-existing save that PREDATES the addedAt field inherits the PGN's
+  // game date — exactly what the list was sorting it by — so re-analysing an
+  // old game never moves it. (savedAt only as a last resort.)
   const prev = loadGame(game.key)
-  game = { ...game, addedAt: prev?.addedAt ?? prev?.savedAt ?? game.addedAt ?? Date.now() }
+  game = {
+    ...game,
+    addedAt:
+      prev?.addedAt ?? (prev ? (pgnDateMs(prev) ?? prev.savedAt) : (game.addedAt ?? Date.now())),
+    // sticky: routine saves (which don't know about runs) must not erase an
+    // in-progress marker — only an explicit true/false changes it
+    pendingRun: game.pendingRun ?? prev?.pendingRun,
+  }
   const write = () => localStorage.setItem(GAME_PREFIX + game.key, JSON.stringify(game))
   try {
     write()
