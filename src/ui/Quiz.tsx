@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import Board from './Board'
+import ConfirmModal from './ConfirmModal'
+import Icon from './Icon'
 import MoveText from './MoveText'
 import type { BoardAnnotations } from '../shared/types'
 import type { QuizProps } from './contract'
@@ -55,6 +57,9 @@ export default function Quiz({
   const [verdict, setVerdict] = useState<Verdict | null>(null)
   const [explainBusy, setExplainBusy] = useState(false)
   const [explainError, setExplainError] = useState<string | null>(null)
+  // "New quiz" with progress on the table asks first (styled modal, not
+  // window.confirm, so the dialog matches the rest of the app).
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const fetchingRef = useRef<Set<number>>(new Set())
 
   const pos = saved ? saved.positions[saved.current] : null
@@ -342,17 +347,12 @@ export default function Quiz({
             const hasProgress = saved.positions.some(
               (p) => p.solved || p.revealed || p.attempts.length > 0 || p.hintUsed,
             )
-            if (
-              allDone ||
-              !hasProgress ||
-              window.confirm('Start a new quiz? Progress on this one is lost.')
-            ) {
-              onStart()
-            }
+            if (allDone || !hasProgress) onStart()
+            else setConfirmRestart(true)
           }}
           disabled={!canRestart}
         >
-          ↻ New quiz
+          <Icon name="refresh" size={12} /> New quiz
         </button>
       </div>
       <div className="quiz-chips">{chips}</div>
@@ -517,7 +517,7 @@ export default function Quiz({
             </button>
             {saved.current < saved.positions.length - 1 ? (
               <button className="btn primary" onClick={() => goTo(saved.current + 1)}>
-                Next position →
+                Next position <Icon name="next" size={14} />
               </button>
             ) : null}
           </div>
@@ -538,6 +538,18 @@ export default function Quiz({
             Restart from scratch
           </button>
         </div>
+      ) : null}
+      {confirmRestart ? (
+        <ConfirmModal
+          title="New quiz"
+          body="Start a new quiz? Progress on this one is lost."
+          confirmLabel="Start new quiz"
+          onConfirm={() => {
+            setConfirmRestart(false)
+            onStart()
+          }}
+          onCancel={() => setConfirmRestart(false)}
+        />
       ) : null}
     </div>
   )

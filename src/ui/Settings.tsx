@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsProps } from './contract'
+import Icon from './Icon'
 
 /**
  * Force-load the newest deployed version. Home-screen (PWA-style) installs —
@@ -58,7 +59,7 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel,
         <div className="modal-head">
           <h2 id="settings-title">Anthropic API key</h2>
           <button className="btn ghost" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon name="x" size={15} />
           </button>
         </div>
         <p className="muted small">
@@ -100,14 +101,14 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel,
               aria-pressed={theme === 'dark'}
               onClick={() => onTheme('dark')}
             >
-              🌙 Dark
+              <Icon name="moon" size={14} /> Dark
             </button>
             <button
               className={'btn' + (theme === 'light' ? ' on' : '')}
               aria-pressed={theme === 'light'}
               onClick={() => onTheme('light')}
             >
-              ☀️ Light
+              <Icon name="sun" size={14} /> Light
             </button>
           </div>
         </div>
@@ -139,7 +140,13 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel,
               void hardRefresh()
             }}
           >
-            {refreshing ? 'Updating…' : '⟳ Update app'}
+            {refreshing ? (
+              'Updating…'
+            ) : (
+              <>
+                <Icon name="refresh" size={14} /> Update app
+              </>
+            )}
           </button>
         </div>
       </div>

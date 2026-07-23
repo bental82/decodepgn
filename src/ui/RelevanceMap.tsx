@@ -3,6 +3,7 @@ import type { RelevanceMapProps } from './contract'
 import { statusMeta, colorName } from './contract'
 import { RULES_BY_ID } from '../shared/rules'
 import { isStudied } from '../shared/types'
+import Icon from './Icon'
 
 export default function RelevanceMap({
   moves,
@@ -72,8 +73,8 @@ export default function RelevanceMap({
       </p>
       {noEngine || noGraphics ? (
         <p className="note small">
-          ⚙ These moves were analysed before {missing} {noEngine && !noGraphics ? 'was' : 'were'}{' '}
-          added.{' '}
+          <Icon name="cpu" size={13} /> These moves were analysed before {missing}{' '}
+          {noEngine && !noGraphics ? 'was' : 'were'} added.{' '}
           <button className="linkbtn" onClick={onReanalyzeAll} disabled={reanalyzing}>
             {reanalyzing ? 'Re-analysing…' : 'Re-analyse all moves'}
           </button>
@@ -97,7 +98,7 @@ export default function RelevanceMap({
               </div>
               {impact.broke || impact.followed ? (
                 <p className="rel-impact" title="Total centipawn loss (Stockfish) on the moves where this rule got that label">
-                  ⚙{' '}
+                  <Icon name="cpu" size={12} />{' '}
                   {impact.broke
                     ? `breaking it cost ${(impact.broke.cp / 100).toFixed(1)} pawns over ${impact.broke.n} move(s)`
                     : null}
@@ -119,7 +120,10 @@ export default function RelevanceMap({
                       onClick={() => onJump(ply)}
                       title={`${label} — ${meta.label}. Open on the board`}
                     >
-                      <span className={'cdot ' + meta.cls} /> {label} <span className="chip-go">↗</span>
+                      <span className={'cdot ' + meta.cls} /> {label}{' '}
+                      <span className="chip-go">
+                        <Icon name="next" size={10} />
+                      </span>
                     </button>
                   )
                 })}

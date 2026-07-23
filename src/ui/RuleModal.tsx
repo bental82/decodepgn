@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import AskBox from './AskBox'
+import Icon from './Icon'
 import RuleText from './RuleText'
 
 interface Props {
@@ -50,7 +51,7 @@ export default function RuleModal({ ruleId, apiKey, onNeedKey, onOpenList, onOpe
             {rule.category}
           </span>
           <button className="btn ghost" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon name="x" size={15} />
           </button>
         </div>
         <h2 id="rule-modal-title" className="rule-modal-title">

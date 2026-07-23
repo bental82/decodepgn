@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import Board from './Board'
+import Icon from './Icon'
 import type { BoardAnnotations } from '../shared/types'
 import RuleText from './RuleText'
 import { RULES_BY_ID } from '../shared/rules'
@@ -159,7 +160,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
         <div className="drill-head">
           <h2>Drill your mistakes</h2>
           <button className="btn" onClick={onExit}>
-            ← Back
+            <Icon name="back" size={13} /> Back
           </button>
         </div>
         <p className="muted">
@@ -178,7 +179,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
         <div className="drill-head">
           <h2>Round complete</h2>
           <button className="btn" onClick={onExit}>
-            ← Done
+            <Icon name="back" size={13} /> Done
           </button>
         </div>
         <p className="drill-summary">
@@ -267,7 +268,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
           {Math.min(liveIdx + 1, queue.length)} / {queue.length}
         </span>
         <button className="btn" onClick={onExit}>
-          ← Done
+          <Icon name="back" size={13} /> Done
         </button>
       </div>
       <p className="drill-source muted small">
@@ -336,7 +337,7 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
               Open this moment in the game
             </button>
             <button className="btn primary" onClick={next}>
-              Next →
+              Next <Icon name="next" size={14} />
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { RULES_BY_ID } from '../shared/rules'
 import type { RuleHit } from '../shared/types'
 import type { MoveAnalysisProps } from './contract'
 import { soundnessMeta, statusMeta } from './contract'
+import Icon from './Icon'
 import RuleText from './RuleText'
 
 function hasGraphics(h: RuleHit): boolean {
@@ -100,12 +101,14 @@ export default function MoveAnalysis({
               title={`Stockfish, depth ${eng.depth}. Best move: ${eng.bestSan}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
             >
               {/* short labels so the badge row stays one line on phones;
-                  the tooltip above carries the full detail */}
+                  the tooltip above carries the full detail. The chip icon
+                  marks ENGINE verdicts (the ⚙ gear is Settings). */}
+              <Icon name="cpu" size={13} />
               {eng.isBest
-                ? '⚙ Engine’s top'
+                ? 'Engine’s top'
                 : eng.cpLoss < 30
-                  ? '⚙ Engine-approved'
-                  : `⚙ Better: ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
+                  ? 'Engine-approved'
+                  : `Better: ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
             </span>
           ) : null}
         </div>
@@ -127,7 +130,7 @@ export default function MoveAnalysis({
           <p className="note">
             The analysis for this move came back empty.{' '}
             <button className="linkbtn" onClick={onReanalyze} disabled={loading}>
-              ↻ Re-analyse this move
+              <Icon name="refresh" size={12} /> Re-analyse this move
             </button>
           </p>
         ) : result.rules.length === 0 ? (
@@ -154,7 +157,7 @@ export default function MoveAnalysis({
                     </button>
                     {(hit.relevance ?? 0) >= 5 ? (
                       <span className="key-rule" title="The key idea of this move">
-                        ★ key
+                        <Icon name="star" size={11} /> key
                       </span>
                     ) : null}
                     {hasGraphics(hit) ? (
@@ -164,7 +167,7 @@ export default function MoveAnalysis({
                         title={shown ? 'Hide these marks from the board' : 'Show this idea on the board'}
                         onClick={() => onGfx(shown ? { kind: 'off' } : { kind: 'rule', id: hit.id })}
                       >
-                        ◈ board
+                        <Icon name="board" size={12} /> board
                       </button>
                     ) : null}
                   </div>
@@ -188,7 +191,10 @@ export default function MoveAnalysis({
                 <strong>{alt.move}</strong> —{' '}
                 <RuleText text={alt.why} onOpenRule={onOpenRule} />
                 {engSameAsAlt ? (
-                  <span className="eng-note"> ⚙ Also Stockfish’s top move ({engGain}).</span>
+                  <span className="eng-note">
+                    {' '}
+                    <Icon name="cpu" size={13} /> Also Stockfish’s top move ({engGain}).
+                  </span>
                 ) : null}
               </p>
               {altArrow ? (
@@ -198,7 +204,7 @@ export default function MoveAnalysis({
                   title={altShown ? 'Hide the arrow' : 'Show this move as an arrow on the board'}
                   onClick={() => onGfx(altShown ? { kind: 'off' } : { kind: 'alt' })}
                 >
-                  ◈ board
+                  <Icon name="board" size={12} /> board
                 </button>
               ) : null}
             </div>
@@ -208,7 +214,8 @@ export default function MoveAnalysis({
               <p>
                 <strong>{engBest.bestSan}</strong> —{' '}
                 <span className="eng-note">
-                  ⚙ Stockfish’s top move here ({engGain}, depth {engBest.depth}).
+                  <Icon name="cpu" size={13} /> Stockfish’s top move here ({engGain}, depth{' '}
+                  {engBest.depth}).
                 </span>
               </p>
               {engineArrow ? (
@@ -218,15 +225,15 @@ export default function MoveAnalysis({
                   title={engShown ? 'Hide the arrow' : 'Show Stockfish’s move as an arrow on the board'}
                   onClick={() => onGfx(engShown ? { kind: 'off' } : { kind: 'engine' })}
                 >
-                  ◈ board
+                  <Icon name="board" size={12} /> board
                 </button>
               ) : null}
             </div>
           ) : null}
           {alt && eng && !engBest ? (
             <p className="eng-note eng-note-block">
-              ⚙ Stockfish’s top choice was the move actually played — read this suggestion as
-              style, not a fix.
+              <Icon name="cpu" size={13} /> Stockfish’s top choice was the move actually played —
+              read this suggestion as style, not a fix.
             </p>
           ) : null}
         </div>

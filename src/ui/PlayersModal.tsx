@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Color } from '../shared/types'
+import Icon from './Icon'
 
 interface Props {
   white: string
@@ -58,7 +59,7 @@ export default function PlayersModal({ white, black, whiteElo, blackElo, me, onS
         <div className="modal-head">
           <h2 id="players-title">Players</h2>
           <button className="btn ghost" onClick={onClose} aria-label="Close">
-            ✕
+            <Icon name="x" size={15} />
           </button>
         </div>
         <div className="player-row">

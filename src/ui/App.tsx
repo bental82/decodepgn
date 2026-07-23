@@ -52,9 +52,11 @@ import { colorName } from './contract'
 import type { GfxSelection } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
+import ConfirmModal from './ConfirmModal'
 import GameImport from './GameImport'
 import GameOverviewCard from './GameOverviewCard'
 import GameSummary from './GameSummary'
+import Icon from './Icon'
 import Drill, { type DrillItem } from './Drill'
 import MetaCard, { type SavedMetaReport } from './MetaCard'
 import MoveAnalysis from './MoveAnalysis'
@@ -73,6 +75,11 @@ const META_KEY = 'decodepgn.meta.v1'
 /** An empty placeholder recorded when a model skipped a ply — it renders as a
     blank card, so the repair paths treat it as "not analysed yet". */
 const isEmptyResult = (r?: MoveResult) => !!r && r.rules.length === 0 && !r.lesson
+// Smooth scrolling honours the user's reduced-motion setting.
+const smoothBehavior = (): ScrollBehavior =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth'
 type Tab = 'move' | 'quiz' | 'map' | 'rules'
 type Phase = 'input' | 'game' | 'drill'
 
@@ -1614,14 +1621,15 @@ export default function App() {
     handleSubmit(item.pgn, item.focus, atPly)
   }
 
+  // Delete runs through a styled confirm modal (window.confirm blocked the UI
+  // and clashed with the app's dialogs); the modal carries the game's name.
+  const [confirmDelete, setConfirmDelete] = useState<{ key: string; name: string } | null>(null)
   const deleteSaved = (key: string) => {
-    const item = historyItems.find((h) => h.key === key)
-    const name = item ? `${item.headers.White ?? 'White'} vs ${item.headers.Black ?? 'Black'}` : 'this game'
-    if (!window.confirm(`Delete ${name} and its analysis everywhere (this device and the cloud)?`)) return
     removeGame(key)
     cloudDelete(key)
     setCloudGames((prev) => (prev ? prev.filter((c) => c.key !== key) : prev))
     setHistory(listGames())
+    setConfirmDelete(null)
   }
 
   // keyboard navigation through the move list
@@ -1826,7 +1834,7 @@ export default function App() {
         : 82 // fallback: just below the sticky topbar
     const top = panel.getBoundingClientRect().top
     if (force || top < stickyH - 4) {
-      window.scrollTo({ top: Math.max(0, window.scrollY + top - stickyH - 8), behavior: 'smooth' })
+      window.scrollTo({ top: Math.max(0, window.scrollY + top - stickyH - 8), behavior: smoothBehavior() })
     }
   }, [])
 
@@ -1924,7 +1932,9 @@ export default function App() {
           title="Back to the start screen"
           aria-label="DecodePGN — back to the start screen"
         >
-          <span className="logo">♟</span>
+          <span className="logo">
+            <Icon name="pawn" size={26} />
+          </span>
           <div>
             <h1>DecodePGN</h1>
             <span className="tagline">which rules of thumb apply, move by move</span>
@@ -1938,7 +1948,7 @@ export default function App() {
               title="Settings"
               aria-label="API key settings"
             >
-              ⚙
+              <Icon name="gear" size={17} />
             </button>
           </div>
         )}
@@ -1969,7 +1979,7 @@ export default function App() {
                 title="Edit player names / mark which one is you"
                 aria-label="Edit player names"
               >
-                ✎
+                <Icon name="edit" size={13} />
               </button>
             </div>
             <button
@@ -2005,7 +2015,11 @@ export default function App() {
                   : analysisQueue.includes(overviewGameKey)
                     ? 'Queued — tap to start now'
                     : analyseRemainingCount === 0
-                      ? '↻ Re-analyse all'
+                      ? (
+                          <>
+                            <Icon name="refresh" size={14} /> Re-analyse all
+                          </>
+                        )
                       : analyzedFocus > 0 || focusMovesRemaining === 0
                         ? `Analyse remaining (${analyseRemainingCount})`
                         : `Analyse all ${analyseRemainingCount} moves`}
@@ -2016,7 +2030,7 @@ export default function App() {
               title="API key"
               aria-label="API key settings"
             >
-              ⚙
+              <Icon name="gear" size={17} />
             </button>
             <button className="btn ghost" onClick={reset}>
               New game
@@ -2052,7 +2066,9 @@ export default function App() {
           {drillItems.length > 0 ? (
             <div className="card drill-entry">
               <div>
-                <h2>🎯 Drill your mistakes</h2>
+                <h2>
+                  <Icon name="target" size={17} /> Drill your mistakes
+                </h2>
                 <p className="muted small">
                   {drillItems.length} position{drillItems.length === 1 ? '' : 's'} from your games
                   where a better move existed — practise them until they stick.
@@ -2082,7 +2098,9 @@ export default function App() {
                 aria-expanded={histOpen}
               >
                 <h2>Your analysed games ({historyItems.length})</h2>
-                <span className="collapse-chevron">{histOpen ? '▾' : '▸'}</span>
+                <span className="collapse-chevron">
+                  <Icon name={histOpen ? 'chevron-down' : 'chevron-right'} size={14} />
+                </span>
               </button>
               {histOpen && historyItems.length > 3 ? (
                 <div className="history-filters">
@@ -2145,7 +2163,7 @@ export default function App() {
                       aria-label="Clear filters"
                       title="Clear filters"
                     >
-                      ✕
+                      <Icon name="x" size={13} />
                     </button>
                   ) : null}
                 </div>
@@ -2189,13 +2207,35 @@ export default function App() {
                           ? ' · analysing…'
                           : g.job && (g.job.status === 'queued' || g.job.status === 'running')
                             ? g.job.status === 'queued'
-                              ? ' · ☁ queued'
+                              ? (
+                                  <>
+                                    {' · '}
+                                    <Icon name="cloud" size={12} /> queued
+                                  </>
+                                )
                               : g.job.progress
-                                ? ` · ☁ analysing ${g.job.progress.done}/${g.job.progress.total}`
-                                : ' · ☁ analysing…'
+                                ? (
+                                    <>
+                                      {' · '}
+                                      <Icon name="cloud" size={12} /> analysing {g.job.progress.done}/
+                                      {g.job.progress.total}
+                                    </>
+                                  )
+                                : (
+                                    <>
+                                      {' · '}
+                                      <Icon name="cloud" size={12} /> analysing…
+                                    </>
+                                  )
                             : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
-                        {g.inCloud || g.cloudOnly ? ' · ☁' : ''} ·{' '}
+                        {g.inCloud || g.cloudOnly ? (
+                          <>
+                            {' · '}
+                            <Icon name="cloud" size={12} />
+                          </>
+                        ) : null}{' '}
+                        ·{' '}
                         {new Date(g.date).toLocaleDateString(undefined, {
                           day: 'numeric',
                           month: 'short',
@@ -2217,9 +2257,9 @@ export default function App() {
                       className="history-del"
                       aria-label="Delete this saved analysis"
                       title="Delete this saved analysis (here and in the cloud)"
-                      onClick={() => deleteSaved(g.key)}
+                      onClick={() => setConfirmDelete({ key: g.key, name: `${g.headers.White ?? 'White'} vs ${g.headers.Black ?? 'Black'}` })}
                     >
-                      ✕
+                      <Icon name="trash" size={15} />
                     </button>
                   </li>
                 ))}
@@ -2388,7 +2428,7 @@ export default function App() {
                     disabled={atFirst}
                     aria-label="First move"
                   >
-                    ⏮
+                    <Icon name="first" size={15} />
                   </button>
                   <button
                     className="navbtn"
@@ -2396,7 +2436,7 @@ export default function App() {
                     disabled={noPrev}
                     aria-label={dubiousOnly ? 'Previous dubious move' : 'Previous move'}
                   >
-                    ◀
+                    <Icon name="prev" size={15} />
                   </button>
                   <span className="navlabel">
                     {moveLabel(move)}
@@ -2408,7 +2448,7 @@ export default function App() {
                     disabled={noNext}
                     aria-label={dubiousOnly ? 'Next dubious move' : 'Next move'}
                   >
-                    ▶
+                    <Icon name="next" size={15} />
                   </button>
                   <button
                     className="navbtn"
@@ -2416,7 +2456,7 @@ export default function App() {
                     disabled={atLast}
                     aria-label="Last move"
                   >
-                    ⏭
+                    <Icon name="last" size={15} />
                   </button>
                   <button
                     className={'navbtn warnbtn' + (dubiousOnly ? ' on' : '')}
@@ -2432,7 +2472,8 @@ export default function App() {
                           : `Step only through the ${dubiousPlies.length} dubious move${dubiousPlies.length === 1 ? '' : 's'}`
                     }
                   >
-                    ⚠{dubiousPlies.length ? <span className="warn-count">{dubiousPlies.length}</span> : null}
+                    <Icon name="warning" size={14} />
+                    {dubiousPlies.length ? <span className="warn-count">{dubiousPlies.length}</span> : null}
                   </button>
                   <button
                     className="navbtn minibtn"
@@ -2445,7 +2486,7 @@ export default function App() {
                     aria-label={boardMini ? 'Enlarge board' : 'Shrink board'}
                     title={boardMini ? 'Enlarge board' : 'Shrink board'}
                   >
-                    {boardMini ? '⤢' : '⤡'}
+                    {boardMini ? <Icon name="expand" size={14} /> : <Icon name="shrink" size={14} />}
                   </button>
                 </div>
                 {/* Always rendered (hidden when no eval) so the sticky block
@@ -2478,7 +2519,7 @@ export default function App() {
                 </div>
                 {jumpBack !== null && jumpBack !== selectedPly && moves[jumpBack] ? (
                   <button className="jump-back" onClick={returnFromJump}>
-                    ↩ Back to {moveLabel(moves[jumpBack])}
+                    <Icon name="back" size={13} /> Back to {moveLabel(moves[jumpBack])}
                   </button>
                 ) : null}
                 {fromDrill ? (
@@ -2489,7 +2530,7 @@ export default function App() {
                       setPhase('drill')
                     }}
                   >
-                    ↩ Back to the drill
+                    <Icon name="back" size={13} /> Back to the drill
                   </button>
                 ) : null}
                 {fromMeta ? (
@@ -2502,11 +2543,11 @@ export default function App() {
                       requestAnimationFrame(() =>
                         document
                           .querySelector('.meta-card')
-                          ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                          ?.scrollIntoView({ behavior: smoothBehavior(), block: 'start' }),
                       )
                     }}
                   >
-                    ↩ Back to “Your play” summary
+                    <Icon name="back" size={13} /> Back to “Your play” summary
                   </button>
                 ) : null}
                 </div>
@@ -2533,8 +2574,8 @@ export default function App() {
                   />
                 ) : (
                   <p className="note">
-                    {colorName(move.color)} played <strong>{moveLabel(move)}</strong>. Press ▶ to see{' '}
-                    {colorName(focus)}’s reply and its analysis.
+                    {colorName(move.color)} played <strong>{moveLabel(move)}</strong>. Step forward to
+                    see {colorName(focus)}’s reply and its analysis.
                   </p>
                 )}
                 <AskBox
@@ -2627,11 +2668,11 @@ export default function App() {
           onClick={() =>
             tab === 'move'
               ? scrollToAnalysisTop(true)
-              : window.scrollTo({ top: 0, behavior: 'smooth' })
+              : window.scrollTo({ top: 0, behavior: smoothBehavior() })
           }
           aria-label="Back to the top"
         >
-          ↑ Top
+          <Icon name="arrow-up" size={14} /> Top
         </button>
       ) : null}
 
@@ -2670,6 +2711,16 @@ export default function App() {
             setShowPlayers(false)
           }}
           onClose={() => setShowPlayers(false)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete game"
+          body={`Delete ${confirmDelete.name} and its analysis everywhere (this device and the cloud)?`}
+          confirmLabel="Delete"
+          onConfirm={() => deleteSaved(confirmDelete.key)}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
 

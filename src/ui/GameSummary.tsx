@@ -5,6 +5,7 @@ import type { Color, EngineEval, Soundness } from '../shared/types'
 import { isStudied } from '../shared/types'
 import type { GameSummaryProps } from './contract'
 import { colorName } from './contract'
+import Icon from './Icon'
 
 interface Tally {
   id: number
@@ -87,11 +88,15 @@ export default function GameSummary({ moves, focus, results, onPickRule }: GameS
       </p>
       <div className="summary-cols">
         <div className="summary-col">
-          <div className="summary-h broke">✕ Most-broken principles</div>
+          <div className="summary-h broke">
+            <Icon name="x" size={12} /> Most-broken principles
+          </div>
           {renderList(broke, 'No clear violations yet.')}
         </div>
         <div className="summary-col">
-          <div className="summary-h followed">✓ Most-followed principles</div>
+          <div className="summary-h followed">
+            <Icon name="check" size={12} /> Most-followed principles
+          </div>
           {renderList(followed, 'Nothing stood out yet.')}
         </div>
       </div>
