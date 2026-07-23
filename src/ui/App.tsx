@@ -17,7 +17,10 @@ import {
   cloudListSummaries,
   cloudSave,
   cloudSaveMeta,
+  serverEnqueue,
+  serverJobStatus,
   type CloudGameMeta,
+  type ServerJob,
 } from '../lib/cloud'
 import {
   gameKey,
@@ -144,6 +147,17 @@ export default function App() {
   const [liteKnown, setLiteKnown] = useState(false)
   const liteKeyRef = useRef(false)
   liteKeyRef.current = hasLiteKey
+  // Server-side analysis: when the deployment has the games database, analyse
+  // runs happen in the cloud (they survive the phone locking / tab closing)
+  // and this client is just a viewer that polls. Without it, the local
+  // machinery below does everything, exactly as before.
+  const [serverRuns, setServerRuns] = useState(false)
+  const serverRunsRef = useRef(false)
+  serverRunsRef.current = serverRuns
+  // The current game's server job, kept fresh by the poll effect.
+  const [serverJob, setServerJob] = useState<{ key: string; job: ServerJob } | null>(null)
+  const serverJobRef = useRef<typeof serverJob>(null)
+  serverJobRef.current = serverJob
   // Light/dark theme — applied to <html data-theme> (index.html sets it before
   // first paint) and remembered across sessions.
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -204,6 +218,7 @@ export default function App() {
       .then((d) => {
         if (cancelled || !d) return
         if (typeof d.hasServerKey === 'boolean') setHasServerKey(d.hasServerKey)
+        if (typeof d.serverRuns === 'boolean') setServerRuns(d.serverRuns)
         if (typeof d.hasLiteKey === 'boolean') setHasLiteKey(d.hasLiteKey)
         if (d.hasLiteKey === true && typeof d.modelLite === 'string') setLiteModel(d.modelLite)
         if (typeof d.build === 'string') setServerBuild(d.build)
@@ -511,6 +526,7 @@ export default function App() {
       setQuizSaved(sanitizeQuiz(saved?.quiz))
       setQuizEngineBusy(null)
       autoRanRef.current = null // each open re-evaluates what's missing
+      setServerJob(null) // the poll effect re-discovers this game's job
       setGameOverview(saved?.overview ?? null)
       // PGN-shipped evals (lichess analysis) give instant full coverage; our
       // own engine's numbers (saved sweep) win where both exist.
@@ -549,6 +565,8 @@ export default function App() {
           .then((remote) => {
             if (genRef.current !== gen) return
             if (remote && remote.key === key) {
+              const rj = (remote as { job?: ServerJob }).job
+              if (rj && typeof rj.status === 'string') setServerJob({ key, job: rj })
               saveGame(remote)
               setResults(remote.results ?? {})
               setQuizSaved(sanitizeQuiz(remote.quiz))
@@ -784,6 +802,10 @@ export default function App() {
   // Stockfish eval-bar sweep never gates it: the overview just rides on
   // whatever evals exist when it fires.
   const overviewGameKey = storeRef.current?.key ?? ''
+  // This game's server-side job is queued or running (cloud analysis mode).
+  const serverActive =
+    serverJob?.key === overviewGameKey &&
+    (serverJob.job.status === 'queued' || serverJob.job.status === 'running')
   const focusDone =
     moves.length > 0 && moves.every((m) => !isStudied(m.color, focus) || !!results[m.ply])
   const analysisSettled =
@@ -791,6 +813,7 @@ export default function App() {
     // screen until each is replaced, so "every ply has a result" alone would
     // fire the overview off stale data
     !bgAnalysing.has(overviewGameKey) &&
+    !serverActive &&
     (focusDone || analysisRunDone.has(overviewGameKey))
   const overviewWaiting =
     phase === 'game' &&
@@ -815,6 +838,13 @@ export default function App() {
     // a batch run is (or may be) covering this ply — a single-move request
     // now would just duplicate its work and its tokens
     if (bgAnalysing.size > 0) return
+    const sj = serverJobRef.current
+    if (
+      sj &&
+      sj.key === (storeRef.current?.key ?? '') &&
+      (sj.job.status === 'queued' || sj.job.status === 'running')
+    )
+      return // the server run is covering this game
     const m = moves[selectedPly]
     if (!m || !(isStudied(m.color, focus) || hasLiteKey)) return
     if (
@@ -826,6 +856,53 @@ export default function App() {
       return
     void analyzePlies(moves, focus, [selectedPly])
   }, [phase, selectedPly, focus, moves, results, loadingPlies, errorByPly, analyzePlies, restoringKey, hasLiteKey, bgAnalysing])
+
+  // Server-run viewer: one status check when a game opens (discovers a run
+  // started elsewhere — another device, or before the app was closed), then a
+  // steady poll while its job is active. Results stream into the view as the
+  // server's batches land; completion unlocks the overview exactly like a
+  // local run finishing.
+  const serverPulledRef = useRef(-1)
+  useEffect(() => {
+    if (phase !== 'game' || !serverRuns) return
+    const key = storeRef.current?.key
+    if (!key) return
+    let stop = false
+    const tick = async () => {
+      const st = await serverJobStatus(key)
+      if (stop || storeRef.current?.key !== key) return
+      const j = st?.job ?? null
+      setServerJob(j ? { key, job: j } : null)
+      if (!st || !j) return
+      // pull the grown results whenever the cloud copy is ahead of what we
+      // last pulled (batches land server-side between polls)
+      if (st.analysed !== serverPulledRef.current) {
+        serverPulledRef.current = st.analysed
+        const remote = await cloudGet(key)
+        if (stop || storeRef.current?.key !== key || !remote || remote.key !== key) return
+        setResults((prev) => ({ ...prev, ...(remote.results ?? {}) }))
+        setEvals((prev) => ({ ...(remote.evals ?? {}), ...prev }))
+        setHistory(listGames())
+      }
+      if (j.status === 'done') {
+        // unblocks the overview — every move's analysis is in
+        setAnalysisRunDone((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+      }
+    }
+    serverPulledRef.current = -1
+    void tick()
+    if (!serverActive) {
+      return () => {
+        stop = true
+      }
+    }
+    const iv = setInterval(tick, 4000)
+    return () => {
+      stop = true
+      clearInterval(iv)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, serverRuns, serverActive, moves])
 
   // Cancel the run holding the engine: its workers stop at the next batch
   // boundary, and its game is stamped pendingRun so the work resumes on that
@@ -1005,6 +1082,42 @@ export default function App() {
     force = false,
     opts?: { repairEmpty?: boolean; includeLite?: boolean; explicit?: boolean },
   ) => {
+    // Server-side runs: the tap queues a job in the cloud and returns — the
+    // analysis survives the phone locking or the tab closing, and multiple
+    // games queue naturally on the server. The poll effect streams results
+    // back in. On enqueue failure (offline?) fall through to the local path.
+    if (serverRunsRef.current && storeRef.current?.key) {
+      const key = storeRef.current.key
+      const shell: SavedGame = loadGame(key) ?? {
+        key,
+        pgn: storeRef.current.pgn,
+        focus,
+        headers: headersRef.current,
+        savedAt: Date.now(),
+        results: {},
+      }
+      const job = await serverEnqueue(shell, {
+        force,
+        includeLite: opts?.includeLite === true,
+        repairEmpty: opts?.repairEmpty === true,
+      })
+      if (job) {
+        if (force) {
+          // same on-screen resets as a local force run (the server clears its
+          // own engine cache; local evals stay until fresh ones stream in)
+          clearEngineCache()
+          setGameOverview(null)
+          setOverviewError(null)
+          setAnalysisRunDone((prev) => {
+            const c = new Set(prev)
+            c.delete(key)
+            return c
+          })
+        }
+        setServerJob({ key, job })
+        return
+      }
+    }
     const q: QueuedAnalysis = {
       key: storeRef.current?.key ?? '',
       pgn: storeRef.current?.pgn ?? '',
@@ -1756,26 +1869,34 @@ export default function App() {
                   explicit: true,
                 })
               }
-              disabled={!!allProgress || bgAnalysing.has(overviewGameKey)}
+              disabled={!!allProgress || bgAnalysing.has(overviewGameKey) || serverActive}
               title={
-                bgAnalysing.size > 0 && !bgAnalysing.has(overviewGameKey)
-                  ? analysisQueue.includes(overviewGameKey)
-                    ? 'Queued after the current analysis — tap again to pause that game and start this one right away.'
-                    : 'Another game is being analysed — tapping queues this game to run next.'
-                  : analyseRemainingCount === 0
-                    ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
-                    : undefined
+                serverActive
+                  ? 'Analysing in the cloud — this run keeps going even if you close the app.'
+                  : serverJob?.key === overviewGameKey && serverJob.job.status === 'error'
+                    ? `The cloud run hit a problem (${serverJob.job.error ?? 'unknown'}) — tap to retry.`
+                    : bgAnalysing.size > 0 && !bgAnalysing.has(overviewGameKey)
+                      ? analysisQueue.includes(overviewGameKey)
+                        ? 'Queued after the current analysis — tap again to pause that game and start this one right away.'
+                        : 'Another game is being analysed — tapping queues this game to run next.'
+                      : analyseRemainingCount === 0
+                        ? 'Everything is analysed. Tap to redo the whole game from scratch — fresh Stockfish checks and fresh AI analysis (useful when something looks off).'
+                        : undefined
               }
             >
-              {allProgress
-                ? `Analysing… ${allProgress.done}/${allProgress.total}`
-                : analysisQueue.includes(overviewGameKey)
-                  ? 'Queued — tap to start now'
-                  : analyseRemainingCount === 0
-                    ? '↻ Re-analyse all'
-                    : analyzedFocus > 0 || focusMovesRemaining === 0
-                      ? `Analyse remaining (${analyseRemainingCount})`
-                      : `Analyse all ${analyseRemainingCount} moves`}
+              {serverActive
+                ? serverJob?.job.progress
+                  ? `Analysing… ${serverJob.job.progress.done}/${serverJob.job.progress.total}`
+                  : 'Analysing…'
+                : allProgress
+                  ? `Analysing… ${allProgress.done}/${allProgress.total}`
+                  : analysisQueue.includes(overviewGameKey)
+                    ? 'Queued — tap to start now'
+                    : analyseRemainingCount === 0
+                      ? '↻ Re-analyse all'
+                      : analyzedFocus > 0 || focusMovesRemaining === 0
+                        ? `Analyse remaining (${analyseRemainingCount})`
+                        : `Analyse all ${analyseRemainingCount} moves`}
             </button>
             <button
               className="btn ghost"
@@ -2005,7 +2126,7 @@ export default function App() {
         </div>
       ) : phase !== 'game' ? null : (
         <div className="workspace">
-          {(allProgress || bgAnalysing.has(overviewGameKey)) && studiedPlies.length > 0 ? (
+          {(allProgress || bgAnalysing.has(overviewGameKey) || serverActive) && studiedPlies.length > 0 ? (
             <div className="ana-progress" role="status">
               <div className="ana-bar" aria-hidden="true">
                 <div
@@ -2017,7 +2138,10 @@ export default function App() {
                     width: `${Math.round(
                       allProgress
                         ? (100 * allProgress.done) / Math.max(1, allProgress.total)
-                        : (100 * (hasLiteKey ? Object.keys(results).length : analyzedFocus)) /
+                        : serverActive && serverJob?.job.progress
+                          ? (100 * serverJob.job.progress.done) /
+                            Math.max(1, serverJob.job.progress.total)
+                          : (100 * (hasLiteKey ? Object.keys(results).length : analyzedFocus)) /
                             Math.max(1, hasLiteKey ? moves.length : studiedPlies.length),
                     )}%`,
                   }}
@@ -2026,9 +2150,13 @@ export default function App() {
               <span className="ana-text">
                 {allProgress
                   ? `Analysing · ${allProgress.done}/${allProgress.total}`
-                  : hasLiteKey
-                    ? `Analysing · ${Object.keys(results).length}/${moves.length}`
-                    : `Analysing your moves · ${analyzedFocus}/${studiedPlies.length}`}
+                  : serverActive && serverJob?.job.progress
+                    ? `Analysing in the cloud · ${serverJob.job.progress.done}/${serverJob.job.progress.total}`
+                    : serverActive
+                      ? 'Analysing in the cloud…'
+                      : hasLiteKey
+                        ? `Analysing · ${Object.keys(results).length}/${moves.length}`
+                        : `Analysing your moves · ${analyzedFocus}/${studiedPlies.length}`}
                 {Object.keys(evals).length < moves.length
                   ? ` · eval bar ${Object.keys(evals).length}/${moves.length}`
                   : ''}

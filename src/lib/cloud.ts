@@ -51,6 +51,44 @@ export async function cloudGet(key: string): Promise<SavedGame | null> {
   return g && typeof g.key === 'string' && typeof g.pgn === 'string' && g.results ? (g as SavedGame) : null
 }
 
+// ---- Server-side analysis jobs (/api/analyze-run) ----
+
+export interface ServerJob {
+  status: 'queued' | 'running' | 'done' | 'error'
+  progress?: { done: number; total: number }
+  heartbeat?: number
+  error?: string
+}
+
+/** Queue a server-side analysis run for a game. The full SavedGame rides
+    along so a brand-new game with no cloud row yet can be enqueued. Null when
+    the feature is off or the request failed (caller falls back to local). */
+export async function serverEnqueue(
+  game: SavedGame,
+  opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean },
+): Promise<ServerJob | null> {
+  const d = await fetchJson('/api/analyze-run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: game.key, ...opts, game }),
+  })
+  const j = d?.job
+  return j && typeof j.status === 'string' ? (j as ServerJob) : null
+}
+
+/** The job + analysed count for one game — a cheap poll while a run is on. */
+export async function serverJobStatus(
+  key: string,
+): Promise<{ job: ServerJob | null; analysed: number } | null> {
+  const d = await fetchJson(`/api/analyze-run?key=${encodeURIComponent(key)}`)
+  if (!d || d.enabled !== true) return null
+  const j = d.job
+  return {
+    job: j && typeof j.status === 'string' ? (j as ServerJob) : null,
+    analysed: typeof d.analysed === 'number' ? d.analysed : 0,
+  }
+}
+
 // Saves stream in while the analysis runs (a state change per batch), so each
 // game's upload is debounced: one PUT shortly after the last change.
 const pending = new Map<string, ReturnType<typeof setTimeout>>()

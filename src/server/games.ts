@@ -112,7 +112,10 @@ export async function getCloudGame(key: string): Promise<unknown | null> {
   return Array.isArray(rows) && rows[0] ? (rows[0].data ?? null) : null
 }
 
-export async function putCloudGame(game: unknown): Promise<void> {
+export async function putCloudGame(
+  game: unknown,
+  opts?: { fromRunner?: boolean },
+): Promise<void> {
   const g = game as {
     key?: unknown
     pgn?: unknown
@@ -120,10 +123,34 @@ export async function putCloudGame(game: unknown): Promise<void> {
     headers?: unknown
     savedAt?: unknown
     results?: unknown
+    evals?: unknown
     quiz?: unknown
   }
   if (!g || typeof g.key !== 'string' || !g.key.trim()) throw new GamesError('Malformed game: missing key.')
   if (typeof g.pgn !== 'string' || !g.pgn.trim()) throw new GamesError('Malformed game: missing PGN.')
+  let toStore: Record<string, unknown> = game as Record<string, unknown>
+  if (!opts?.fromRunner) {
+    // Client saves must not clobber a server-side analysis run: the job state
+    // is server-owned, and while a job is active the server's results/evals
+    // win any per-ply conflict (the client's copy may be minutes stale).
+    const existing = (await getCloudGame(g.key).catch(() => null)) as {
+      job?: { status?: string }
+      results?: Record<string, unknown>
+      evals?: Record<string, unknown>
+    } | null
+    if (existing?.job) {
+      const active = existing.job.status === 'queued' || existing.job.status === 'running'
+      toStore = { ...toStore, job: existing.job }
+      if (active) {
+        toStore.results = {
+          ...((g.results as object) ?? {}),
+          ...(existing.results ?? {}),
+        }
+        toStore.evals = { ...((g.evals as object) ?? {}), ...(existing.evals ?? {}) }
+      }
+    }
+  }
+  const results = toStore.results
   const row = {
     key: g.key.trim().slice(0, 80),
     pgn: g.pgn.slice(0, 20_000),
@@ -131,9 +158,9 @@ export async function putCloudGame(game: unknown): Promise<void> {
     headers: g.headers && typeof g.headers === 'object' ? g.headers : {},
     // the whole SavedGame rides in one jsonb column, so the client schema can
     // grow (graphics, quiz kinds, …) without a migration
-    data: game,
+    data: toStore,
     analysed:
-      g.results && typeof g.results === 'object' ? Object.keys(g.results as object).length : 0,
+      results && typeof results === 'object' ? Object.keys(results as object).length : 0,
     has_quiz: !!g.quiz,
     saved_at: new Date(
       typeof g.savedAt === 'number' && Number.isFinite(g.savedAt) ? g.savedAt : Date.now(),
@@ -145,6 +172,25 @@ export async function putCloudGame(game: unknown): Promise<void> {
     headers: { prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(row),
   })
+}
+
+/** Lean job listing: key, analysed count and the job object only — the
+    runner's claim scan and the client's status poll both ride on this. */
+export async function listJobRows(): Promise<
+  Array<{ key: string; analysed: number; job: unknown }>
+> {
+  const resp = await sb(
+    `games?select=key,analysed,job:data->job&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
+  )
+  const rows = (await resp.json()) as Array<{ key?: unknown; analysed?: unknown; job?: unknown }>
+  if (!Array.isArray(rows)) return []
+  return rows
+    .filter((r) => typeof r?.key === 'string')
+    .map((r) => ({
+      key: r.key as string,
+      analysed: Number.isFinite(r.analysed) ? (r.analysed as number) : 0,
+      job: r.job ?? null,
+    }))
 }
 
 /** Full saved-game payloads for the whole archive (for the meta-analysis). */
