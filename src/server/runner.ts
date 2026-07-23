@@ -302,9 +302,10 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
     while (pending.length > 0) {
       if (cutoff()) return true // chain: the next invocation resumes `pending`
       const batch = pending.slice(0, BATCH)
-      let results: MoveResult[] | null = null
+      let after: AnalysisJob | null | 'lost' = null
       try {
-        results = await analyzeBatch(moves, claimed.focus, batch, job.force)
+        const results = await analyzeBatch(moves, claimed.focus, batch, job.force)
+        after = (await mergeBatch(claimed.key, runnerId, moves, results, batch)) ?? 'lost'
       } catch (e) {
         failures++
         if (failures >= MAX_CONSECUTIVE_FAILURES) {
@@ -313,11 +314,10 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
           break
         }
         await new Promise((r) => setTimeout(r, 3000))
-        continue // retry the same batch
+        continue // retry the same batch (a lost merge just re-runs it)
       }
       failures = 0
-      const after = await mergeBatch(claimed.key, runnerId, moves, results, batch)
-      if (!after) {
+      if (after === 'lost') {
         lost = true // game deleted or job taken over — stop quietly
         break
       }
