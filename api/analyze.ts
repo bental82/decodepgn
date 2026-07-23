@@ -13,8 +13,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET') {
       // Health check + diagnostics. Depends on NOTHING else, so it always loads:
-      // if you see this JSON the function itself is fine.
+      // if you see this JSON the function itself is fine. (The serverRuns
+      // probe is best-effort for the same reason.)
+      const serverRuns = await import('../src/server/games.js')
+        .then((m) => m.cloudConfigured())
+        .catch(() => false)
       res.status(200).json({
+        serverRuns,
         ok: true,
         build: 'quiz-2', // bump on deploys to confirm the live version (shown in Settings)
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
