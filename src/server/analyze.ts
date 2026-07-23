@@ -645,7 +645,23 @@ ${targetLinesOf(ts)}`
         ]
       : []),
   ])) as AnalyzeResponse[]
-  const data: AnalyzeResponse = { results: parts.flatMap((p) => p.results || []) }
+  // The model sometimes DOUBLE-ENCODES the tool input: "results" arrives as a
+  // JSON string instead of an array. Silently treating that as no results is
+  // exactly the blank-card disease — parse it back into shape instead.
+  const resultsOf = (p: unknown): MoveResult[] => {
+    const r = (p as { results?: unknown })?.results
+    if (Array.isArray(r)) return r as MoveResult[]
+    if (typeof r === 'string') {
+      try {
+        const parsed = JSON.parse(r)
+        return Array.isArray(parsed) ? (parsed as MoveResult[]) : []
+      } catch {
+        return []
+      }
+    }
+    return []
+  }
+  const data: AnalyzeResponse = { results: parts.flatMap(resultsOf) }
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
   const seenPly = new Set<number>()
@@ -661,10 +677,23 @@ ${targetLinesOf(ts)}`
     // only keep results for plies we actually asked about, without duplicates
     .filter((r) => requestedPlies.has(r.ply) && !seenPly.has(r.ply) && (seenPly.add(r.ply), true))
     .map((r) => {
+      const rawRules: unknown = r.rules
+      const ruleArr: RuleHit[] = Array.isArray(rawRules)
+        ? rawRules
+        : typeof rawRules === 'string'
+          ? (() => {
+              try {
+                const p = JSON.parse(rawRules)
+                return Array.isArray(p) ? (p as RuleHit[]) : []
+              } catch {
+                return []
+              }
+            })()
+          : []
       const out: MoveResult = {
         ply: r.ply,
         lesson: stripToolLeak(r.lesson),
-        rules: (r.rules || [])
+        rules: ruleArr
           .filter(
             (h: RuleHit) =>
               Number.isInteger(h.id) &&
