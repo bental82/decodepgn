@@ -2581,6 +2581,17 @@ export default function App() {
                   </button>
                 ) : null}
                 </div>
+                {/* Score sheet: inside the sticky board column on desktop (a
+                    grid-row sibling would scroll UNDER the pinned board); on
+                    phones the board-panel is display:contents and flex order
+                    puts it after the explanation instead. */}
+                <MoveList
+                  moves={moves}
+                  results={results}
+                  focus={focus}
+                  selectedPly={selectedPly}
+                  onSelect={setSelectedPly}
+                />
               </div>
               <div className="explain-panel" ref={explainRef}>
                 {isStudied(move.color, focus) ||
@@ -2631,15 +2642,6 @@ export default function App() {
                   onOpenRule={openRule}
                 />
               </div>
-              {/* Score sheet: last in the grid — desktop puts it under the
-                  board (column 1); on phones the explanation comes first. */}
-              <MoveList
-                moves={moves}
-                results={results}
-                focus={focus}
-                selectedPly={selectedPly}
-                onSelect={setSelectedPly}
-              />
               </div>
             </>
           )}
