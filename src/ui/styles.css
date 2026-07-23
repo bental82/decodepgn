@@ -424,14 +424,17 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .sq.dark .coord { color: var(--light-sq); }
 
 /* move list (score sheet): scan the game, dots flag the analysed verdicts.
-   It is the study grid's LAST child: on desktop, grid auto-placement drops it
-   into column 1 under the board; on phones (block flow) the explanation panel
-   comes first — the coaching is the point of the app. */
+   On desktop it lives INSIDE the sticky board column (as a grid-row sibling
+   it scrolled under the pinned board); its height must shrink with the
+   viewport or the column overflows short screens. */
 .movelist {
   margin-top: 10px; max-height: 240px; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius-sm); padding: 6px;
   box-shadow: var(--shadow-card);
+}
+@media (min-width: 1025px) {
+  .movelist { max-height: clamp(110px, calc(100vh - 640px), 240px); }
 }
 .ml-row { display: grid; grid-template-columns: 32px 1fr 1fr; align-items: center; }
 .ml-num { color: var(--muted); font-size: 11.5px; text-align: right; padding-right: 8px; font-variant-numeric: tabular-nums; }
@@ -721,12 +724,14 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
   .topbar-right { gap: 8px; }
 
   .workspace { padding: 12px 14px; }
-  /* block flow (not grid): a sticky child inside a grid row is bounded by that
-     row's height in Chromium, so it would stop sticking almost immediately.
-     With block flow + display:contents on .board-panel, the sticky board is
-     bounded by the whole study section and holds while the text scrolls. */
-  .study { display: block; }
+  /* flex column (not block): ORDER puts the explanation between the sticky
+     board and the score sheet — the coaching is the point of the app. The
+     board-panel stays display:contents so its children order individually. */
+  .study { display: flex; flex-direction: column; }
   .board-panel { display: contents; }
+  .board-sticky { order: 1; }
+  .explain-panel { order: 2; }
+  .movelist { order: 3; }
 
   /* board breaks out edge-to-edge by cancelling the workspace's 14px side
      padding with negative margins (NOT 100vw, which overflows when a classic

@@ -120,6 +120,11 @@ await page.screenshot({ path: `${OUT}/01-landing-dark.png` })
 // 2. study view, dark, desktop
 await openGame(page)
 await page.screenshot({ path: `${OUT}/02-study-dark.png`, fullPage: false })
+// scrolled: the board column pins; the score sheet must not slide under it
+await page.evaluate(() => window.scrollTo(0, 600))
+await page.waitForTimeout(400)
+await page.screenshot({ path: `${OUT}/02b-study-dark-scrolled.png` })
+await page.evaluate(() => window.scrollTo(0, 0))
 
 // 3. by-rule map tab
 await page.getByRole('button', { name: 'By rule' }).click()
