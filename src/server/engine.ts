@@ -52,10 +52,23 @@ async function initEngine(): Promise<EngineInstance> {
     ccall: (fn: string, ret: null, args: string[], vals: unknown[], opts: object) => unknown
   }>
   let listener: (line: string) => void = () => {}
-  const ready = wrapper()({
-    wasmBinary: readFileSync(wasmPath),
-    listener: (line: unknown) => listener(String(line)),
-  })
+  // The emscripten glue, on detecting Node, does a bare `fetch = null` to
+  // force its fs-based wasm loading — nuking GLOBAL fetch for the whole
+  // lambda, which silently kills every later Supabase/Anthropic call in the
+  // warm instance. We load the wasm ourselves (wasmBinary), so restore fetch
+  // the moment the factory call returns.
+  const savedFetch = globalThis.fetch
+  let ready: Promise<{
+    ccall: (fn: string, ret: null, args: string[], vals: unknown[], opts: object) => unknown
+  }>
+  try {
+    ready = wrapper()({
+      wasmBinary: readFileSync(wasmPath),
+      listener: (line: unknown) => listener(String(line)),
+    })
+  } finally {
+    globalThis.fetch = savedFetch
+  }
   const timeout = new Promise<never>((_, rej) =>
     setTimeout(() => rej(new Error('Engine init timed out')), INIT_TIMEOUT_MS),
   )
