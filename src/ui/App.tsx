@@ -175,13 +175,15 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('decodepgn.theme', theme)
   }, [theme])
-  // Colour palette — same mechanism via <html data-palette>; 'pine' is the
+  // Colour palette — same mechanism via <html data-palette>; 'classic' is the
   // default (no attribute, the :root tokens).
-  const [palette, setPalette] = useState<string>(
-    () => localStorage.getItem('decodepgn.palette') || 'pine',
-  )
+  const [palette, setPalette] = useState<string>(() => {
+    // 'pine' was the previous default's id — treat it as 'classic'
+    const p = localStorage.getItem('decodepgn.palette')
+    return !p || p === 'pine' ? 'classic' : p
+  })
   useEffect(() => {
-    if (palette === 'pine') delete document.documentElement.dataset.palette
+    if (palette === 'classic') delete document.documentElement.dataset.palette
     else document.documentElement.dataset.palette = palette
     localStorage.setItem('decodepgn.palette', palette)
   }, [palette])

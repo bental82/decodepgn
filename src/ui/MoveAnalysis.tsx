@@ -24,9 +24,19 @@ export default function MoveAnalysis({
   altArrow,
   engineArrow,
 }: MoveAnalysisProps) {
+  // The move this card is about, always on top: the nav row is under the
+  // board, and on a phone it scrolls away — the analysis must name itself.
+  const head = (
+    <div className="analysis-head">
+      {move.moveNumber}
+      {move.color === 'w' ? '.' : '…'} {move.san}
+    </div>
+  )
+
   if (error) {
     return (
       <div className="analysis">
+        {head}
         <div className="error">{error}</div>
         <button className="btn reanalyze" onClick={onReanalyze}>
           Try again
@@ -38,6 +48,7 @@ export default function MoveAnalysis({
   if (loading && !result) {
     return (
       <div className="analysis">
+        {head}
         <div className="loading-row">
           <span className="spinner" />
           Asking Claude which rules apply…
@@ -68,6 +79,7 @@ export default function MoveAnalysis({
 
   return (
     <div className="analysis">
+      {head}
       {loading ? (
         // Re-analysing an already-analysed move: keep the old result visible
         // but SAY that work is happening (the button used to look dead).

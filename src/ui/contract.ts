@@ -158,7 +158,7 @@ export interface SettingsProps {
   hasServerKey: boolean
   theme: 'dark' | 'light'
   onTheme: (t: 'dark' | 'light') => void
-  /** colour palette id ('pine' | 'ocean' | 'walnut' | 'violet') */
+  /** colour palette id ('classic' | 'ocean' | 'walnut' | 'violet') */
   palette: string
   onPalette: (p: string) => void
   /** the deployed API's build marker (from GET /api/analyze) — shows what's live */
