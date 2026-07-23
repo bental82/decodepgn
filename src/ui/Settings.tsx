@@ -26,11 +26,19 @@ async function hardRefresh() {
   window.location.replace(u.toString())
 }
 
-export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel, theme, onTheme, onSave, onClose }: SettingsProps) {
+// Palette picker metadata: swatch = [page bg, board dark square, accent].
+// The token sets themselves live in styles.css under [data-palette='…'].
+const PALETTES = [
+  { id: 'pine', name: 'Pine', dots: ['#0e1613', '#5e8a6f', '#f0a62c'] },
+  { id: 'ocean', name: 'Ocean', dots: ['#0f141c', '#8ca2ad', '#4fb3f5'] },
+  { id: 'walnut', name: 'Walnut', dots: ['#1a1713', '#a67c52', '#d9a648'] },
+  { id: 'violet', name: 'Violet', dots: ['#130f1c', '#8273b3', '#a78bfa'] },
+]
+
+export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel, theme, onTheme, palette, onPalette, onSave, onClose }: SettingsProps) {
   const [value, setValue] = useState(apiKey)
   const [refreshing, setRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
-
   useEffect(() => {
     inputRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
@@ -110,6 +118,27 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel,
             >
               <Icon name="sun" size={14} /> Light
             </button>
+          </div>
+        </div>
+        <div className="settings-colors">
+          <span className="muted small">Colors</span>
+          <div className="palette-grid" role="radiogroup" aria-label="Colour palette">
+            {PALETTES.map((p) => (
+              <button
+                key={p.id}
+                className={'pal-btn' + (palette === p.id ? ' on' : '')}
+                role="radio"
+                aria-checked={palette === p.id}
+                onClick={() => onPalette(p.id)}
+              >
+                <span className="pal-dots" aria-hidden="true">
+                  {p.dots.map((d) => (
+                    <span key={d} className="pal-dot" style={{ background: d }} />
+                  ))}
+                </span>
+                {p.name}
+              </button>
+            ))}
           </div>
         </div>
         <div className="settings-update">

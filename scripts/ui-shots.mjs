@@ -162,5 +162,21 @@ await page.waitForTimeout(400)
 await page.screenshot({ path: `${OUT}/09-study-mobile-scrolled.png` })
 await ctx.close()
 
+// 7. settings modal with the palette picker
+ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+page = await ctx.newPage()
+await mockApi(page)
+await page.goto(BASE, { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'API key settings' }).click()
+await page.waitForSelector('.palette-grid')
+await page.screenshot({ path: `${OUT}/10-settings-dark.png` })
+
+// 8. ocean palette applied to the study view
+await page.getByRole('radio', { name: 'Ocean' }).click()
+await page.keyboard.press('Escape')
+await openGame(page)
+await page.screenshot({ path: `${OUT}/11-study-ocean.png` })
+await ctx.close()
+
 await browser.close()
 console.log('done')

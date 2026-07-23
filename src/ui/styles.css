@@ -71,6 +71,73 @@
   --shadow-pop: 0 12px 40px rgba(40, 60, 45, 0.25);
 }
 
+/* ---- alternative palettes (Settings → Colors) ----
+   Each overrides the identity tokens for dark, then light. Semantic colors
+   (good/warn/bad, annotations) stay shared. Pine (the default) needs no block. */
+
+/* Ocean: slate-navy surfaces, sky accent, classic blue board */
+:root[data-palette='ocean'] {
+  --bg: #0f141c; --panel: #151e29; --panel-2: #1e2a38;
+  --ink: #e8edf3; --muted: #92a1b2; --line: #263445; --line-2: #34465c;
+  --accent: #4fb3f5; --accent-strong: #2f9fe9;
+  --accent-weak: rgba(79, 179, 245, 0.13); --accent-ink: #7cc6f8; --accent-on: #062032;
+  --light-sq: #dee3e6; --dark-sq: #8ca2ad; --hi: rgba(79, 179, 245, 0.4);
+  --evalbar-bg: #0a0e14; --evalbar-fill: #e8edf3;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 24px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+:root[data-palette='ocean'][data-theme='light'] {
+  --bg: #edf1f5; --panel: #ffffff; --panel-2: #e6edf4;
+  --ink: #182330; --muted: #5d6c7c; --line: #d3dde6; --line-2: #b4c3d2;
+  --accent: #0b72c4; --accent-strong: #0b72c4;
+  --accent-weak: rgba(11, 114, 196, 0.11); --accent-ink: #095fa5; --accent-on: #ffffff;
+  --evalbar-bg: #37414e; --evalbar-fill: #f2f5f8;
+  --shadow-card: 0 1px 2px rgba(30, 45, 60, 0.08), 0 6px 24px rgba(30, 45, 60, 0.09);
+  --shadow-pop: 0 12px 40px rgba(30, 45, 60, 0.25);
+}
+
+/* Walnut: the previous brown/brass look */
+:root[data-palette='walnut'] {
+  --bg: #1a1713; --panel: #211d18; --panel-2: #2b2620;
+  --ink: #ece7dd; --muted: #a29886; --line: #38322a; --line-2: #4c4436;
+  --accent: #d9a648; --accent-strong: #c9963a;
+  --accent-weak: rgba(217, 166, 72, 0.13); --accent-ink: #e5ba63; --accent-on: #241b09;
+  --light-sq: #eeddc0; --dark-sq: #a67c52; --hi: rgba(217, 166, 72, 0.42);
+  --evalbar-bg: #12100d; --evalbar-fill: #e9e4d8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 24px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+:root[data-palette='walnut'][data-theme='light'] {
+  --bg: #f2eee6; --panel: #fbf9f3; --panel-2: #efe9db;
+  --ink: #241f17; --muted: #6f6452; --line: #ddd4c2; --line-2: #c6bba2;
+  --accent: #a67c1b; --accent-strong: #a67c1b;
+  --accent-weak: rgba(166, 124, 27, 0.12); --accent-ink: #856310; --accent-on: #fff8e8;
+  --evalbar-bg: #3c362c; --evalbar-fill: #f6f3ea;
+  --shadow-card: 0 1px 2px rgba(60, 48, 24, 0.08), 0 6px 24px rgba(60, 48, 24, 0.08);
+  --shadow-pop: 0 12px 40px rgba(60, 48, 24, 0.25);
+}
+
+/* Violet: midnight purple, lavender accent and board */
+:root[data-palette='violet'] {
+  --bg: #130f1c; --panel: #1a1526; --panel-2: #251d34;
+  --ink: #eeeaf6; --muted: #a295bc; --line: #2e2542; --line-2: #40345a;
+  --accent: #a78bfa; --accent-strong: #9474f0;
+  --accent-weak: rgba(167, 139, 250, 0.14); --accent-ink: #c0aefc; --accent-on: #221245;
+  --light-sq: #ece7f4; --dark-sq: #8273b3; --hi: rgba(167, 139, 250, 0.42);
+  --evalbar-bg: #0d0a15; --evalbar-fill: #ece9f6;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 24px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+:root[data-palette='violet'][data-theme='light'] {
+  --bg: #f2f0f8; --panel: #fbfaff; --panel-2: #eae6f4;
+  --ink: #211a33; --muted: #675e80; --line: #d9d3e6; --line-2: #bdb2d4;
+  --accent: #7c5cd6; --accent-strong: #7c5cd6;
+  --accent-weak: rgba(124, 92, 214, 0.12); --accent-ink: #6548bd; --accent-on: #ffffff;
+  --evalbar-bg: #3d3652; --evalbar-fill: #f4f2fa;
+  --shadow-card: 0 1px 2px rgba(45, 35, 75, 0.08), 0 6px 24px rgba(45, 35, 75, 0.09);
+  --shadow-pop: 0 12px 40px rgba(45, 35, 75, 0.25);
+}
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--ink); line-height: 1.55; }
@@ -352,9 +419,12 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .sq.light .coord { color: var(--dark-sq); }
 .sq.dark .coord { color: var(--light-sq); }
 
-/* move list (score sheet): scan the game, dots flag the analysed verdicts */
+/* move list (score sheet): scan the game, dots flag the analysed verdicts.
+   It is the study grid's LAST child: on desktop, grid auto-placement drops it
+   into column 1 under the board; on phones (block flow) the explanation panel
+   comes first — the coaching is the point of the app. */
 .movelist {
-  margin-top: 10px; max-height: 200px; overflow-y: auto;
+  margin-top: 10px; max-height: 240px; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius-sm); padding: 6px;
   box-shadow: var(--shadow-card);
@@ -378,12 +448,6 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .ml-move.d-good::before { background: var(--good); }
 .ml-move.d-warn::before { background: var(--warn); }
 .ml-move.d-bad::before { background: var(--bad); }
-/* desktop: the list lives inside the STICKY board column, so its height must
-   shrink with the viewport — a fixed 200px would push it under the fold on
-   short screens (the whole column stays pinned). */
-@media (min-width: 1025px) {
-  .movelist { max-height: clamp(110px, calc(100vh - 640px), 200px); }
-}
 
 /* analysis */
 .note { color: var(--muted); margin: 4px 0; }
@@ -467,6 +531,14 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .settings-theme { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
 .theme-opts { display: flex; gap: 6px; }
 .theme-opts .btn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
+.settings-colors { display: flex; align-items: flex-start; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
+.settings-colors > span { padding-top: 8px; }
+.palette-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+.pal-btn { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 6px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.pal-btn:hover { border-color: var(--accent); }
+.pal-btn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
+.pal-dots { display: flex; gap: 4px; }
+.pal-dot { width: 15px; height: 15px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 .settings-update .btn { flex-shrink: 0; }
 
 /* soundness badge colours (reuse .badge sizing) */

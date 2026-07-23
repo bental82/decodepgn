@@ -175,6 +175,16 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('decodepgn.theme', theme)
   }, [theme])
+  // Colour palette — same mechanism via <html data-palette>; 'pine' is the
+  // default (no attribute, the :root tokens).
+  const [palette, setPalette] = useState<string>(
+    () => localStorage.getItem('decodepgn.palette') || 'pine',
+  )
+  useEffect(() => {
+    if (palette === 'pine') delete document.documentElement.dataset.palette
+    else document.documentElement.dataset.palette = palette
+    localStorage.setItem('decodepgn.palette', palette)
+  }, [palette])
   const [allProgress, setAllProgress] = useState<{ done: number; total: number } | null>(null)
   // Plies enqueued by "Analyse all" (for the per-move queued/loading indicator).
   const [queuedPlies, setQueuedPlies] = useState<Set<number>>(new Set())
@@ -2569,15 +2579,6 @@ export default function App() {
                   </button>
                 ) : null}
                 </div>
-                {/* Score sheet: outside the sticky block — on phones it scrolls
-                    away with the text; on desktop it sits under the eval bar. */}
-                <MoveList
-                  moves={moves}
-                  results={results}
-                  focus={focus}
-                  selectedPly={selectedPly}
-                  onSelect={setSelectedPly}
-                />
               </div>
               <div className="explain-panel" ref={explainRef}>
                 {isStudied(move.color, focus) ||
@@ -2628,6 +2629,15 @@ export default function App() {
                   onOpenRule={openRule}
                 />
               </div>
+              {/* Score sheet: last in the grid — desktop puts it under the
+                  board (column 1); on phones the explanation comes first. */}
+              <MoveList
+                moves={moves}
+                results={results}
+                focus={focus}
+                selectedPly={selectedPly}
+                onSelect={setSelectedPly}
+              />
               </div>
             </>
           )}
@@ -2759,6 +2769,8 @@ export default function App() {
           liteModel={liteModel}
           theme={theme}
           onTheme={setTheme}
+          palette={palette}
+          onPalette={setPalette}
           onSave={saveKey}
           onClose={() => setShowSettings(false)}
         />
