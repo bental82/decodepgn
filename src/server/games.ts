@@ -171,6 +171,13 @@ export async function putCloudGame(
         toStore.evals = { ...((g.evals as object) ?? {}), ...(existing.evals ?? {}) }
       }
     }
+    // addedAt anchors the game's position in the list — a client save that
+    // lacks it must never wipe the stored one (that drift is what made
+    // opening an older game shove it to the top)
+    const exAdded = (existing as { addedAt?: unknown } | null)?.addedAt
+    if (toStore.addedAt == null && typeof exAdded === 'number') {
+      toStore = { ...toStore, addedAt: exAdded }
+    }
   }
   const results = toStore.results
   const row = {

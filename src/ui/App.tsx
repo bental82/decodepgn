@@ -483,8 +483,7 @@ export default function App() {
           if (saved) {
             const merged: SavedGame = { ...saved, savedAt: Date.now(), results: { ...saved.results } }
             for (const r of resp.results) merged.results[r.ply] = { ...r, engine: engineByPly.get(r.ply) }
-            saveGame(merged)
-            cloudSave(merged, markSynced)
+            cloudSave(saveGame(merged), markSynced)
             setHistory(listGames())
           }
         }
@@ -652,8 +651,9 @@ export default function App() {
       // reopen (undefined inherits the stored flag — see saveGame)
       pendingRun: bgAnalysing.has(storeRef.current.key) ? true : undefined,
     }
-    saveGame(game)
-    cloudSave(game, markSynced)
+    // mirror the STAMPED save (stable addedAt) — uploading the bare object
+    // would wipe the cloud row's anchor and let list positions drift
+    cloudSave(saveGame(game), markSynced)
   }, [phase, results, focus, headers, quizSaved, gameOverview, evals, mySide, bgAnalysing])
 
   // Chess.com-style per-side accuracy from the engine-checked moves — shown
