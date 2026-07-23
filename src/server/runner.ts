@@ -270,7 +270,9 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
       moves = parsePgn(claimed.pgn).moves
       if (moves.length === 0) throw new Error('no moves')
     } catch {
-      await failJob(claimed.key, runnerId, 'This PGN could not be parsed on the server.')
+      await failJob(claimed.key, runnerId, 'This PGN could not be parsed on the server.').catch(
+        () => {},
+      )
       continue
     }
     let pending = [...(job.pending ?? [])]
@@ -286,7 +288,7 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
         failures++
         if (failures >= MAX_CONSECUTIVE_FAILURES) {
           const msg = e instanceof Error ? e.message : 'Analysis failed.'
-          await failJob(claimed.key, runnerId, msg)
+          await failJob(claimed.key, runnerId, msg).catch(() => {})
           break
         }
         await new Promise((r) => setTimeout(r, 3000))
