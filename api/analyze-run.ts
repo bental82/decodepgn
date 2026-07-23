@@ -93,6 +93,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       game?: unknown
     }
 
+    if ((body as { debug?: unknown }).debug === true) {
+      // TEMPORARY diagnostics: run one analyze request inside THIS function's
+      // bundle and return the raw outcome — isolates bundle-specific failures.
+      const analyze = await import('../src/server/analyze.js')
+      try {
+        const out = await analyze.runAnalyze((body as { req?: never }).req as never)
+        res.status(200).json({ debug: true, n: out.results.length, results: out.results.slice(0, 2) })
+      } catch (e) {
+        res.status(200).json({ debug: true, threw: e instanceof Error ? e.message : String(e) })
+      }
+      return
+    }
+
     if (body.work === true) {
       // The worker. Its response goes nowhere — the kicker never reads it.
       const more = await runner.processJobs(startedAt + 290_000)
