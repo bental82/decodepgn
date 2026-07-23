@@ -54,9 +54,6 @@ const KEY_MOVE_CP_LOSS = 60
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
 const MAX_GAME_PLIES = 800 // bound the context we send
 
-// TEMPORARY diagnostics: the raw input of the last forced tool call.
-export let lastRawToolInput: unknown = null
-
 export class AnalyzeError extends Error {
   status: number
   constructor(message: string, status = 400) {
@@ -276,7 +273,6 @@ async function callClaude(
     if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
       throw new AnalyzeError('Claude did not return structured output.', 502)
     }
-    lastRawToolInput = toolUse.input // TEMPORARY diagnostics (see api/analyze-run.ts)
     return toolUse.input
   }
   const textBlock = message.content?.find((b) => b.type === 'text')
