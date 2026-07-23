@@ -11,6 +11,13 @@ interface Props {
   waiting?: boolean
   /** live analysed/total counts for the waiting message */
   waitingProgress?: { done: number; total: number }
+  /** something is actually analysing (or queued) — without it a waiting card
+      shows the stalled call-to-action instead of a spinner going nowhere */
+  runActive?: boolean
+  /** unanalysed move count for the stalled call-to-action */
+  remaining?: number
+  /** start analysing the missing moves (the stalled call-to-action) */
+  onAnalyse?: () => void
   error: string | null
   moves: ParsedMove[]
   onJump: (ply: number) => void
@@ -34,6 +41,9 @@ export default function GameOverviewCard({
   loading,
   waiting,
   waitingProgress,
+  runActive,
+  remaining,
+  onAnalyse,
   error,
   moves,
   onJump,
@@ -73,7 +83,22 @@ export default function GameOverviewCard({
         ) : null}
         <span className="overview-chevron">{open ? '▾' : '▸'}</span>
       </button>
-      {!open ? null : loading || waiting ? (
+      {!open ? null : waiting && !loading && !runActive ? (
+        // Waiting on analysis that ISN'T running: a spinner here would spin
+        // forever. Say what's missing and offer the one action that unsticks it.
+        <>
+          <div className="loading-row">
+            {waitingProgress && waitingProgress.total > 0
+              ? `${waitingProgress.done} of ${waitingProgress.total} moves analysed — the overview needs the rest.`
+              : 'The moves are not analysed yet — the overview needs them first.'}
+          </div>
+          {onAnalyse ? (
+            <button className="btn reanalyze" onClick={onAnalyse}>
+              {remaining && remaining > 0 ? `Analyse remaining (${remaining})` : 'Analyse the game'}
+            </button>
+          ) : null}
+        </>
+      ) : loading || waiting ? (
         <div className="loading-row">
           <span className="spinner" />
           {loading

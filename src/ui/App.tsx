@@ -1479,17 +1479,20 @@ export default function App() {
         })
       }
     }
-    // Newest GAME first — the date shown on the row is the date the list is
-    // ordered by, so the listing never looks shuffled. Compare by calendar DAY
-    // (a PGN Date header lands at midnight while addedAt carries a clock time
-    // — mixing granularities let a dateless game outrank a game pasted after
-    // it), then addedAt so the most recently added game tops its day, then
-    // the key keeps equal stamps stable no matter what order the LRU index
-    // delivered them.
+    // Newest first, where "newest" is the LATER of the game's own date and the
+    // day it was added: games sit at their played date (so the listing reads
+    // chronologically and reopening never reorders — both stamps are stable),
+    // but a game imported long after it was played (or the 1851 example game)
+    // still surfaces at the top on the day it was added instead of sinking
+    // straight to the bottom. Compare by calendar DAY (a PGN Date header lands
+    // at midnight while addedAt carries a clock time — mixing granularities
+    // let a dateless game outrank a game pasted after it), then addedAt so the
+    // most recently added game tops its day, then the key keeps equal stamps
+    // stable no matter what order the LRU index delivered them.
     const dayOf = (t: number) => new Date(t).setHours(0, 0, 0, 0)
+    const recency = (h: HistoryItem) => Math.max(dayOf(h.date), dayOf(h.sortKey))
     return [...byKey.values()].sort(
-      (a, b) =>
-        dayOf(b.date) - dayOf(a.date) || b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1),
+      (a, b) => recency(b) - recency(a) || b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1),
     )
   }, [history, cloudGames, syncedKeys, allSummaries])
 
@@ -1750,6 +1753,15 @@ export default function App() {
     [moves, focus],
   )
   const analyzedFocus = studiedPlies.length - focusMovesRemaining
+  // Is anything actually working (or about to work) on THIS game? The overview
+  // card must not show an "analysing…" spinner on a game nothing is analysing
+  // — a partially-analysed game with no run is a dead end the user has to
+  // unstick by hand, and the card says so instead.
+  const overviewRunActive =
+    bgAnalysing.has(overviewGameKey) ||
+    serverActive ||
+    !!allProgress ||
+    analysisQueue.includes(overviewGameKey)
 
   // Moves worth revisiting: judged dubious, or a 1.5+ pawn engine loss.
   const dubiousPlies = useMemo(
@@ -2294,6 +2306,15 @@ export default function App() {
                 loading={overviewLoading}
                 waiting={overviewWaiting}
                 waitingProgress={{ done: analyzedFocus, total: studiedPlies.length }}
+                runActive={overviewRunActive}
+                remaining={analyseRemainingCount}
+                onAnalyse={() =>
+                  void handleAnalyzeAll(false, {
+                    repairEmpty: true,
+                    includeLite: true,
+                    explicit: true,
+                  })
+                }
                 error={overviewError}
                 moves={moves}
                 onJump={jumpTo}
@@ -2311,7 +2332,10 @@ export default function App() {
                 onNeedKey={() => setShowSettings(true)}
                 onOpenRule={openRule}
               />
-              {analyzedFocus > 0 && !hasAnyGraphics ? (
+              {/* Only when the game is otherwise DONE: while moves are still
+                  unanalysed, "Analyse remaining" is the one action on screen —
+                  a second enabled re-analyse button just competes with it. */}
+              {analyzedFocus > 0 && !hasAnyGraphics && analyseRemainingCount === 0 ? (
                 <div className="regen-banner">
                   <span>
                     This analysis predates the <strong>board graphics</strong> — re-analyse to get
