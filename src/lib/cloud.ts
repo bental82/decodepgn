@@ -17,6 +17,8 @@ export interface CloudGameMeta {
   addedAt?: number
   analysed: number
   hasQuiz: boolean
+  /** server-side analysis job state, when one exists (drives landing badges) */
+  job?: { status: string; progress?: { done: number; total: number }; heartbeat?: number }
 }
 
 async function fetchJson(url: string, init?: RequestInit): Promise<any | null> {

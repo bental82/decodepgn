@@ -71,11 +71,13 @@ export interface CloudGameMeta {
   addedAt?: number
   analysed: number
   hasQuiz: boolean
+  /** server-side analysis job state, when one exists (drives landing badges) */
+  job?: { status: string; progress?: { done: number; total: number }; heartbeat?: number }
 }
 
 export async function listCloudGames(): Promise<CloudGameMeta[]> {
   const resp = await sb(
-    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
+    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt,job:data->job&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
   )
   const rows = (await resp.json()) as Array<{
     key?: unknown
@@ -86,21 +88,41 @@ export async function listCloudGames(): Promise<CloudGameMeta[]> {
     has_quiz?: unknown
     saved_at?: unknown
     added_at?: unknown
+    job?: unknown
   }>
   if (!Array.isArray(rows)) return []
   return rows
     .filter((r) => typeof r?.key === 'string' && typeof r?.pgn === 'string')
-    .map((r) => ({
-      key: r.key as string,
-      pgn: r.pgn as string,
-      focus: r.focus === 'b' || r.focus === 'both' ? (r.focus as Focus) : 'w',
-      headers:
-        r.headers && typeof r.headers === 'object' ? (r.headers as Record<string, string>) : {},
-      savedAt: typeof r.saved_at === 'string' ? Date.parse(r.saved_at) || 0 : 0,
-      addedAt: Number(r.added_at) > 0 ? Number(r.added_at) : undefined,
-      analysed: Number.isFinite(r.analysed) ? (r.analysed as number) : 0,
-      hasQuiz: r.has_quiz === true,
-    }))
+    .map((r) => {
+      const j = r.job as {
+        status?: unknown
+        progress?: { done?: unknown; total?: unknown }
+        heartbeat?: unknown
+      } | null
+      const p = j?.progress
+      return {
+        key: r.key as string,
+        pgn: r.pgn as string,
+        focus: r.focus === 'b' || r.focus === 'both' ? (r.focus as Focus) : 'w',
+        headers:
+          r.headers && typeof r.headers === 'object' ? (r.headers as Record<string, string>) : {},
+        savedAt: typeof r.saved_at === 'string' ? Date.parse(r.saved_at) || 0 : 0,
+        addedAt: Number(r.added_at) > 0 ? Number(r.added_at) : undefined,
+        analysed: Number.isFinite(r.analysed) ? (r.analysed as number) : 0,
+        hasQuiz: r.has_quiz === true,
+        ...(j && typeof j.status === 'string'
+          ? {
+              job: {
+                status: j.status,
+                ...(Number.isFinite(p?.done) && Number.isFinite(p?.total)
+                  ? { progress: { done: p!.done as number, total: p!.total as number } }
+                  : {}),
+                ...(Number.isFinite(j.heartbeat) ? { heartbeat: j.heartbeat as number } : {}),
+              },
+            }
+          : {}),
+      }
+    })
 }
 
 /** The full saved game (the whole SavedGame JSON as the client stored it). */
