@@ -126,7 +126,7 @@ export default function Settings({ apiKey, hasServerKey, serverBuild, liteModel,
                 on (<code>{liteModel}</code>)
               </>
             ) : (
-              'off — set OPENROUTER_API_KEY on the server to enable it'
+              'off'
             )}
             . Seeing something stale? Force-load the newest version — your saved games and key are
             kept.

@@ -44,11 +44,11 @@ export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
     engine loss, or no engine check to vouch for the move) stay on MODEL, as
     do the game overview, the cross-game meta report, quiz and ask. */
 export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5'
-/** Bargain-bin model (via OpenRouter) for the NON-studied side's moves —
-    context the reader browses past, not the coaching itself. Only used when
-    OPENROUTER_API_KEY is configured; without it those moves stay unanalysed. */
-export const MODEL_LITE = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash'
-export const hasLiteKey = () => !!process.env.OPENROUTER_API_KEY
+/** Bargain model for the NON-studied side's moves — context the reader
+    browses past, not the coaching itself. Rides the same Anthropic key as
+    the other tiers, so it is available whenever analysis is at all. */
+export const MODEL_LITE = process.env.ANTHROPIC_MODEL_LITE || 'claude-haiku-4-5'
+export const hasLiteKey = () => true
 /** Engine loss (centipawns) from which a move counts as a key moment. */
 const KEY_MOVE_CP_LOSS = 60
 const MAX_TARGETS = 16 // per request (the client batches; this is a safety cap)
@@ -279,98 +279,6 @@ async function callClaude(
   return typeof textBlock?.text === 'string' ? textBlock.text : ''
 }
 
-/** OpenRouter (OpenAI-compatible) twin of callClaude, for the lite tier.
-    Takes the same system blocks + forced-tool contract and returns the parsed
-    tool input, so callers can swap providers per target group. */
-async function callOpenRouter(
-  system: unknown,
-  user: string,
-  opts: {
-    maxTokens: number
-    tool: { name: string; description: string; input_schema: unknown }
-    timeoutMs?: number
-  },
-): Promise<unknown> {
-  const key = process.env.OPENROUTER_API_KEY
-  if (!key) throw new AnalyzeError('No OpenRouter API key configured on the server.', 401)
-  // our system prompt is Anthropic-style text blocks — flatten to one string
-  const sysText = Array.isArray(system)
-    ? system
-        .map((b) => (b && typeof (b as { text?: unknown }).text === 'string' ? (b as { text: string }).text : ''))
-        .join('\n\n')
-    : String(system)
-  let resp: Response
-  try {
-    resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: MODEL_LITE,
-        max_tokens: opts.maxTokens,
-        messages: [
-          { role: 'system', content: sysText },
-          { role: 'user', content: user },
-        ],
-        tools: [
-          {
-            type: 'function',
-            function: {
-              name: opts.tool.name,
-              description: opts.tool.description,
-              parameters: opts.tool.input_schema,
-            },
-          },
-        ],
-        tool_choice: { type: 'function', function: { name: opts.tool.name } },
-      }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
-    })
-  } catch (e) {
-    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
-    throw new AnalyzeError(
-      timedOut
-        ? 'The OpenRouter request timed out. Try again in a moment.'
-        : 'Could not reach OpenRouter. Please try again shortly.',
-      timedOut ? 504 : 502,
-    )
-  }
-  if (!resp.ok) {
-    let detail = ''
-    try {
-      const j = (await resp.json()) as { error?: { message?: string } }
-      detail = j?.error?.message || JSON.stringify(j)
-    } catch {
-      detail = await resp.text().catch(() => '')
-    }
-    const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
-    throw new AnalyzeError(`OpenRouter error (${status}): ${clip(detail, 200)}`, status)
-  }
-  const msg = (await resp.json()) as {
-    choices?: Array<{
-      message?: { content?: unknown; tool_calls?: Array<{ function?: { arguments?: unknown } }> }
-    }>
-  }
-  const choice = msg.choices?.[0]?.message
-  let raw = choice?.tool_calls?.[0]?.function?.arguments
-  if (typeof raw !== 'string' || !raw.trim()) {
-    // some models put the JSON in content despite a forced tool choice
-    const content = typeof choice?.content === 'string' ? choice.content : ''
-    const m = content.match(/\{[\s\S]*\}/)
-    raw = m?.[0]
-  }
-  if (typeof raw !== 'string' || !raw.trim()) {
-    throw new AnalyzeError('The lite model did not return structured output.', 502)
-  }
-  try {
-    return JSON.parse(raw)
-  } catch {
-    // same double-encoding tolerance as the Claude path: recover the first
-    // complete JSON value when the arguments carry trailing junk
-    const p = parseJsonPrefix(raw)
-    if (p && typeof p === 'object') return p
-    throw new AnalyzeError('The lite model returned unreadable output.', 502)
-  }
-}
 
 // ---- Board graphics (shared by the analyse and ask schemas) ----
 
@@ -677,18 +585,19 @@ ${targetLinesOf(ts)}`
         model: g.model,
       }),
     ),
-    // Best-effort: a lite-provider failure must never sink the Claude results.
-    // The lite model is per-request unreliable at forced tool calls (empty or
-    // unreadable output on a meaningful fraction of calls, regardless of
-    // batch size) — give it a few attempts before conceding.
+    // Best-effort: a lite-tier failure must never sink the main results. One
+    // retry covers transient overloads; Haiku is dependable at forced tool
+    // calls, so the old multi-attempt salvage loop is gone.
     ...(liteTargets.length
       ? [
           (async (): Promise<AnalyzeResponse> => {
-            for (let attempt = 0; attempt < 3; attempt++) {
+            for (let attempt = 0; attempt < 2; attempt++) {
               try {
-                const out = (await callOpenRouter(liteSystem, userOf(liteTargets, 'opponent '), {
+                const out = (await callClaude(apiKey, liteSystem, userOf(liteTargets, 'opponent '), {
                   maxTokens: 6000,
-                  tool: OUTPUT_TOOL as { name: string; description: string; input_schema: unknown },
+                  tool: OUTPUT_TOOL,
+                  toolName: 'report_relevance',
+                  model: MODEL_LITE,
                 })) as AnalyzeResponse
                 if (resultsOf(out).length > 0) return out
               } catch (e) {
