@@ -99,7 +99,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const analyze = await import('../src/server/analyze.js')
       try {
         const out = await analyze.runAnalyze((body as { req?: never }).req as never)
-        res.status(200).json({ debug: true, n: out.results.length, results: out.results.slice(0, 2) })
+        res.status(200).json({
+          debug: true,
+          n: out.results.length,
+          results: out.results.slice(0, 2),
+          raw: JSON.stringify(analyze.lastRawToolInput)?.slice(0, 2000),
+        })
       } catch (e) {
         res.status(200).json({ debug: true, threw: e instanceof Error ? e.message : String(e) })
       }
