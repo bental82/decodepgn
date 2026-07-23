@@ -70,6 +70,19 @@ prefix** (`cache_control`) — repeat calls reuse it and cost a fraction of the
 first. The engine-side wording is deliberately hedged (“appears”, “may”,
 “likely”); the model is told to surface only rules that genuinely apply.
 
+### Server-side analysis runs (with Supabase)
+
+When the deployment has the games database (below), whole-game analysis runs
+**in the cloud instead of the browser**: tapping “Analyse” queues a job (stored
+inside the game’s row — no extra schema) and `/api/analyze-run` works through
+it in batches — Stockfish (the same lite WASM build, running in Node) plus the
+Claude tiers — merging results into the row as they land. The phone can lock,
+the tab can close: the run keeps going, chaining fresh invocations of itself
+when it nears the serverless time limit, and any stalled chain is re-kicked by
+the app’s status polls (stale heartbeat). The app just streams the results in
+and shows progress; several games queue naturally. Without the database, the
+whole pipeline runs in the browser exactly as described above.
+
 The rules themselves live in one place — [`src/shared/rules.ts`](src/shared/rules.ts)
 — and drive both the readable reference and the model prompt.
 
