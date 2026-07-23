@@ -645,7 +645,15 @@ ${targetLinesOf(ts)}`
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
   const seenPly = new Set<number>()
+  const plyOf = (v: unknown): number => {
+    const n = typeof v === 'string' ? Number(v.trim()) : (v as number)
+    return Number.isFinite(n) ? Math.trunc(n) : -1
+  }
   const results: MoveResult[] = (data.results || [])
+    // Models occasionally emit ply as a STRING ("37"); the strict Set filter
+    // then silently dropped the whole result and the move rendered as a blank
+    // card. Coerce before matching.
+    .map((r) => ({ ...r, ply: plyOf((r as { ply?: unknown }).ply) }))
     // only keep results for plies we actually asked about, without duplicates
     .filter((r) => requestedPlies.has(r.ply) && !seenPly.has(r.ply) && (seenPly.add(r.ply), true))
     .map((r) => {
