@@ -171,6 +171,28 @@ export async function putCloudGame(
         toStore.evals = { ...((g.evals as object) ?? {}), ...(existing.evals ?? {}) }
       }
     }
+    // A stale device must never destroy analysis: a client save (e.g. from a
+    // browser that hasn't pulled the latest cloud copy) merges per-ply — it
+    // may add and update moves, but it can't DROP plies it doesn't know
+    // about, and it can't replace a real analysis with a BLANK one.
+    if (existing?.results && typeof existing.results === 'object') {
+      const incoming = (toStore.results ?? {}) as Record<string, { rules?: unknown[]; lesson?: unknown }>
+      const isBlank = (r: { rules?: unknown[]; lesson?: unknown } | undefined) =>
+        !r || (!(Array.isArray(r.rules) && r.rules.length > 0) && !r.lesson)
+      const merged: Record<string, unknown> = { ...existing.results }
+      for (const [ply, r] of Object.entries(incoming)) {
+        const prev = existing.results[ply] as { rules?: unknown[]; lesson?: unknown } | undefined
+        if (!isBlank(r) || isBlank(prev)) merged[ply] = r
+      }
+      toStore = {
+        ...toStore,
+        results: merged,
+        evals: {
+          ...((existing.evals as object) ?? {}),
+          ...((toStore.evals as object) ?? {}),
+        },
+      }
+    }
     // addedAt anchors the game's position in the list — a client save that
     // lacks it must never wipe the stored one (that drift is what made
     // opening an older game shove it to the top)
