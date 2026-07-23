@@ -558,7 +558,17 @@ export default function App() {
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
-      if (!saved && (cloudGames === null || cloudGames.some((c) => c.key === key))) {
+      const cloudRow = cloudGames?.find((c) => c.key === key)
+      // The cloud copy is AHEAD of this device's save when a server-side run
+      // (or another device) analysed more, or wrote more recently — without
+      // this, server results never reach a device that has an older local
+      // save, and its repaired blanks stay blank forever.
+      const cloudAhead =
+        !!saved &&
+        !!cloudRow &&
+        (cloudRow.analysed > Object.keys(saved.results).length ||
+          cloudRow.savedAt > saved.savedAt)
+      if (!saved && (cloudGames === null || cloudRow)) {
         setRestoringKey(key)
         const gen = genRef.current
         void cloudGet(key)
@@ -576,6 +586,41 @@ export default function App() {
               setHeaders(remote.headers ?? g.headers)
               setHistory(listGames())
             }
+          })
+          .finally(() => setRestoringKey((k) => (k === key ? null : k)))
+      } else if (saved && cloudAhead) {
+        setRestoringKey(key)
+        const gen = genRef.current
+        void cloudGet(key)
+          .then((remote) => {
+            if (genRef.current !== gen) return
+            if (!remote || remote.key !== key) return
+            const rj = (remote as { job?: ServerJob }).job
+            if (rj && typeof rj.status === 'string') setServerJob({ key, job: rj })
+            // Per-ply merge: the cloud wins wherever this device has nothing
+            // or a BLANK card (repairs must land); a real local result wins
+            // (it may be a fresh re-analysis that hasn't synced yet).
+            const merged: SavedGame['results'] = { ...(remote.results ?? {}) }
+            for (const [pk, r] of Object.entries(saved.results ?? {})) {
+              if (r && !isEmptyResult(r)) merged[Number(pk)] = r
+            }
+            const quiz = sanitizeQuiz(saved.quiz) ?? sanitizeQuiz(remote.quiz)
+            const overview = saved.overview ?? remote.overview
+            const mEvals = { ...(remote.evals ?? {}), ...(saved.evals ?? {}) }
+            const mergedSave: SavedGame = {
+              ...saved,
+              results: merged,
+              quiz: quiz ?? undefined,
+              overview,
+              evals: Object.keys(mEvals).length ? mEvals : undefined,
+              savedAt: Date.now(),
+            }
+            saveGame(mergedSave)
+            setResults(merged)
+            setQuizSaved(quiz)
+            setGameOverview(overview ?? null)
+            setEvals((prev) => ({ ...mEvals, ...prev }))
+            setHistory(listGames())
           })
           .finally(() => setRestoringKey((k) => (k === key ? null : k)))
       }
@@ -880,7 +925,15 @@ export default function App() {
         serverPulledRef.current = st.analysed
         const remote = await cloudGet(key)
         if (stop || storeRef.current?.key !== key || !remote || remote.key !== key) return
-        setResults((prev) => ({ ...prev, ...(remote.results ?? {}) }))
+        setResults((prev) => {
+          const c = { ...prev }
+          for (const [pk, r] of Object.entries(remote.results ?? {})) {
+            const p = Number(pk)
+            // never replace a real local card with a blank remote one
+            if (!c[p] || isEmptyResult(c[p]) || !isEmptyResult(r)) c[p] = r
+          }
+          return c
+        })
         setEvals((prev) => ({ ...(remote.evals ?? {}), ...prev }))
         setHistory(listGames())
       }
@@ -1297,6 +1350,37 @@ export default function App() {
     setRuleModalId(id)
   }
 
+  // Landing live status: while any cloud job is queued/running, keep the
+  // cloud list fresh so the rows show analysis progress. The list also
+  // refreshes once whenever the landing screen is (re-)entered, so counts and
+  // finished runs are never a session stale.
+  const anyCloudJobActive = useMemo(
+    () =>
+      (cloudGames ?? []).some(
+        (c) => c.job && (c.job.status === 'queued' || c.job.status === 'running'),
+      ),
+    [cloudGames],
+  )
+  useEffect(() => {
+    if (phase !== 'input' || !serverRuns) return
+    let cancelled = false
+    const refresh = () =>
+      void cloudList().then((games) => {
+        if (!cancelled && games) setCloudGames(games)
+      })
+    refresh()
+    if (!anyCloudJobActive) {
+      return () => {
+        cancelled = true
+      }
+    }
+    const iv = setInterval(refresh, 6000)
+    return () => {
+      cancelled = true
+      clearInterval(iv)
+    }
+  }, [phase, serverRuns, anyCloudJobActive])
+
   // The landing history merges this browser's saves with the cloud list:
   // local games as-is, cloud games from other devices marked ☁, and when both
   // exist the newer save wins the metadata.
@@ -1322,6 +1406,8 @@ export default function App() {
     me?: Color
     /** chess.com-style accuracy % for the player's side, when engine-checked */
     accuracy?: number
+    /** cloud analysis job (queued/running shows a live badge on the row) */
+    job?: CloudGameMeta['job']
   }
   // Result from the player's own perspective (me flag, else the studied side).
   const resultFor = (
@@ -1368,7 +1454,12 @@ export default function App() {
     }
     for (const c of cloudGames ?? []) {
       const local = byKey.get(c.key)
-      if (local) local.inCloud = true
+      if (local) {
+        local.inCloud = true
+        local.job = c.job
+        // a cloud run may be ahead of this device's stale save — show the truth
+        local.analysed = Math.max(local.analysed, c.analysed)
+      }
       if (!local) {
         byKey.set(c.key, {
           ...c,
@@ -2073,7 +2164,15 @@ export default function App() {
                             </span>
                           </>
                         ) : null}
-                        {bgAnalysing.has(g.key) ? ' · analysing…' : ''}
+                        {bgAnalysing.has(g.key)
+                          ? ' · analysing…'
+                          : g.job && (g.job.status === 'queued' || g.job.status === 'running')
+                            ? g.job.status === 'queued'
+                              ? ' · ☁ queued'
+                              : g.job.progress
+                                ? ` · ☁ analysing ${g.job.progress.done}/${g.job.progress.total}`
+                                : ' · ☁ analysing…'
+                            : ''}
                         {g.hasQuiz ? ' · quiz' : ''}
                         {g.inCloud || g.cloudOnly ? ' · ☁' : ''} ·{' '}
                         {new Date(g.date).toLocaleDateString(undefined, {
