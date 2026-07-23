@@ -33,6 +33,9 @@
   --anno-blue: #2b6fe0;
   --evalbar-bg: #211f1c;
   --evalbar-fill: #e8e6e3;
+  /* links/jumps are BLUE, not the accent: green is reserved for primary
+     actions, selection and positive stats — color means something here */
+  --link: #64a8f0;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 24px rgba(0, 0, 0, 0.22);
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5);
   --radius: 12px;
@@ -66,6 +69,7 @@
   /* fill = White's share in BOTH themes — polarity must never flip */
   --evalbar-bg: #4a4741;
   --evalbar-fill: #f6f5f2;
+  --link: #0b72c4;
   --shadow-card: 0 1px 2px rgba(50, 45, 35, 0.08), 0 6px 24px rgba(50, 45, 35, 0.09);
   --shadow-pop: 0 12px 40px rgba(50, 45, 35, 0.22);
 }
@@ -145,7 +149,7 @@ body { background: var(--bg); color: var(--ink); line-height: 1.55; }
 html, body { overscroll-behavior-x: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 h1, h2, h3 { margin: 0 0 0.4em; line-height: 1.25; font-weight: 650; }
-a { color: var(--accent-ink); }
+a { color: var(--link); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
 
 /* Keyboard focus: a consistent brass ring on everything interactive. Inputs
@@ -226,7 +230,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
 .ccimport h2 { font-size: 15px; }
 .cc-sources { display: flex; gap: 6px; margin-bottom: 10px; }
 .cc-source { flex: 1; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease; }
-.cc-source.active { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-weak); }
+.cc-source.active { color: var(--ink); border-color: var(--accent); background: var(--panel-2); }
 .cc-row { display: flex; gap: 8px; }
 .cc-input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 14px; }
 .cc-input:focus { outline: none; border-color: var(--accent); }
@@ -260,14 +264,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
 .history-row:hover { border-color: var(--accent); }
 .history-title { flex: 1; min-width: 0; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-meta { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-.history-meta .icon { color: var(--accent-ink); }
+.history-meta .icon { color: var(--muted); }
 .history-del { display: grid; place-items: center; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 13px; transition: color 0.15s ease, border-color 0.15s ease; }
 .history-del:hover { color: var(--bad); border-color: var(--line-2); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-card); }
 /* drill mode: entry card on the landing + the practice screen */
 .drill-entry { display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; }
 .drill-entry h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 2px; }
-.drill-entry h2 .icon { color: var(--accent); }
+.drill-entry h2 .icon { color: var(--muted); }
 .drill-entry p { margin: 0; }
 .drill-entry .btn { flex-shrink: 0; }
 .drill { max-width: 560px; margin: 24px auto; padding: 0 16px 40px; }
@@ -304,9 +308,9 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .pgn-actions { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
 .color-select { display: flex; flex-direction: column; gap: 8px; }
 .color-select label { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; transition: border-color 0.15s ease, background 0.15s ease; }
-.color-select label.active { border-color: var(--accent); background: var(--accent-weak); }
+.color-select label.active { border-color: var(--accent); background: var(--panel-2); }
 .error { background: var(--bad-bg); color: var(--bad); padding: 10px 12px; border-radius: var(--radius-sm); margin: 12px 0; font-size: 14px; border: 1px solid rgba(214, 86, 86, 0.3); }
-.settings-link { background: none; border: none; color: var(--accent-ink); cursor: pointer; font-size: 13px; padding: 0; font-family: inherit; }
+.settings-link { background: none; border: none; color: var(--link); cursor: pointer; font-size: 13px; padding: 0; font-family: inherit; }
 .settings-link:hover { text-decoration: underline; }
 
 /* workspace */
@@ -315,14 +319,14 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .tabs { display: flex; gap: 4px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 4px; }
 .tabs button { flex: 1; border: 1px solid transparent; background: transparent; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); font-family: inherit; transition: color 0.15s ease, background 0.15s ease; }
 .tabs button:hover { color: var(--ink); }
-.tabs button.active { color: var(--accent-ink); background: var(--accent-weak); }
+.tabs button.active { color: var(--ink); background: var(--panel-2); border-color: var(--line-2); }
 
 /* study: board + explanation side by side */
 /* Board sized by viewport height so it stays large but always fits on screen. */
 /* "your saved analysis predates the board graphics" call-to-action */
 .regen-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  background: var(--accent-weak); border: 1px solid var(--accent);
+  background: var(--rel-bg); border: 1px solid var(--rel);
   border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px;
   font-size: 13.5px;
 }
@@ -454,17 +458,17 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 
 .analysis { margin-top: 0; }
 .analysis-head { font-size: 18px; font-weight: 700; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
-.lesson { background: var(--accent-weak); border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+.lesson { background: var(--panel-2); border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
 .lesson p { margin: 0; }
 .findings h3 { font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
 .finding { border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel-2); }
 .finding-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .rule-link { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink); text-align: left; }
-.rule-link:hover { color: var(--accent-ink); text-decoration: underline; }
+.rule-link:hover { color: var(--link); text-decoration: underline; }
 /* rule citation inside prose (lesson, findings, Ask answers) → opens the popup */
-.rule-ref { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--accent-ink); text-decoration: underline dotted; text-underline-offset: 2px; }
-.rule-ref:hover { color: var(--accent); text-decoration-style: solid; }
+.rule-ref { background: none; border: none; padding: 0; margin: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--link); text-decoration: underline dotted; text-underline-offset: 2px; }
+.rule-ref:hover { color: var(--link); text-decoration-style: solid; }
 .rule-num { color: var(--muted); font-weight: 600; font-size: 12px; }
 .key-rule { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .why { margin: 6px 0 0; font-size: 15px; overflow-wrap: break-word; }
@@ -489,15 +493,15 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .relcount { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .relmoves { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; transition: border-color 0.15s ease; }
-.chip:hover { border-color: var(--accent); }
-.chip:hover .chip-go { color: var(--accent-ink); }
+.chip:hover { border-color: var(--link); }
+.chip:hover .chip-go { color: var(--link); }
 .chip .cdot { width: 8px; height: 8px; border-radius: 50%; }
 .chip-go { display: inline-flex; color: var(--muted); font-size: 11px; }
 
 /* rules reference — table of contents + eval-impact line */
 .rules-toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .toc-chip { border: 1px solid var(--line-2); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: border-color 0.15s ease, color 0.15s ease; }
-.toc-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.toc-chip:hover { border-color: var(--link); color: var(--link); }
 .rule-cat-block { scroll-margin-top: 78px; }
 .rel-impact { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
 .rel-impact .icon, .eng-note .icon, .eng-badge .icon { vertical-align: -0.2em; }
@@ -507,14 +511,14 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 /* rules reference */
 .rules-ref { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-card); }
 .rules-search { width: 100%; border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
-.rule-cat { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-ink); font-weight: 700; margin: 16px 0 8px; }
+.rule-cat { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
 .rule-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; display: flex; gap: 12px; background: var(--panel-2); cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
 .rule-item:hover { border-color: var(--line-2); }
 .rule-item.hi { border-color: var(--accent); background: var(--accent-weak); }
 .rule-item .num { font-weight: 700; color: var(--accent-ink); min-width: 26px; }
 .rule-title { font-weight: 600; }
 .rule-detail { font-size: 14.5px; color: var(--muted); margin-top: 3px; }
-.rule-usage { font-size: 12px; color: var(--accent-ink); margin-top: 5px; }
+.rule-usage { font-size: 12px; color: var(--muted); margin-top: 5px; }
 
 /* modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(10, 8, 5, 0.66); display: grid; place-items: center; z-index: 50; padding: 20px; }
@@ -531,13 +535,13 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .settings-update span { flex: 1; min-width: 200px; }
 .settings-theme { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
 .theme-opts { display: flex; gap: 6px; }
-.theme-opts .btn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
+.theme-opts .btn.on { border-color: var(--accent); background: var(--panel-2); color: var(--ink); }
 .settings-colors { display: flex; align-items: flex-start; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
 .settings-colors > span { padding-top: 8px; }
 .palette-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
 .pal-btn { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 10px 6px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--ink); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 600; transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
 .pal-btn:hover { border-color: var(--accent); }
-.pal-btn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
+.pal-btn.on { border-color: var(--accent); background: var(--panel-2); color: var(--ink); }
 .pal-dots { display: flex; gap: 4px; }
 .pal-dot { width: 15px; height: 15px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 .settings-update .btn { flex-shrink: 0; }
@@ -568,7 +572,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 /* better-alternative line */
 .alt { border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 14px; margin: 2px 0 14px; background: var(--panel-2); }
 .alt-head { display: flex; align-items: center; gap: 10px; }
-.alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
+.alt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
 .alt p { margin: 3px 0 0; font-size: 15px; }
 /* one suggestion per row: prose wraps on the left, its board toggle stays right */
 .alt-line { display: flex; align-items: flex-start; gap: 10px; }
@@ -591,12 +595,12 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .gfx-btn.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-weak); }
 
 /* game overview — the coach's opening word */
-.overview { background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
+.overview { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
 .overview-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; background: none; border: none; padding: 0; margin: 0 0 6px; cursor: pointer; font: inherit; color: inherit; }
-.overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-ink); font-weight: 700; }
+.overview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
 /* accuracy badges sit right of the header, before the chevron */
 .overview-acc { margin-left: auto; display: flex; gap: 6px; }
-.overview-chevron { display: inline-flex; color: var(--accent-ink); margin-left: auto; }
+.overview-chevron { display: inline-flex; color: var(--muted); margin-left: auto; }
 .overview-acc + .overview-chevron { margin-left: 0; }
 .overview-summary { margin: 0 0 8px; font-size: 15.5px; }
 .overview-trend { margin: 0 0 4px; font-size: 14.5px; color: var(--muted); }
@@ -606,19 +610,19 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .overview-ask[hidden] { display: none; }
 .overview-ask .askbox { margin-top: 12px; padding-top: 12px; }
 .moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font: inherit; transition: border-color 0.15s ease; }
-.moment:hover { border-color: var(--accent); }
-.moment-move { font-weight: 700; color: var(--accent-ink); }
+.moment:hover { border-color: var(--link); }
+.moment-move { font-weight: 700; color: var(--link); }
 .moment-title { color: var(--muted); }
 
 /* return-from-jump pill (lives in the sticky board block) */
-.jump-back { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 8px auto 0; border: 1px solid var(--accent); background: var(--accent-weak); color: var(--accent-ink); border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background 0.15s ease; }
-.jump-back:hover { background: var(--panel-2); }
+.jump-back { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 8px auto 0; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; transition: border-color 0.15s ease; }
+.jump-back:hover { border-color: var(--accent); }
 
-.linkbtn { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; color: var(--accent-ink); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; text-decoration: underline; }
+.linkbtn { display: inline-flex; align-items: center; gap: 5px; background: none; border: none; color: var(--link); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; text-decoration: underline; }
 /* clickable move reference inside prose ("12. Nf3") — jumps the board there */
-.move-ref { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--accent-ink); cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; white-space: nowrap; }
-.move-ref:hover { color: var(--accent); }
-.linkbtn:hover { color: var(--accent); }
+.move-ref { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--link); cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; white-space: nowrap; }
+.move-ref:hover { color: var(--link); text-decoration-style: solid; }
+.linkbtn:hover { color: var(--ink); }
 
 /* game summary */
 .map-tab { display: flex; flex-direction: column; gap: 16px; }
@@ -645,7 +649,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .ask-input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 14px; }
 .ask-input:focus { outline: none; border-color: var(--accent); }
 .ask-thread { margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
-.ask-exchange .ask-q { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; color: var(--accent-ink); }
+.ask-exchange .ask-q { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; color: var(--link); }
 .ask-exchange .ask-a { margin: 0; font-size: 15px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 /* mini board under an answer that came with graphics */
 .ask-board { max-width: 300px; margin: 8px auto 2px; }
@@ -695,8 +699,8 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 
 /* compact-board toggle (shown on phones) + floating back-to-analysis pill */
 .minibtn { display: none; }
-.to-top { display: inline-flex; align-items: center; gap: 6px; position: fixed; right: 14px; bottom: 18px; z-index: 40; border: 1px solid var(--accent); background: var(--accent-weak); color: var(--accent-ink); border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: var(--shadow-pop); }
-.to-top:hover { background: var(--panel-2); }
+.to-top { display: inline-flex; align-items: center; gap: 6px; position: fixed; right: 14px; bottom: 18px; z-index: 40; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: var(--shadow-pop); transition: border-color 0.15s ease; }
+.to-top:hover { border-color: var(--accent); }
 
 /* intermediate widths: stack the study view so the board and explanation
    never clip or overlap; the board centres with a sensible cap. */
@@ -780,7 +784,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 
 /* player-names editor (topbar ✎ + modal fields) */
 .edit-names { display: inline-flex; align-items: center; background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 13px; transition: color 0.15s ease; }
-.edit-names:hover { color: var(--accent-ink); }
+.edit-names:hover { color: var(--link); }
 .player-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .player-row { display: flex; gap: 10px; }
 .player-row .player-field { flex: 1; min-width: 0; }
@@ -794,7 +798,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 
 /* cross-game meta-analysis card (landing) */
 .meta-card { grid-column: 1 / -1; }
-.meta-card h3 { font-size: 15px; margin: 14px 0 6px; color: var(--accent-ink); }
+.meta-card h3 { font-size: 15px; margin: 14px 0 6px; color: var(--ink); }
 .meta-report p.meta-profile { font-size: 15.5px; }
 .meta-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
 .meta-rules { margin-left: 8px; display: inline-flex; gap: 8px; flex-wrap: wrap; }
@@ -812,7 +816,7 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
   cursor: pointer; font: inherit; color: inherit; text-align: left;
 }
 .collapse-head h2 { margin: 0; }
-.collapse-chevron { display: inline-flex; color: var(--accent-ink); }
+.collapse-chevron { display: inline-flex; color: var(--muted); }
 .collapse-head[aria-expanded='true'] { margin-bottom: 8px; }
 
 /* thin themed scrollbars on the scrollable panels */
