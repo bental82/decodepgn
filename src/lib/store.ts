@@ -186,16 +186,22 @@ function pgnDateMs(g: SavedGame): number | undefined {
   return undefined
 }
 
-export function saveGame(game: SavedGame) {
+export function saveGame(game: SavedGame): SavedGame {
   // addedAt is stable: keep the first save's value across every later write.
   // A pre-existing save that PREDATES the addedAt field inherits the PGN's
   // game date — exactly what the list was sorting it by — so re-analysing an
-  // old game never moves it. (savedAt only as a last resort.)
+  // old game never moves it. A first LOCAL write of a game restored from the
+  // cloud (no prev — e.g. the local copy was quota-evicted) anchors the same
+  // way: opening an older game must never push it to the top of the list, so
+  // Date.now() is strictly the last resort for a genuinely new game.
   const prev = loadGame(game.key)
   game = {
     ...game,
     addedAt:
-      prev?.addedAt ?? (prev ? (pgnDateMs(prev) ?? prev.savedAt) : (game.addedAt ?? Date.now())),
+      prev?.addedAt ??
+      (prev
+        ? (pgnDateMs(prev) ?? prev.savedAt)
+        : (game.addedAt ?? pgnDateMs(game) ?? game.savedAt ?? Date.now())),
     // sticky: routine saves (which don't know about runs) must not erase an
     // in-progress marker — only an explicit true/false changes it
     pendingRun: game.pendingRun ?? prev?.pendingRun,
@@ -216,7 +222,7 @@ export function saveGame(game: SavedGame) {
     try {
       write()
     } catch {
-      return // give up quietly — persistence is best-effort
+      return game // give up quietly — persistence is best-effort
     }
   }
   // move-to-front LRU index + evict beyond the cap
@@ -230,4 +236,7 @@ export function saveGame(game: SavedGame) {
     }
   }
   writeIndex(index.slice(0, MAX_GAMES))
+  // the stamped save (stable addedAt etc.) — callers mirror THIS to the
+  // cloud, so the cloud copy never loses the anchor a bare caller object lacks
+  return game
 }
