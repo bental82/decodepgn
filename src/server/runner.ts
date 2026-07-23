@@ -143,10 +143,31 @@ async function claimNext(runnerId: string): Promise<GameData | null> {
     const job: AnalysisJob = { ...data.job, status: 'running', heartbeat: now(), runnerId }
     if (!job.pending) {
       // first claim: fix the work list once; chained links only shrink it
-      const moves = parsePgn(data.pgn).moves
-      job.pending = targetPlies(moves, data, job)
+      try {
+        const moves = parsePgn(data.pgn).moves
+        job.pending = targetPlies(moves, data, job)
+      } catch {
+        const bad: AnalysisJob = {
+          ...job,
+          status: 'error',
+          error: 'This PGN could not be parsed on the server.',
+        }
+        delete bad.pending
+        delete bad.runnerId
+        await putCloudGame({ ...data, job: bad }, { fromRunner: true })
+        continue
+      }
       job.progress = { done: 0, total: job.pending.length }
       if (job.force) clearEngineCache()
+    }
+    if ((job.pending ?? []).length === 0) {
+      // nothing to do (already fully analysed) — a job must never sit in
+      // "running" with an empty work list, it would cycle stale→reclaim forever
+      const done: AnalysisJob = { ...job, status: 'done' }
+      delete done.pending
+      delete done.runnerId
+      await putCloudGame({ ...data, job: done }, { fromRunner: true })
+      continue
     }
     await putCloudGame({ ...data, job }, { fromRunner: true })
     return { ...data, job }
