@@ -364,6 +364,10 @@ async function callOpenRouter(
   try {
     return JSON.parse(raw)
   } catch {
+    // same double-encoding tolerance as the Claude path: recover the first
+    // complete JSON value when the arguments carry trailing junk
+    const p = parseJsonPrefix(raw)
+    if (p && typeof p === 'object') return p
     throw new AnalyzeError('The lite model returned unreadable output.', 502)
   }
 }

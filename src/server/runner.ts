@@ -206,13 +206,17 @@ async function analyzeBatch(
   }
   const byPly = new Map(resp.results.map((r) => [r.ply, r]))
   const engineOf = new Map(targets.map((t) => [t.ply, t.engine]))
-  return batch.map(
-    (ply) =>
-      ({
-        ...(byPly.get(ply) ?? { ply, rules: [], lesson: '' }), // placeholder beats a hole
-        engine: engineOf.get(ply),
-      }) as MoveResult,
-  )
+  return batch.flatMap((ply) => {
+    const r = byPly.get(ply)
+    const engine = engineOf.get(ply)
+    if (r) return [{ ...r, engine } as MoveResult]
+    // A STUDIED ply the model skipped twice still gets a placeholder so later
+    // opens don't re-target it forever. An opponent (lite-tier) ply that
+    // returned nothing is left UNANALYSED instead — the lite provider fails
+    // quietly by design, and a missing card is repairable; a blank one lies.
+    if (!isStudied(moves[ply]?.color ?? 'w', focus)) return []
+    return [{ ply, rules: [], lesson: '', engine } as MoveResult]
+  })
 }
 
 /** Merge one batch of results into the freshest copy of the game row. */
