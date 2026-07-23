@@ -48,7 +48,9 @@ interface GameData {
   [k: string]: unknown
 }
 
-const BATCH = 6
+// Small batches: progress lands (and the heartbeat bumps) every ~30-60s, so
+// the client sees steady movement and a dead chain is detected quickly.
+const BATCH = 4
 // a running job whose heartbeat is older than this is considered dead
 export const STALE_MS = 3 * 60_000
 // give up on a job after this many LLM batches failing in a row
@@ -306,6 +308,16 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
     while (pending.length > 0) {
       if (cutoff()) return true // chain: the next invocation resumes `pending`
       const batch = pending.slice(0, BATCH)
+      // Heartbeat BEFORE the batch too: a batch's engine+LLM work can take
+      // longer than the stale threshold, and a healthy run must never look
+      // dead mid-batch. Doubles as an ownership check (kicked twice → the
+      // second worker backs off here).
+      const fresh = (await getCloudGame(claimed.key).catch(() => null)) as GameData | null
+      if (!fresh || !jobActive(fresh.job) || fresh.job.runnerId !== runnerId) break
+      await putCloudGame(
+        { ...fresh, job: { ...fresh.job, heartbeat: now() } },
+        { fromRunner: true },
+      ).catch(() => {})
       let after: AnalysisJob | null | 'lost' = null
       try {
         const results = await analyzeBatch(moves, claimed.focus, batch, job.force)
