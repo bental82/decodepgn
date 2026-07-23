@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { SAMPLE_PGN } from '../game'
+import { parsePgn, SAMPLE_PGN } from '../game'
 import type { Focus } from '../shared/types'
 import type { PgnInputProps } from './contract'
 
@@ -12,7 +12,28 @@ export default function PgnInput({
 }: PgnInputProps) {
   const [pgn, setPgn] = useState('')
   const [color, setColor] = useState<Focus>('w')
+  // A mobile paste sometimes delivers only the first characters ("1. e4" of a
+  // whole game) — valid PGN, so it would silently become a permanent one-move
+  // game. A suspiciously short parse warns once; a second tap loads it anyway.
+  const [shortWarn, setShortWarn] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const submit = () => {
+    try {
+      const n = parsePgn(pgn).moves.length
+      if (n < 4 && shortWarn === null) {
+        setShortWarn(
+          `Only ${n} move${n === 1 ? '' : 's'} found — that usually means the paste was cut short. ` +
+            'Check the text above, or tap Analyse again to load it anyway.',
+        )
+        return
+      }
+    } catch {
+      /* let the app surface its own parse error */
+    }
+    setShortWarn(null)
+    onSubmit(pgn, color)
+  }
 
   return (
     <div className="pgn-input card">
@@ -22,7 +43,10 @@ export default function PgnInput({
         value={pgn}
         spellCheck={false}
         placeholder="Paste PGN here…"
-        onChange={(e) => setPgn(e.target.value)}
+        onChange={(e) => {
+          setPgn(e.target.value)
+          setShortWarn(null)
+        }}
       />
 
       <div className="pgn-actions">
@@ -80,12 +104,9 @@ export default function PgnInput({
       </div>
 
       {error ? <div className="error">{error}</div> : null}
+      {shortWarn ? <div className="error">{shortWarn}</div> : null}
 
-      <button
-        className="btn primary big"
-        disabled={busy || !pgn.trim()}
-        onClick={() => onSubmit(pgn, color)}
-      >
+      <button className="btn primary big" disabled={busy || !pgn.trim()} onClick={submit}>
         {busy ? 'Working…' : '3. Analyse the game'}
       </button>
 

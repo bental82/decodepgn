@@ -1480,11 +1480,16 @@ export default function App() {
       }
     }
     // Newest GAME first — the date shown on the row is the date the list is
-    // ordered by, so the listing never looks shuffled. addedAt breaks ties
-    // (several games from the same day keep import order), then the key keeps
-    // equal stamps stable no matter what order the LRU index delivered them.
+    // ordered by, so the listing never looks shuffled. Compare by calendar DAY
+    // (a PGN Date header lands at midnight while addedAt carries a clock time
+    // — mixing granularities let a dateless game outrank a game pasted after
+    // it), then addedAt so the most recently added game tops its day, then
+    // the key keeps equal stamps stable no matter what order the LRU index
+    // delivered them.
+    const dayOf = (t: number) => new Date(t).setHours(0, 0, 0, 0)
     return [...byKey.values()].sort(
-      (a, b) => b.date - a.date || b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1),
+      (a, b) =>
+        dayOf(b.date) - dayOf(a.date) || b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1),
     )
   }, [history, cloudGames, syncedKeys, allSummaries])
 
