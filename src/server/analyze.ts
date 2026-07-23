@@ -655,28 +655,6 @@ ${targetLinesOf(ts)}`
 
   const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Return one result for EVERY ply listed — a quiet move still gets a real lesson (never empty), with an empty rules array if nothing stands out. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
 
-  const parts = (await Promise.all([
-    ...groups.map((g) =>
-      callClaude(apiKey, system, userOf(g.targets), {
-        maxTokens: 8000,
-        tool: OUTPUT_TOOL,
-        toolName: 'report_relevance',
-        model: g.model,
-      }),
-    ),
-    // Best-effort: a lite-provider failure must never sink the Claude results.
-    ...(liteTargets.length
-      ? [
-          callOpenRouter(liteSystem, userOf(liteTargets, 'opponent '), {
-            maxTokens: 6000,
-            tool: OUTPUT_TOOL as { name: string; description: string; input_schema: unknown },
-          }).catch((e) => {
-            console.error('[analyze] lite tier failed:', e)
-            return { results: [] }
-          }),
-        ]
-      : []),
-  ])) as AnalyzeResponse[]
   // The model sometimes DOUBLE-ENCODES the tool input: "results" arrives as a
   // JSON string instead of an array — sometimes with trailing junk after the
   // closing bracket (a leaked brace). Silently treating that as no results is
@@ -690,6 +668,38 @@ ${targetLinesOf(ts)}`
     }
     return []
   }
+  const parts = (await Promise.all([
+    ...groups.map((g) =>
+      callClaude(apiKey, system, userOf(g.targets), {
+        maxTokens: 8000,
+        tool: OUTPUT_TOOL,
+        toolName: 'report_relevance',
+        model: g.model,
+      }),
+    ),
+    // Best-effort: a lite-provider failure must never sink the Claude results.
+    // The lite model is per-request unreliable at forced tool calls (empty or
+    // unreadable output on a meaningful fraction of calls, regardless of
+    // batch size) — give it a few attempts before conceding.
+    ...(liteTargets.length
+      ? [
+          (async (): Promise<AnalyzeResponse> => {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const out = (await callOpenRouter(liteSystem, userOf(liteTargets, 'opponent '), {
+                  maxTokens: 6000,
+                  tool: OUTPUT_TOOL as { name: string; description: string; input_schema: unknown },
+                })) as AnalyzeResponse
+                if (resultsOf(out).length > 0) return out
+              } catch (e) {
+                console.error('[analyze] lite attempt failed:', e)
+              }
+            }
+            return { results: [] }
+          })(),
+        ]
+      : []),
+  ])) as AnalyzeResponse[]
   const data: AnalyzeResponse = { results: parts.flatMap(resultsOf) }
   const validStatuses = new Set(['follows', 'partially', 'violates', 'relevant'])
   const validSoundness = new Set(['sound', 'speculative', 'dubious'])
