@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { GameOverview, ParsedMove } from '../shared/types'
 import type { AskContext } from './contract'
 import AskBox from './AskBox'
+import Icon from './Icon'
 import MoveText from './MoveText'
 
 interface Props {
@@ -81,7 +82,9 @@ export default function GameOverviewCard({
             ))}
           </span>
         ) : null}
-        <span className="overview-chevron">{open ? '▾' : '▸'}</span>
+        <span className="overview-chevron">
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} />
+        </span>
       </button>
       {!open ? null : waiting && !loading && !runActive ? (
         // Waiting on analysis that ISN'T running: a spinner here would spin
@@ -155,7 +158,7 @@ export default function GameOverviewCard({
             onClick={onRetry}
             title="Rewrite this overview from the latest analysis and engine data"
           >
-            ↻ Regenerate this overview
+            <Icon name="refresh" size={12} /> Regenerate this overview
           </button>
         </>
       ) : null}

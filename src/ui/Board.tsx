@@ -110,6 +110,46 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
   const [sel, setSel] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ from: string; x: number; y: number } | null>(null)
   const pressRef = useRef<{ from: string; startX: number; startY: number; dragging: boolean } | null>(null)
+  // Keyboard cursor (interactive boards only): arrow keys walk the squares,
+  // Enter/Space picks up the piece under the cursor or drops the held piece.
+  // The ring renders only while the KEYBOARD is driving — after a tap it
+  // would just be a second, confusing highlight on a touch device.
+  const [cursor, setCursor] = useState<string | null>(null)
+  const [kbdActive, setKbdActive] = useState(false)
+  const moveSq = (sq: string, df: number, dr: number): string => {
+    const f = files.indexOf(sq[0]) + df
+    const r = parseInt(sq[1], 10) + dr
+    if (f < 0 || f > 7 || r < 1 || r > 8) return sq
+    return files[f] + r
+  }
+  const onBoardKeyDown = (e: React.KeyboardEvent) => {
+    if (!interact) return
+    const cur = cursor ?? Object.keys(interact.targets)[0] ?? 'e4'
+    const fwd = orientation === 'w' ? 1 : -1 // "up" is toward the moving side
+    let next: string | null = null
+    if (e.key === 'ArrowUp') next = moveSq(cur, 0, fwd)
+    else if (e.key === 'ArrowDown') next = moveSq(cur, 0, -fwd)
+    else if (e.key === 'ArrowLeft') next = moveSq(cur, -fwd, 0)
+    else if (e.key === 'ArrowRight') next = moveSq(cur, fwd, 0)
+    if (next !== null) {
+      e.preventDefault()
+      setKbdActive(true)
+      setCursor(next)
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setKbdActive(true)
+      if (sel && (interact.targets[sel] ?? []).includes(cur)) {
+        interact.onMove(sel, cur)
+        clearInteraction()
+      } else if ((interact.targets[cur] ?? []).length) {
+        setSel(sel === cur ? null : cur)
+      }
+      return
+    }
+    if (e.key === 'Escape') clearInteraction()
+  }
   const squareAt = (clientX: number, clientY: number): string | null => {
     const el = boardRef.current
     if (!el) return null
@@ -130,6 +170,8 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
     if (!interact) return
     const sq = squareAt(e.clientX, e.clientY)
     if (!sq) return
+    setCursor(sq) // keep the keyboard cursor where the pointer is working
+    setKbdActive(false)
     // tapping a legal destination of the selected piece = play the move
     if (sel && (interact.targets[sel] ?? []).includes(sq)) {
       interact.onMove(sel, sq)
@@ -250,13 +292,20 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
       {caption && <div className="board-caption">{caption}</div>}
       <div
         className={'board' + (interact ? ' interactive' : '')}
-        role="img"
-        aria-label={caption ?? 'chess position'}
+        role={interact ? 'application' : 'img'}
+        aria-label={
+          interact
+            ? (caption ?? 'chess position') +
+              ' — interactive: arrow keys move the cursor, Enter picks up or drops a piece'
+            : (caption ?? 'chess position')
+        }
+        tabIndex={interact ? 0 : undefined}
         ref={boardRef}
         onPointerDown={interact ? onPointerDown : undefined}
         onPointerMove={interact ? onPointerMove : undefined}
         onPointerUp={interact ? onPointerUp : undefined}
         onPointerCancel={interact ? clearInteraction : undefined}
+        onKeyDown={interact ? onBoardKeyDown : undefined}
       >
         {ordered.map(({ square, piece }) => {
           const fileCh = square[0]
@@ -279,7 +328,8 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
                 (dark ? 'dark' : 'light') +
                 (hi ? ' hi' : '') +
                 (tint ? ' anno-' + tint : '') +
-                (isSel ? ' sel' : '')
+                (isSel ? ' sel' : '') +
+                (interact && kbdActive && cursor === square ? ' cursor' : '')
               }
             >
               {showRank && <span className="coord rank">{rankNum}</span>}

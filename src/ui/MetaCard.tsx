@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { RULES_BY_ID } from '../shared/rules'
 import AskBox from './AskBox'
+import Icon from './Icon'
 import type { MetaGameSummary, MetaInsight, MetaReport } from '../shared/types'
 import RuleText from './RuleText'
 
@@ -60,7 +61,7 @@ function InsightList({
                   title="Open this game at this move"
                   onClick={() => onOpenGame(r.key, r.ply)}
                 >
-                  ↗ {r.label}
+                  <Icon name="next" size={11} /> {r.label}
                 </button>
               ))}
             </span>
@@ -115,7 +116,9 @@ export default function MetaCard({
     <div className="meta-card card">
       <button className="collapse-head" onClick={toggle} aria-expanded={open}>
         <h2>Your play, across games</h2>
-        <span className="collapse-chevron">{open ? '▾' : '▸'}</span>
+        <span className="collapse-chevron">
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} />
+        </span>
       </button>
       {!open ? null : loading ? (
         <div className="loading-row">
