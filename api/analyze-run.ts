@@ -57,13 +57,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return
       }
       const st = await runner.jobStatus(key)
-      // self-heal: a queued job nobody picked up, or a running job whose
-      // chain died, gets a fresh worker — driven purely by the client polling
+      // Self-heal, driven purely by the client polling. A QUEUED job is
+      // claimable immediately — re-kick as soon as its enqueue kick looks
+      // lost. A RUNNING job can only be RE-claimed once its heartbeat is
+      // stale (STALE_MS), so kicking earlier would spawn workers with
+      // nothing to do — align the thresholds or the job sits in a dead zone.
       const j = st.job
+      const age = j ? Date.now() - j.heartbeat : 0
       if (
         j &&
-        (j.status === 'queued' || j.status === 'running') &&
-        Date.now() - j.heartbeat > 90_000
+        ((j.status === 'queued' && age > 20_000) ||
+          (j.status === 'running' && age > runner.STALE_MS))
       ) {
         await kick(req)
       }
