@@ -23,6 +23,14 @@ export default function PgnInput({
   // paste that stops mid-game without one was almost certainly cut short.
   const GAME_END_RE = /(1-0|0-1|1\/2-1\/2|½-½|\*)\s*$/
 
+  // The field is uncontrolled (see the textarea below) — programmatic fills
+  // write the DOM directly and mirror to state.
+  const setText = (t: string) => {
+    if (taRef.current) taRef.current.value = t
+    setPgn(t)
+    setShortWarn(null)
+  }
+
   const submit = () => {
     // The DOM is the source of truth at submit time: some mobile keyboards
     // deliver a large paste without a matching change event, so React state
@@ -56,27 +64,18 @@ export default function PgnInput({
   return (
     <div className="pgn-input card">
       <h2>1. Paste or upload a PGN</h2>
+      {/* UNCONTROLLED on purpose: mobile keyboards insert a long clipboard in
+          pieces, and a controlled field's re-render after the first piece
+          cancels the rest of the insertion — the paste arrives cut short.
+          React must never write this field's value; state only mirrors it. */}
       <textarea
         ref={taRef}
         rows={10}
-        value={pgn}
+        defaultValue=""
         spellCheck={false}
         placeholder="Paste PGN here…"
         onChange={(e) => {
           setPgn(e.target.value)
-          setShortWarn(null)
-        }}
-        onPaste={(e) => {
-          // Take the paste straight from the clipboard: inserting it ourselves
-          // sidesteps mobile keyboards that deliver long clipboard text to the
-          // field in pieces (of which a controlled field keeps only the first).
-          const text = e.clipboardData?.getData('text/plain') ?? ''
-          if (!text) return
-          e.preventDefault()
-          const ta = e.currentTarget
-          const start = ta.selectionStart ?? ta.value.length
-          const end = ta.selectionEnd ?? ta.value.length
-          setPgn(ta.value.slice(0, start) + text + ta.value.slice(end))
           setShortWarn(null)
         }}
       />
@@ -91,7 +90,7 @@ export default function PgnInput({
             const file = e.target.files?.[0]
             if (!file) return
             const reader = new FileReader()
-            reader.onload = () => setPgn(String(reader.result ?? ''))
+            reader.onload = () => setText(String(reader.result ?? ''))
             reader.readAsText(file)
             e.target.value = ''
           }}
@@ -99,7 +98,7 @@ export default function PgnInput({
         <button className="btn ghost" onClick={() => fileRef.current?.click()}>
           Upload .pgn
         </button>
-        <button className="btn ghost" onClick={() => setPgn(SAMPLE_PGN)}>
+        <button className="btn ghost" onClick={() => setText(SAMPLE_PGN)}>
           Load example game
         </button>
       </div>
