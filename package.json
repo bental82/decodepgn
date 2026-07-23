@@ -11,7 +11,8 @@
     "prebuild": "node scripts/engine-assets.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "shots": "node scripts/ui-shots.mjs"
   },
   "dependencies": {
     "chess.js": "1.4.0",
@@ -24,6 +25,7 @@
     "@types/react-dom": "^18.3.1",
     "@vercel/node": "^5.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.61.1",
     "stockfish": "17.1.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"

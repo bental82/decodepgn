@@ -32,6 +32,7 @@ export type IconName =
   | 'trash'
   | 'check'
   | 'pawn'
+  | 'flip'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   gear: (
@@ -126,6 +127,12 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,
+  flip: (
+    <>
+      <path d="M7 16V4M7 4 3 8m4-4 4 4" />
+      <path d="M17 8v12m0 0 4-4m-4 4-4-4" />
+    </>
+  ),
   pawn: (
     <g fill="currentColor" stroke="none">
       <circle cx="12" cy="5.5" r="2.6" />

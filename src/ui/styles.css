@@ -1,73 +1,74 @@
 :root {
   color-scheme: dark;
-  /* Clubhouse palette: deep walnut-charcoal surfaces, brass accent — a quieter,
-     more distinctive look than the old traffic-cone orange on slate. */
-  --bg: #1a1713;
-  --panel: #211d18;
-  --panel-2: #2b2620;
-  --ink: #ece7dd;
-  --muted: #a29886;
-  --line: #38322a;
-  --line-2: #4c4436;
-  --accent: #d9a648;
-  --accent-strong: #c9963a;
-  --accent-weak: rgba(217, 166, 72, 0.13);
-  --accent-ink: #e5ba63;
-  --accent-on: #241b09;
-  --good: #55c97f;
-  --good-bg: rgba(52, 168, 100, 0.15);
-  --warn: #e0bd4a;
-  --warn-bg: rgba(224, 189, 74, 0.13);
-  --bad: #e27272;
-  --bad-bg: rgba(214, 86, 86, 0.15);
-  --rel: #97a8f0;
-  --rel-bg: rgba(122, 140, 230, 0.16);
-  --light-sq: #eeddc0;
-  --dark-sq: #a67b52;
-  --hi: rgba(217, 166, 72, 0.45);
+  /* Pine felt & amber: deep saturated chess-table green with a punchy amber
+     accent. Higher contrast than the previous walnut/brass — no washed-out
+     surfaces: the page is DARK, the ink is BRIGHT, the accent pops. */
+  --bg: #0e1613;
+  --panel: #142019;
+  --panel-2: #1c2c23;
+  --ink: #eef3ed;
+  --muted: #93a699;
+  --line: #26382d;
+  --line-2: #35493b;
+  --accent: #f0a62c;
+  --accent-strong: #dd9517;
+  --accent-weak: rgba(240, 166, 44, 0.15);
+  --accent-ink: #fdbf4e;
+  --accent-on: #1f1302;
+  --good: #4fd18a;
+  --good-bg: rgba(63, 190, 122, 0.15);
+  --warn: #e8c44f;
+  --warn-bg: rgba(232, 196, 79, 0.13);
+  --bad: #ee6f6f;
+  --bad-bg: rgba(226, 91, 91, 0.15);
+  --rel: #8fa8f8;
+  --rel-bg: rgba(122, 143, 240, 0.16);
+  --light-sq: #e9e3d3;
+  --dark-sq: #5e8a6f;
+  --hi: rgba(240, 166, 44, 0.42);
   /* board annotation palette (AI graphics): green = good, red = danger,
      yellow = watch this, blue = plan/manoeuvre */
   --anno-green: #1d9e50;
   --anno-red: #d33;
   --anno-yellow: #d98a06;
   --anno-blue: #2b6fe0;
-  --evalbar-bg: #12100d;
+  --evalbar-bg: #0a100d;
   --evalbar-fill: #e9e4d8;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.28), 0 6px 24px rgba(0, 0, 0, 0.18);
-  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 24px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
   --radius: 12px;
   --radius-sm: 9px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* light theme ("paper"): same variables, brighter values (set via <html data-theme>) */
+/* light theme ("sunlit felt"): same variables, brighter values (set via <html data-theme>) */
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f2eee6;
-  --panel: #fbf9f3;
-  --panel-2: #efe9db;
-  --ink: #241f17;
-  --muted: #6f6452;
-  --line: #ddd4c2;
-  --line-2: #c6bba2;
-  --accent: #a67c1b;
-  --accent-strong: #a67c1b;
-  --accent-weak: rgba(166, 124, 27, 0.12);
-  --accent-ink: #856310;
-  --accent-on: #fff8e8;
-  --good: #1c7a40;
-  --good-bg: rgba(28, 122, 64, 0.12);
+  --bg: #edf1ea;
+  --panel: #fbfdf9;
+  --panel-2: #e7ede2;
+  --ink: #152019;
+  --muted: #5c6e61;
+  --line: #d2dcd0;
+  --line-2: #b5c3b2;
+  --accent: #b57708;
+  --accent-strong: #b57708;
+  --accent-weak: rgba(181, 119, 8, 0.13);
+  --accent-ink: #8f5f06;
+  --accent-on: #fffaf0;
+  --good: #177a44;
+  --good-bg: rgba(23, 122, 68, 0.12);
   --warn: #8a6807;
   --warn-bg: rgba(160, 124, 10, 0.14);
-  --bad: #bb3a3a;
-  --bad-bg: rgba(187, 58, 58, 0.1);
+  --bad: #b93b3b;
+  --bad-bg: rgba(185, 59, 59, 0.1);
   --rel: #4653c4;
   --rel-bg: rgba(70, 83, 196, 0.12);
   /* fill = White's share in BOTH themes — polarity must never flip */
-  --evalbar-bg: #3c362c;
+  --evalbar-bg: #37423a;
   --evalbar-fill: #f6f3ea;
-  --shadow-card: 0 1px 2px rgba(60, 48, 24, 0.08), 0 6px 24px rgba(60, 48, 24, 0.08);
-  --shadow-pop: 0 12px 40px rgba(60, 48, 24, 0.25);
+  --shadow-card: 0 1px 2px rgba(40, 60, 45, 0.08), 0 6px 24px rgba(40, 60, 45, 0.09);
+  --shadow-pop: 0 12px 40px rgba(40, 60, 45, 0.25);
 }
 
 * { box-sizing: border-box; }
@@ -350,6 +351,39 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .coord.file { bottom: 2px; right: 3px; }
 .sq.light .coord { color: var(--dark-sq); }
 .sq.dark .coord { color: var(--light-sq); }
+
+/* move list (score sheet): scan the game, dots flag the analysed verdicts */
+.movelist {
+  margin-top: 10px; max-height: 200px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 6px;
+  box-shadow: var(--shadow-card);
+}
+.ml-row { display: grid; grid-template-columns: 32px 1fr 1fr; align-items: center; }
+.ml-num { color: var(--muted); font-size: 11.5px; text-align: right; padding-right: 8px; font-variant-numeric: tabular-nums; }
+.ml-cell { font-size: 13px; padding: 2px 6px; }
+.ml-move {
+  background: none; border: none; border-radius: 6px; cursor: pointer;
+  color: var(--ink); font: inherit; font-size: 13px; font-weight: 550;
+  text-align: left; font-variant-numeric: tabular-nums; white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ml-move:hover { background: var(--panel-2); }
+.ml-move.cur { background: var(--accent-weak); color: var(--accent-ink); font-weight: 700; }
+.ml-move.opp { color: var(--muted); }
+.ml-move.d-good::before, .ml-move.d-warn::before, .ml-move.d-bad::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; margin-right: 5px; vertical-align: 1px;
+}
+.ml-move.d-good::before { background: var(--good); }
+.ml-move.d-warn::before { background: var(--warn); }
+.ml-move.d-bad::before { background: var(--bad); }
+/* desktop: the list lives inside the STICKY board column, so its height must
+   shrink with the viewport — a fixed 200px would push it under the fold on
+   short screens (the whole column stays pinned). */
+@media (min-width: 1025px) {
+  .movelist { max-height: clamp(110px, calc(100vh - 640px), 200px); }
+}
 
 /* analysis */
 .note { color: var(--muted); margin: 4px 0; }
@@ -709,10 +743,10 @@ input[type='radio'], input[type='checkbox'] { accent-color: var(--accent-strong)
 .collapse-head[aria-expanded='true'] { margin-bottom: 8px; }
 
 /* thin themed scrollbars on the scrollable panels */
-.explain-panel::-webkit-scrollbar, .history-list::-webkit-scrollbar, .cc-list::-webkit-scrollbar { width: 8px; }
-.explain-panel::-webkit-scrollbar-thumb, .history-list::-webkit-scrollbar-thumb, .cc-list::-webkit-scrollbar-thumb {
+.explain-panel::-webkit-scrollbar, .history-list::-webkit-scrollbar, .cc-list::-webkit-scrollbar, .movelist::-webkit-scrollbar { width: 8px; }
+.explain-panel::-webkit-scrollbar-thumb, .history-list::-webkit-scrollbar-thumb, .cc-list::-webkit-scrollbar-thumb, .movelist::-webkit-scrollbar-thumb {
   background: var(--line-2); border-radius: 999px;
 }
-.explain-panel::-webkit-scrollbar-track, .history-list::-webkit-scrollbar-track, .cc-list::-webkit-scrollbar-track {
+.explain-panel::-webkit-scrollbar-track, .history-list::-webkit-scrollbar-track, .cc-list::-webkit-scrollbar-track, .movelist::-webkit-scrollbar-track {
   background: transparent;
 }

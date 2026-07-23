@@ -60,6 +60,7 @@ import Icon from './Icon'
 import Drill, { type DrillItem } from './Drill'
 import MetaCard, { type SavedMetaReport } from './MetaCard'
 import MoveAnalysis from './MoveAnalysis'
+import MoveList from './MoveList'
 import PieceSprite from './PieceSprite'
 import PlayersModal from './PlayersModal'
 import PgnInput from './PgnInput'
@@ -203,6 +204,8 @@ export default function App() {
   const [boardMini, setBoardMini] = useState<boolean>(
     () => localStorage.getItem('decodepgn.boardMini') === '1',
   )
+  // Board orientation follows the studied side; the flip button inverts it.
+  const [flipped, setFlipped] = useState(false)
   // ply -> centipawns after that move, from White's perspective (eval bar).
   const [evals, setEvals] = useState<Record<number, number>>({})
   // Share of moves whose eval shipped INSIDE the PGN ([%eval] comments, as in
@@ -545,6 +548,7 @@ export default function App() {
       setOverviewError(null)
       setJumpBack(null)
       setGfx({ kind: 'auto' })
+      setFlipped(false)
       setErrorByPly({})
       setLoadingPlies(new Set())
       setQueuedPlies(new Set())
@@ -1307,6 +1311,7 @@ export default function App() {
     setOverviewError(null)
     setJumpBack(null)
     setGfx({ kind: 'auto' })
+    setFlipped(false)
     setHistory(listGames())
   }
 
@@ -1639,6 +1644,8 @@ export default function App() {
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return
       if (e.key === 'ArrowRight') stepPlyRef.current(1)
       if (e.key === 'ArrowLeft') stepPlyRef.current(-1)
+      if (e.key === 'Home') setSelectedPly(0)
+      if (e.key === 'End') setSelectedPly(moves.length - 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1663,6 +1670,8 @@ export default function App() {
   )
 
   const move = moves[selectedPly]
+  // Flip inverts the default (studied-side) orientation — session-only.
+  const boardOrientation: 'w' | 'b' = (focus === 'b') !== flipped ? 'b' : 'w'
 
   // Board graphics: reset the selection whenever the move changes.
   useEffect(() => {
@@ -2409,13 +2418,13 @@ export default function App() {
                 {(gfx.kind === 'alt' && altArrow) || (gfx.kind === 'engine' && engineArrow) ? (
                   <Board
                     fen={move.fenBefore}
-                    orientation={focus === 'b' ? 'b' : 'w'}
+                    orientation={boardOrientation}
                     annotations={boardAnnotations}
                   />
                 ) : (
                   <Board
                     fen={move.fenAfter}
-                    orientation={focus === 'b' ? 'b' : 'w'}
+                    orientation={boardOrientation}
                     lastMove={{ from: move.from, to: move.to }}
                     annotations={boardAnnotations}
                     anim={boardAnim}
@@ -2457,6 +2466,15 @@ export default function App() {
                     aria-label="Last move"
                   >
                     <Icon name="last" size={15} />
+                  </button>
+                  <button
+                    className="navbtn"
+                    onClick={() => setFlipped((v) => !v)}
+                    aria-pressed={flipped}
+                    aria-label="Flip the board"
+                    title="Flip the board"
+                  >
+                    <Icon name="flip" size={15} />
                   </button>
                   <button
                     className={'navbtn warnbtn' + (dubiousOnly ? ' on' : '')}
@@ -2551,6 +2569,15 @@ export default function App() {
                   </button>
                 ) : null}
                 </div>
+                {/* Score sheet: outside the sticky block — on phones it scrolls
+                    away with the text; on desktop it sits under the eval bar. */}
+                <MoveList
+                  moves={moves}
+                  results={results}
+                  focus={focus}
+                  selectedPly={selectedPly}
+                  onSelect={setSelectedPly}
+                />
               </div>
               <div className="explain-panel" ref={explainRef}>
                 {isStudied(move.color, focus) ||
