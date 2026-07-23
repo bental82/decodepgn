@@ -79,6 +79,38 @@ function friendlyAnthropicMessage(status: number, raw: string): string {
 }
 
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '')
+
+/** Parse the FIRST complete JSON value in a string, ignoring trailing junk
+    (models that double-encode tool arrays sometimes leak an extra brace after
+    the closing bracket). Null when nothing parseable is found. */
+function parseJsonPrefix(s: string): unknown {
+  const str = s.trim()
+  const start = str.search(/[[{]/)
+  if (start === -1) return null
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = start; i < str.length; i++) {
+    const c = str[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+    } else if (c === '"') inStr = true
+    else if (c === '[' || c === '{') depth++
+    else if (c === ']' || c === '}') {
+      depth--
+      if (depth === 0) {
+        try {
+          return JSON.parse(str.slice(start, i + 1))
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
+}
 const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as number) : d)
 /** Every model-written prose field goes through this: leak-strip, then clip. */
 const cleanClip = (s: unknown, n: number) => clip(stripToolLeak(s), n)
@@ -646,18 +678,15 @@ ${targetLinesOf(ts)}`
       : []),
   ])) as AnalyzeResponse[]
   // The model sometimes DOUBLE-ENCODES the tool input: "results" arrives as a
-  // JSON string instead of an array. Silently treating that as no results is
-  // exactly the blank-card disease — parse it back into shape instead.
+  // JSON string instead of an array — sometimes with trailing junk after the
+  // closing bracket (a leaked brace). Silently treating that as no results is
+  // exactly the blank-card disease — recover the first complete JSON value.
   const resultsOf = (p: unknown): MoveResult[] => {
     const r = (p as { results?: unknown })?.results
     if (Array.isArray(r)) return r as MoveResult[]
     if (typeof r === 'string') {
-      try {
-        const parsed = JSON.parse(r)
-        return Array.isArray(parsed) ? (parsed as MoveResult[]) : []
-      } catch {
-        return []
-      }
+      const parsed = parseJsonPrefix(r)
+      return Array.isArray(parsed) ? (parsed as MoveResult[]) : []
     }
     return []
   }
@@ -681,13 +710,9 @@ ${targetLinesOf(ts)}`
       const ruleArr: RuleHit[] = Array.isArray(rawRules)
         ? rawRules
         : typeof rawRules === 'string'
-          ? (() => {
-              try {
-                const p = JSON.parse(rawRules)
-                return Array.isArray(p) ? (p as RuleHit[]) : []
-              } catch {
-                return []
-              }
+          ? ((): RuleHit[] => {
+              const p = parseJsonPrefix(rawRules)
+              return Array.isArray(p) ? (p as RuleHit[]) : []
             })()
           : []
       const out: MoveResult = {
