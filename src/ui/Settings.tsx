@@ -29,7 +29,7 @@ async function hardRefresh() {
 // Palette picker metadata: swatch = [page bg, board dark square, accent].
 // The token sets themselves live in styles.css under [data-palette='…'].
 const PALETTES = [
-  { id: 'pine', name: 'Pine', dots: ['#0e1613', '#5e8a6f', '#f0a62c'] },
+  { id: 'classic', name: 'Classic', dots: ['#312e2b', '#739552', '#81b64c'] },
   { id: 'ocean', name: 'Ocean', dots: ['#0f141c', '#8ca2ad', '#4fb3f5'] },
   { id: 'walnut', name: 'Walnut', dots: ['#1a1713', '#a67c52', '#d9a648'] },
   { id: 'violet', name: 'Violet', dots: ['#130f1c', '#8273b3', '#a78bfa'] },

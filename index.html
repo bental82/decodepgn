@@ -10,10 +10,10 @@
       try {
         document.documentElement.dataset.theme = localStorage.getItem('decodepgn.theme') || 'dark'
         var pal = localStorage.getItem('decodepgn.palette')
-        if (pal && pal !== 'pine') document.documentElement.dataset.palette = pal
+        if (pal && pal !== 'classic') document.documentElement.dataset.palette = pal
       } catch (e) {}
     </script>
-    <meta name="theme-color" content="#0e1613" />
+    <meta name="theme-color" content="#312e2b" />
     <meta
       name="description"
       content="Upload a PGN and let Claude explain which strategic rules of thumb are relevant on each move."
