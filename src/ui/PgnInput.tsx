@@ -112,7 +112,8 @@ export default function PgnInput({
             checked={color === 'w'}
             onChange={() => setColor('w')}
           />
-          Study White’s decisions
+          <img className="side-ico" src="/piece/staunty/wK.svg" alt="" />
+          White
         </label>
         <label className={color === 'b' ? 'active' : ''}>
           <input
@@ -121,7 +122,8 @@ export default function PgnInput({
             checked={color === 'b'}
             onChange={() => setColor('b')}
           />
-          Study Black’s decisions
+          <img className="side-ico" src="/piece/staunty/bK.svg" alt="" />
+          Black
         </label>
         <label className={color === 'both' ? 'active' : ''}>
           <input
@@ -130,7 +132,9 @@ export default function PgnInput({
             checked={color === 'both'}
             onChange={() => setColor('both')}
           />
-          Study both sides
+          <img className="side-ico" src="/piece/staunty/wK.svg" alt="" />
+          <img className="side-ico" src="/piece/staunty/bK.svg" alt="" />
+          Both sides
         </label>
       </div>
 

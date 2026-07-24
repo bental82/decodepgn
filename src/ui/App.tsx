@@ -1954,11 +1954,13 @@ export default function App() {
           aria-label="DecodePGN — back to the start screen"
         >
           <span className="logo">
-            <Icon name="pawn" size={26} />
+            <img src="/piece/staunty/wN.svg" alt="" />
           </span>
           <div>
-            <h1>DecodePGN</h1>
-            <span className="tagline">which rules of thumb apply, move by move</span>
+            <h1>
+              Decode<em>PGN</em>
+            </h1>
+            <span className="tagline">rules of thumb · move by move</span>
           </div>
         </button>
         {phase !== 'game' && (
@@ -1993,7 +1995,10 @@ export default function App() {
                     ? ` (${parseInt(headers.BlackElo, 10)})`
                     : ''}
               </strong>
-              <span className="studying"> · studying {colorName(focus)}</span>
+              <span className="studying">
+                {' '}
+                · studying <b>{colorName(focus)}</b>
+              </span>
               <button
                 className="edit-names"
                 onClick={() => setShowPlayers(true)}
@@ -2077,6 +2082,17 @@ export default function App() {
       ) : null}
       {phase === 'input' ? (
         <div className="landing">
+          <div className="hero">
+            <div className="hero-kicker">AI coaching · 120 principles</div>
+            <h1>
+              Which rules apply, <em>move by move</em>
+            </h1>
+            <p>
+              Paste a game and pick your side. For each of your moves, a coach shows which classic
+              principles are in play — followed, mixed, or broken — with a reason, a lesson, and the
+              ideas drawn on the board.
+            </p>
+          </div>
           <PgnInput
             onSubmit={handleSubmit}
             onOpenSettings={() => setShowSettings(true)}
