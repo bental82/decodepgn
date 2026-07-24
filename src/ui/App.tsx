@@ -99,6 +99,7 @@ export default function App() {
   // mounted (hidden) while peeking at a game so "back" resumes mid-round.
   const [drillRun, setDrillRun] = useState(0)
   const [fromDrill, setFromDrill] = useState(false)
+  const [dubiousOnly, setDubiousOnly] = useState(false)
   const [results, setResults] = useState<Record<number, MoveResult>>({})
   const [loadingPlies, setLoadingPlies] = useState<Set<number>>(new Set())
   const [errorByPly, setErrorByPly] = useState<Record<number, string>>({})
@@ -575,6 +576,7 @@ export default function App() {
       prevPlyRef.current = startPly
       setFromMeta(false)
       setFromDrill(false)
+      setDubiousOnly(false)
       setTab('move')
       setPhase('game')
       if (f === 'both' && !saved?.me) setShowPlayers(true)
@@ -1805,14 +1807,17 @@ export default function App() {
 
   // Step through EVERY ply (both sides) so the game's sequence is followable;
   // opponent moves show on the board with a note, studied moves get analysis.
+  // With the dubious filter on, the same arrows step flagged moves only.
   const stepPly = (dir: 1 | -1) => {
+    if (dubiousOnly && dubiousPlies.length) {
+      const next =
+        dir === 1
+          ? dubiousPlies.find((ply) => ply > selectedPly)
+          : [...dubiousPlies].reverse().find((ply) => ply < selectedPly)
+      if (next !== undefined) setSelectedPly(next)
+      return
+    }
     setSelectedPly((p) => Math.min(moves.length - 1, Math.max(0, p + dir)))
-  }
-  // The flagged-move stepper jumps straight to the next dubious move, wrapping
-  // to the first one past the end — one tap, no hidden mode.
-  const jumpNextDubious = () => {
-    if (!dubiousPlies.length) return
-    setSelectedPly(dubiousPlies.find((p) => p > selectedPly) ?? dubiousPlies[0])
   }
   // The keyboard listener (and swipe) call through a ref so they always see
   // the current mode without re-subscribing.
@@ -1895,8 +1900,8 @@ export default function App() {
   const atLast = moves.length === 0 || selectedPly >= moves.length - 1
   // In dubious-only mode the arrows are exhausted when no flagged move remains
   // in that direction.
-  const noPrev = atFirst
-  const noNext = atLast
+  const noPrev = dubiousOnly && dubiousPlies.length ? !dubiousPlies.some((p) => p < selectedPly) : atFirst
+  const noNext = dubiousOnly && dubiousPlies.length ? !dubiousPlies.some((p) => p > selectedPly) : atLast
   const moveLabel = (m: ParsedMove) => `${m.moveNumber}${m.color === 'w' ? '.' : '…'} ${m.san}`
 
   // Which piece should glide when the shown position changes: stepping forward
@@ -2455,7 +2460,7 @@ export default function App() {
                 )}
                 <div className="board-nav">
                   <button
-                    className="navbtn"
+                    className="navbtn nav-ends"
                     onClick={() => setSelectedPly(0)}
                     disabled={atFirst}
                     aria-label="First move"
@@ -2483,7 +2488,7 @@ export default function App() {
                     <Icon name="next" size={15} />
                   </button>
                   <button
-                    className="navbtn"
+                    className="navbtn nav-ends"
                     onClick={() => moves.length && setSelectedPly(moves.length - 1)}
                     disabled={atLast}
                     aria-label="Last move"
@@ -2500,14 +2505,17 @@ export default function App() {
                     <Icon name="flip" size={15} />
                   </button>
                   <button
-                    className="navbtn warnbtn"
-                    onClick={jumpNextDubious}
+                    className={'navbtn warnbtn' + (dubiousOnly ? ' on' : '')}
+                    onClick={() => setDubiousOnly((v) => !v)}
                     disabled={dubiousPlies.length === 0}
-                    aria-label="Jump to the next flagged move"
+                    aria-pressed={dubiousOnly}
+                    aria-label="Only step through flagged moves"
                     title={
                       dubiousPlies.length === 0
                         ? 'No dubious moves flagged (yet)'
-                        : `Jump to the next of ${dubiousPlies.length} flagged move${dubiousPlies.length === 1 ? '' : 's'} (wraps)`
+                        : dubiousOnly
+                          ? 'Filter on: the arrows step flagged moves only — tap to step all moves again'
+                          : `Filter the arrows to the ${dubiousPlies.length} flagged move${dubiousPlies.length === 1 ? '' : 's'}`
                     }
                   >
                     <Icon name="warning" size={14} />
