@@ -348,8 +348,11 @@ select { border: 1px solid var(--line); }
 /* 8 equal columns AND rows — without explicit rows, iOS Safari sizes the empty
    ranks to content and the board comes out asymmetrical ("scrambled"). */
 .board {
-  display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr);
-  aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden; width: 100%;
+  /* minmax(0,1fr): plain 1fr has a min-content floor, so piece/coordinate
+     content could push the board a few px past its container — the source of
+     the phone's per-move layout breathing and load-time zoom-out */
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr));
+  aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden; width: 100%; max-width: 100%;
   box-shadow: 0 16px 38px -22px rgba(0, 0, 0, 0.9), 0 0 0 6px #15130f, 0 0 0 7px #2a251d;
 }
 .board.interactive:focus-visible { outline-offset: 8px; }
@@ -730,6 +733,7 @@ select { border: 1px solid var(--line); }
   .board-sticky {
     position: sticky; top: 0; z-index: 6; background: var(--bg);
     margin: 0 -14px; padding: 4px 0 6px;
+    min-width: 0; max-width: calc(100% + 28px); overflow-x: clip;
     /* vertical drags scroll the page; horizontal drags are ours (move swipe) */
     touch-action: pan-y;
   }
