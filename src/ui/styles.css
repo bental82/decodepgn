@@ -60,6 +60,9 @@ body {
 }
 /* horizontal swipes browse moves — never trigger browser back/forward */
 html, body { overscroll-behavior-x: none; }
+/* nothing may widen the page (grid subpixel rounding, long meta lines):
+   clip, not hidden — hidden would break position:sticky */
+html, body { overflow-x: clip; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 h1, h2, h3 { margin: 0 0 0.4em; line-height: 1.25; font-weight: 650; }
 a { color: var(--link); }
@@ -694,7 +697,7 @@ select { border: 1px solid var(--line); }
 @media (max-width: 1024px) {
   .study { grid-template-columns: 1fr; gap: 16px; }
   .board-panel { position: static; }
-  .board, .board-nav { max-width: min(74vh, 560px); margin-left: auto; margin-right: auto; }
+  .board, .board-nav, .eval-row, .movelist { width: 100%; max-width: min(74vh, 560px); margin-left: auto; margin-right: auto; }
   .summary-cols { gap: 14px; }
 }
 
@@ -705,7 +708,8 @@ select { border: 1px solid var(--line); }
   .brand h1 { font-size: 18px; }
   .logo { width: 40px; height: 40px; }
   .logo img { width: 28px; height: 28px; }
-  .game-meta { order: 3; width: 100%; font-size: 12.5px; max-width: none; }
+  .game-meta { order: 3; width: 100%; font-size: 12.5px; max-width: 100%; white-space: normal; }
+  .topbar-right { min-width: 0; max-width: 100%; }
   .topbar-right { gap: 8px; }
 
   .workspace { padding: 12px 14px; }
@@ -739,6 +743,8 @@ select { border: 1px solid var(--line); }
   .eval-row { padding-left: 14px; padding-right: 14px; margin-top: 5px; }
   .evalbar { height: 9px; }
   .navbtn { padding: 6px 11px; font-size: 14px; }
+  .nav-opp { display: none; }
+  .navlabel { font-size: 13.5px; }
   .minibtn { display: inline-flex; }
   /* compact board: much more room for the analysis text below */
   .board-sticky.mini .board { width: 56%; max-width: 240px; margin-left: auto; margin-right: auto; border-radius: 6px; border: none; box-shadow: 0 0 0 4px #15130f, 0 0 0 5px #2a251d; }
@@ -746,7 +752,9 @@ select { border: 1px solid var(--line); }
   .explain-panel { margin-top: 12px; }
 
   .explain-panel { padding: 14px 16px; min-height: 0; }
-  .analysis-head { font-size: 22px; }
+  .analysis-head { font-size: 18px; margin-bottom: 6px; }
+  .verdicts { margin-bottom: 10px; }
+  .lesson { margin-bottom: 12px; }
 
   /* stack the summary columns */
   .summary { padding: 16px; }
