@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <script>
       // apply the saved theme + palette before first paint (no flash of the
       // wrong colors for users who picked non-default ones)
@@ -13,7 +13,13 @@
         if (pal && pal !== 'classic') document.documentElement.dataset.palette = pal
       } catch (e) {}
     </script>
-    <meta name="theme-color" content="#312e2b" />
+    <meta name="theme-color" content="#1A1815" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,600;1,9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <meta
       name="description"
       content="Upload a PGN and let Claude explain which strategic rules of thumb are relevant on each move."
