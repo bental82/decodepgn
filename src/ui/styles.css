@@ -323,11 +323,12 @@ select { border: 1px solid var(--line); }
 .board-panel { position: sticky; top: 74px; }
 .board-nav { display: flex; align-items: center; gap: 7px; margin-top: 10px; }
 .navbtn { display: inline-flex; align-items: center; justify-content: center; gap: 3px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 9px; padding: 8px 13px; font-size: 14px; cursor: pointer; color: var(--ink); font-family: inherit; transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease; }
-/* dubious-only stepping toggle — the gold flagged-move stepper */
-.warnbtn { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+/* dubious-move filter toggle: neutral until pressed, gold while filtering */
+.warnbtn { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
 .warnbtn.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent); }
 .warnbtn:disabled { opacity: 0.4; cursor: default; }
-.warnbtn:hover:not(:disabled) { border-color: var(--accent); }
+.warnbtn:hover:not(:disabled) { border-color: var(--hover-line); }
+.warnbtn.on:hover:not(:disabled) { border-color: var(--accent); }
 .warn-count { font-size: 11px; font-weight: 600; font-family: var(--font-mono); }
 .navbtn:hover:not(:disabled) { border-color: var(--hover-line); }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
@@ -757,6 +758,7 @@ select { border: 1px solid var(--line); }
   .eval-row { padding-left: 14px; padding-right: 14px; margin-top: 5px; }
   .evalbar { height: 9px; }
   .navbtn { padding: 6px 11px; font-size: 14px; }
+  .nav-ends { display: none; }
   .nav-opp { display: none; }
   .navlabel { font-size: 13.5px; }
   .minibtn { display: inline-flex; }
