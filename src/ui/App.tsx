@@ -488,10 +488,12 @@ export default function App() {
           // save here and cloud-saving it would overwrite the game's full
           // cloud copy with a nearly-empty one — analysis loss, not repair.
           // Exception: a FRESH game left before its first save existed gets
-          // its save created here — there is nothing to clobber.
+          // its save created here — there is nothing to clobber. A CANCELLED
+          // run never takes the exception: its game was deleted mid-run, and
+          // the shell would resurrect it.
           const saved =
             loadGame(origin.key) ??
-            (origin.freshGame
+            (origin.freshGame && !origin.cancelled
               ? ({
                   key: origin.key,
                   pgn: origin.pgn,
@@ -1642,9 +1644,28 @@ export default function App() {
   // and clashed with the app's dialogs); the modal carries the game's name.
   const [confirmDelete, setConfirmDelete] = useState<{ key: string; name: string } | null>(null)
   const deleteSaved = (key: string) => {
+    // The save goes FIRST: any in-flight batch that lands after this finds no
+    // save to merge into and drops its work instead of resurrecting the game.
     removeGame(key)
+    // A live local run on this game dies with it. removeGame already happened,
+    // so cancelActiveRun cannot stamp pendingRun on a save that no longer
+    // exists — nothing resumes on a later open. The queue chain moves on.
+    if (activeRunRef.current?.key === key) {
+      cancelActiveRun()
+      startNextQueued()
+    }
+    // A queued (not yet started) run for this game leaves the queue eagerly —
+    // startNextQueued would skip it anyway, but the queue UI shouldn't list a
+    // game that no longer exists.
+    if (queueRef.current.some((e) => e.key === key)) {
+      queueRef.current = queueRef.current.filter((e) => e.key !== key)
+      setAnalysisQueue(queueRef.current.map((e) => e.key))
+    }
+    // Deleting the cloud row also deletes its job — the server runner re-reads
+    // the row at every batch boundary and drops the work when it's gone.
     cloudDelete(key)
     setCloudGames((prev) => (prev ? prev.filter((c) => c.key !== key) : prev))
+    setServerJob((prev) => (prev?.key === key ? null : prev))
     setHistory(listGames())
     setConfirmDelete(null)
   }
