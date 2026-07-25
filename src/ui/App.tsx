@@ -963,6 +963,12 @@ export default function App() {
         setHistory(listGames())
       }
       if (j.status === 'done') {
+        // The finished job wrote the game overview server-side in the same
+        // update as 'done' — adopt it BEFORE flagging the run settled, so the
+        // client's own overview generator never spends tokens on a duplicate.
+        const remote = await cloudGet(key)
+        if (stop || storeRef.current?.key !== key) return
+        if (remote?.overview) setGameOverview((prev) => prev ?? remote.overview ?? null)
         // unblocks the overview — every move's analysis is in
         setAnalysisRunDone((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
       }

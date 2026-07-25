@@ -10,7 +10,8 @@
 
 import { parsePgn, toGameMoves, toTargets } from '../game.js'
 import { isStudied, type Focus, type MoveResult, type ParsedMove } from '../shared/types.js'
-import { runAnalyze, hasLiteKey } from './analyze.js'
+import { runAnalyze, runOverview, hasLiteKey } from './analyze.js'
+import { gameAccuracy } from '../shared/accuracy.js'
 import { getCloudGame, putCloudGame, listJobRows, GamesError } from './games.js'
 import {
   clearEngineCache,
@@ -41,11 +42,63 @@ interface GameData {
   key: string
   pgn: string
   focus: Focus
+  headers?: Record<string, string>
   results?: Record<number, MoveResult>
   evals?: Record<number, number>
+  overview?: unknown
   pendingRun?: boolean
   job?: AnalysisJob
   [k: string]: unknown
+}
+
+/* The game overview is part of the analysis: once every move is in, the run
+   writes the coach's opening word too, so a phone-locked user comes back to a
+   complete review. Best-effort — a failure here never blocks job completion;
+   the client's own generator remains the fallback. */
+async function buildOverview(
+  data: GameData,
+  moves: ParsedMove[],
+  finalBatch: MoveResult[],
+): Promise<unknown | null> {
+  try {
+    const results: Record<number, MoveResult> = { ...(data.results ?? {}) }
+    for (const r of finalBatch) results[r.ply] = r
+    // the eval story: the sweep's numbers, with per-move engine checks
+    // filling any gaps (same grounding the client builds)
+    const evals: Record<number, number> = { ...(data.evals ?? {}) }
+    for (const m of moves) {
+      if (evals[m.ply] !== undefined) continue
+      const v = evalAfterFromCache(m.fenAfter, m.color)
+      if (v !== null) evals[m.ply] = v
+    }
+    for (const m of moves) {
+      if (evals[m.ply] !== undefined) continue
+      const e = results[m.ply]?.engine
+      if (e) evals[m.ply] = m.color === 'w' ? e.evalPlayed : -e.evalPlayed
+    }
+    const accOf = (c: 'w' | 'b') => {
+      const evs = []
+      for (const r of Object.values(results)) {
+        if (r?.engine && moves[r.ply]?.color === c) evs.push(r.engine)
+      }
+      return gameAccuracy(evs)
+    }
+    const aw = accOf('w')
+    const ab = accOf('b')
+    const resp = await runOverview({
+      mode: 'overview',
+      focus: data.focus,
+      game: toGameMoves(moves),
+      headers: data.headers,
+      evals: Object.keys(evals).length ? evals : undefined,
+      accuracy:
+        aw !== null || ab !== null ? { w: aw ?? undefined, b: ab ?? undefined } : undefined,
+    })
+    return resp.overview
+  } catch (e) {
+    console.error('[runner] overview generation failed:', e)
+    return null
+  }
 }
 
 // Small batches: progress lands (and the heartbeat bumps) every ~30-60s, so
@@ -228,6 +281,7 @@ async function mergeBatch(
   moves: ParsedMove[],
   batchResults: MoveResult[],
   donePlies: number[],
+  overview: unknown | null = null,
 ): Promise<AnalysisJob | null> {
   const data = (await getCloudGame(key)) as GameData | null
   if (!data) return null // deleted mid-run — drop the work
@@ -261,6 +315,7 @@ async function mergeBatch(
     ...data,
     results,
     evals,
+    ...(overview ? { overview } : {}),
     savedAt: now(),
     job: next,
     // legacy client-side resume flag — the server run supersedes it
@@ -321,7 +376,15 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
       let after: AnalysisJob | null | 'lost' = null
       try {
         const results = await analyzeBatch(moves, claimed.focus, batch, job.force)
-        after = (await mergeBatch(claimed.key, runnerId, moves, results, batch)) ?? 'lost'
+        // Final batch: generate the game overview now and land it in the same
+        // write as the 'done' transition — the client's poll then sees a
+        // complete review the moment the job finishes. Skipped when a
+        // non-force job's row already carries one (repairs keep it).
+        let overview: unknown | null = null
+        if (pending.length <= batch.length && (job.force || !fresh.overview)) {
+          overview = await buildOverview(fresh, moves, results)
+        }
+        after = (await mergeBatch(claimed.key, runnerId, moves, results, batch, overview)) ?? 'lost'
       } catch (e) {
         failures++
         if (failures >= MAX_CONSECUTIVE_FAILURES) {
