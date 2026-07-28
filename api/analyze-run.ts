@@ -40,6 +40,15 @@ async function kick(req: VercelRequest): Promise<void> {
   }
 }
 
+/** Vercel signs cron requests with CRON_SECRET when that env var is set. It is
+    optional here: the tick only ever kicks a worker, so an unsigned
+    deployment is not left broken — just publicly kickable. */
+function cronAuthorized(req: VercelRequest): boolean {
+  const secret = (process.env.CRON_SECRET || '').trim()
+  if (!secret) return true
+  return req.headers.authorization === `Bearer ${secret}`
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const startedAt = Date.now()
   try {
@@ -49,6 +58,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       if (!store.cloudConfigured()) {
         res.status(200).json({ enabled: false })
+        return
+      }
+      // The minute cron (vercel.json). A worker that dies HARD — platform
+      // kill, OOM, crash — never releases its job and never chains, so the run
+      // stalls with nobody to restart it. Until this existed only an open
+      // browser's status poll could, which made "close the tab and the
+      // analysis stops" the normal case. Kicking is cheap and idempotent:
+      // claim tokens mean a redundant worker finds nothing and exits.
+      if (req.query.tick === '1') {
+        if (!cronAuthorized(req)) {
+          res.status(401).json({ error: 'Unauthorized' })
+          return
+        }
+        const waiting = await runner.workWaiting()
+        if (waiting) await kick(req)
+        res.status(200).json({ ok: true, kicked: waiting })
         return
       }
       const key = typeof req.query.key === 'string' ? req.query.key : ''
