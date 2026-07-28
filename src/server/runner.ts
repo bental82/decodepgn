@@ -325,6 +325,24 @@ async function mergeBatch(
   return next
 }
 
+/**
+ * Hand a half-done job back to the pool. An invocation that stops at its time
+ * limit MUST do this: it leaves the job `running` with a fresh heartbeat and
+ * its own claim token, and the successor it chains can only claim jobs that
+ * are `queued` or stale by STALE_MS — so without a release the successor skips
+ * the very job it was spawned for, finds nothing, and the chain ends. The run
+ * then sits dead until a browser poll kicks it (and forever if no browser is
+ * open). Releasing keeps `pending`/`progress`/`queuedAt`, so the successor
+ * resumes mid-list and FIFO order across games is preserved.
+ */
+async function releaseJob(key: string, runnerId: string): Promise<void> {
+  const data = (await getCloudGame(key)) as GameData | null
+  if (!data || !jobActive(data.job) || data.job.runnerId !== runnerId) return
+  const job: AnalysisJob = { ...data.job, status: 'queued', heartbeat: now() }
+  delete job.runnerId
+  await putCloudGame({ ...data, job }, { fromRunner: true })
+}
+
 async function failJob(key: string, runnerId: string, message: string): Promise<void> {
   const data = (await getCloudGame(key)) as GameData | null
   if (!data || !jobActive(data.job) || data.job.runnerId !== runnerId) return
@@ -344,7 +362,12 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
   // leave room for one worst-case batch (engine ~15s + two LLM calls)
   const cutoff = () => now() > deadlineAt - 120_000
   while (!cutoff()) {
-    const claimed = await claimNext(runnerId)
+    // A database blip here used to throw straight out of the worker: no chain,
+    // no kick, run dead. One retry costs 2s and covers the transient case.
+    const claimed = await claimNext(runnerId).catch(async () => {
+      await new Promise((r) => setTimeout(r, 2000))
+      return claimNext(runnerId)
+    })
     if (!claimed) return false
     const job = claimed.job as AnalysisJob
     let moves: ParsedMove[]
@@ -361,7 +384,11 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
     let failures = 0
     let lost = false
     while (pending.length > 0) {
-      if (cutoff()) return true // chain: the next invocation resumes `pending`
+      if (cutoff()) {
+        // chain: release first, or the successor can't claim what we drop
+        await releaseJob(claimed.key, runnerId).catch(() => {})
+        return true
+      }
       const batch = pending.slice(0, BATCH)
       // Heartbeat BEFORE the batch too: a batch's engine+LLM work can take
       // longer than the stale threshold, and a healthy run must never look
