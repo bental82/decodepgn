@@ -66,7 +66,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // browser's status poll could, which made "close the tab and the
       // analysis stops" the normal case. Kicking is cheap and idempotent:
       // claim tokens mean a redundant worker finds nothing and exits.
-      if (req.query.tick === '1') {
+      // The user-agent is a belt-and-braces second trigger: should the cron
+      // path ever reach us with its query string stripped, ?tick=1 would
+      // silently degrade to the do-nothing branch below and the safety net
+      // would be gone with no symptom.
+      const fromCron = String(req.headers['user-agent'] ?? '').includes('vercel-cron')
+      if (req.query.tick === '1' || fromCron) {
         if (!cronAuthorized(req)) {
           res.status(401).json({ error: 'Unauthorized' })
           return
