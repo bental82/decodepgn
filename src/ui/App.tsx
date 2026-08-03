@@ -1180,11 +1180,20 @@ export default function App() {
         savedAt: Date.now(),
         results: {},
       }
-      const job = await serverEnqueue(shell, {
-        force,
-        includeLite: opts?.includeLite === true,
-        repairEmpty: opts?.repairEmpty === true,
-      })
+      // Only ship the save when the cloud might not have this game (or has an
+      // older copy) — otherwise it is a few hundred KB of results travelling
+      // up a phone connection to a server that already holds them.
+      const cloudCopy = (cloudGames ?? []).find((c) => c.key === key)
+      const cloudIsCurrent = !!cloudCopy && cloudCopy.savedAt >= (loadGame(key)?.savedAt ?? 0)
+      const job = await serverEnqueue(
+        key,
+        {
+          force,
+          includeLite: opts?.includeLite === true,
+          repairEmpty: opts?.repairEmpty === true,
+        },
+        cloudIsCurrent ? null : shell,
+      )
       if (job) {
         if (force) {
           // same on-screen resets as a local force run (the server clears its
@@ -1644,6 +1653,31 @@ export default function App() {
       if (remote) saveGame(remote)
     }
     handleSubmit(item.pgn, item.focus, atPly)
+  }
+
+  // Download the game's PGN exactly as it was imported — the file is the plain
+  // original, so it opens in any chess app. Named after the players and the
+  // date it was played, because "game.pgn" ×20 in a downloads folder is
+  // useless. Cloud-only rows carry their PGN in the listing, so this works
+  // for games this browser has never opened.
+  const downloadPgn = (g: HistoryItem) => {
+    const safe = (s: string) => s.replace(/[^\w֐-׿-]+/g, '-').replace(/^-+|-+$/g, '')
+    const stamp = new Date(g.date).toISOString().slice(0, 10)
+    const name =
+      [safe(g.headers.White ?? 'White'), 'vs', safe(g.headers.Black ?? 'Black'), stamp]
+        .filter(Boolean)
+        .join('-')
+        .slice(0, 120) || g.key
+    const blob = new Blob([g.pgn.trim() + '\n'], { type: 'application/x-chess-pgn' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}.pgn`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    // give the download a tick to start before the blob goes away
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
 
   // Delete runs through a styled confirm modal (window.confirm blocked the UI
@@ -2316,6 +2350,14 @@ export default function App() {
                           {g.result === 'won' ? 'W' : g.result === 'lost' ? 'L' : '='}
                         </span>
                       ) : null}
+                    </button>
+                    <button
+                      className="history-del history-dl"
+                      aria-label={`Download the PGN for ${g.headers.White ?? 'White'} vs ${g.headers.Black ?? 'Black'}`}
+                      title="Download this game's PGN"
+                      onClick={() => downloadPgn(g)}
+                    >
+                      <Icon name="download" size={15} />
                     </button>
                     <button
                       className="history-del"
