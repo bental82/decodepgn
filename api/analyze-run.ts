@@ -27,14 +27,14 @@ function selfUrl(req: VercelRequest): string {
 /** Fire a worker invocation and give the request ~2.5s to leave the machine —
     enough for the new invocation to start; nobody reads its response. A lost
     kick is not fatal: the client's status polls re-kick stalled jobs. */
-async function kick(req: VercelRequest): Promise<void> {
+async function kick(req: VercelRequest, waitMs = 2500): Promise<void> {
   try {
     const p = fetch(selfUrl(req), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ work: true }),
     }).catch(() => {})
-    await Promise.race([p, new Promise((r) => setTimeout(r, 2500))])
+    await Promise.race([p, new Promise((r) => setTimeout(r, waitMs))])
   } catch {
     /* best-effort */
   }
@@ -145,7 +145,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { force: body.force === true, includeLite: body.includeLite === true, repairEmpty: body.repairEmpty === true },
       body.game,
     )
-    await kick(req)
+    // A short wait here on purpose: the tap is a user waiting on a phone, and
+    // a kick that fails to leave the machine is now covered twice over — the
+    // client's status poll re-kicks a queued job after 20s, the minute cron
+    // after 60s. Blocking the response for 2.5s buys nothing.
+    await kick(req, 800)
     res.status(202).json({ enabled: true, job })
   } catch (e) {
     const status = (e as { status?: number })?.status ?? 500

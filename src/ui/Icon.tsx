@@ -30,6 +30,7 @@ export type IconName =
   | 'moon'
   | 'sun'
   | 'trash'
+  | 'download'
   | 'check'
   | 'pawn'
   | 'flip'
@@ -124,6 +125,13 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
       <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M12 3v12" />
+      <path d="m7 11 5 5 5-5" />
+      <path d="M4 20h16" />
     </>
   ),
   check: <path d="M20 6 9 17l-5-5" />,

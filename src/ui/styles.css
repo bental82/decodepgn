@@ -243,6 +243,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
 .history-meta .icon { color: var(--muted); }
 .history-del { display: grid; place-items: center; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 10px; padding: 0 12px; cursor: pointer; font-size: 15px; transition: color 0.15s ease, border-color 0.15s ease; }
 .history-del:hover { color: var(--bad); border-color: var(--line); }
+/* same shape as delete, but it is not a destructive action — never red */
+.history-dl { padding: 0 10px; }
+.history-dl:hover { color: var(--accent); border-color: var(--line); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow-card); }
 /* drill mode: entry card on the landing + the practice screen */
 .drill-entry { display: flex; align-items: center; gap: 16px; justify-content: space-between; flex-wrap: wrap; }

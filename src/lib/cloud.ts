@@ -62,20 +62,38 @@ export interface ServerJob {
   error?: string
 }
 
-/** Queue a server-side analysis run for a game. The full SavedGame rides
-    along so a brand-new game with no cloud row yet can be enqueued. Null when
-    the feature is off or the request failed (caller falls back to local). */
+/**
+ * Queue a server-side analysis run for a game. Null when the feature is off or
+ * the request genuinely failed — and only then, because the caller's fallback
+ * is a full CLIENT-SIDE run, the exact thing server runs exist to avoid.
+ *
+ * `game` is the full SavedGame, and the server needs it ONLY to create a row
+ * that does not exist yet. Pass null once the cloud already has the game: that
+ * payload reaches a few hundred KB on a long analysed game, all of it results
+ * the server is about to read from its own row anyway.
+ */
 export async function serverEnqueue(
-  game: SavedGame,
+  key: string,
   opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean },
+  game?: SavedGame | null,
 ): Promise<ServerJob | null> {
   const d = await fetchJson('/api/analyze-run', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ key: game.key, ...opts, game }),
+    body: JSON.stringify({ key, ...opts, ...(game ? { game } : {}) }),
+    // One round trip that creates the row, writes the job AND kicks a worker.
+    // Measured at ~4s warm from a fast network; a cold function reached from a
+    // phone is slower still, and the shared 10s default was expiring and
+    // dropping whole games into local runs.
+    signal: AbortSignal.timeout(30_000),
   })
   const j = d?.job
-  return j && typeof j.status === 'string' ? (j as ServerJob) : null
+  if (j && typeof j.status === 'string') return j as ServerJob
+  // The write may have landed and only the response been lost. Ask before
+  // falling back: running the same game twice bills the tokens twice.
+  const st = await serverJobStatus(key)
+  const cur = st?.job
+  return cur && (cur.status === 'queued' || cur.status === 'running') ? cur : null
 }
 
 /** The job + analysed count for one game — a cheap poll while a run is on. */
