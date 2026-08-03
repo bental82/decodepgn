@@ -7,11 +7,5 @@
     "api/analyze-run.ts": {
       "includeFiles": "node_modules/stockfish/src/stockfish-17.1-lite-single-03e3232.{js,wasm}"
     }
-  },
-  "crons": [
-    {
-      "path": "/api/analyze-run?tick=1",
-      "schedule": "* * * * *"
-    }
-  ]
+  }
 }
