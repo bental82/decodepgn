@@ -215,6 +215,9 @@ interface ClaudeOpts {
       and overview calls are latency-bound and ran with no thinking at all on
       the previous models) */
   effort?: 'low' | 'medium'
+  /** for tools whose input is just prose (Ask): accept a plain-text reply as
+      the tool input instead of insisting on the call */
+  fromText?: (text: string) => unknown
 }
 
 /** `output_config.effort` exists from Opus 4.5, Sonnet 4.6 and Haiku 5.5 on
@@ -246,7 +249,7 @@ async function callClaude(
   const effort = supportsEffort(model) ? (opts.effort ?? 'low') : null
   const fallback = SERVER_FALLBACK_RE.test(model)
   // Opus/Sonnet 5.5 reject a forced tool_choice (400), so every model gets
-  // `auto` plus this instruction — and one retry below if the reply still
+  // `auto` plus this instruction — and a recovery below if the reply still
   // comes back as prose. It rides after the cached rules block, so the cache
   // prefix is untouched.
   const toolSystem =
@@ -259,21 +262,23 @@ async function callClaude(
           },
         ]
       : system
-  const body = JSON.stringify({
-    model,
-    // Thinking (always on for the 5.5 models) counts toward max_tokens even
-    // though its text isn't returned — headroom so it never eats the answer.
-    max_tokens: opts.maxTokens + (effort === 'medium' ? 12_000 : effort ? 6_000 : 0),
-    system: toolSystem,
-    messages,
-    ...(effort ? { output_config: { effort } } : {}),
-    // a classifier decline is re-run server-side on Anthropic's recommended
-    // model instead of surfacing as an error
-    ...(fallback ? { fallbacks: 'default' } : {}),
-    ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'auto' } } : {}),
-  })
+  const bodyWith = (msgs: typeof messages) =>
+    JSON.stringify({
+      model,
+      // Thinking (always on for the 5.5 models) counts toward max_tokens even
+      // though its text isn't returned — headroom so it never eats the answer.
+      max_tokens: opts.maxTokens + (effort === 'medium' ? 12_000 : effort ? 6_000 : 0),
+      system: toolSystem,
+      messages: msgs,
+      ...(effort ? { output_config: { effort } } : {}),
+      // a classifier decline is re-run server-side on Anthropic's recommended
+      // model instead of surfacing as an error
+      ...(fallback ? { fallbacks: 'default' } : {}),
+      ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'auto' } } : {}),
+    })
+  let msgs = messages
   for (let attempt = 0; ; attempt++) {
-    const message = await postMessages(apiKey, body, fallback, opts.timeoutMs ?? 55_000)
+    const message = await postMessages(apiKey, bodyWith(msgs), fallback, opts.timeoutMs ?? 55_000)
     if (message.stop_reason === 'refusal') {
       throw new AnalyzeError('Claude declined to answer this one. Try rephrasing it.', 422)
     }
@@ -289,7 +294,28 @@ async function callClaude(
     }
     const toolUse = message.content?.find((b) => b.type === 'tool_use')
     if (toolUse && typeof toolUse.input === 'object' && toolUse.input !== null) return toolUse.input
+    // Without a forced call the model sometimes just answers in prose —
+    // conversational questions most of all, where the thread's earlier
+    // answers are prose too. Where prose IS the answer, take it.
+    const prose = (message.content ?? [])
+      .filter((b) => b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text)
+      .join('\n')
+      .trim()
+    if (prose && opts.fromText) return opts.fromText(prose)
     if (attempt >= 1) throw new AnalyzeError('Claude did not return structured output.', 502)
+    // Otherwise hand the prose back and ask for it as the call: re-sending
+    // the identical request tends to get the identical prose back.
+    if (prose) {
+      msgs = [
+        ...messages,
+        { role: 'assistant', content: prose },
+        {
+          role: 'user',
+          content: `Now send that as a ${opts.toolName} tool call — the app can only read the tool's arguments.`,
+        },
+      ]
+    }
   }
 }
 
@@ -1222,6 +1248,7 @@ When the context includes a position (FEN) and showing beats telling, also fill 
     maxTokens: 900,
     tool: ASK_TOOL,
     toolName: 'answer_question',
+    fromText: (answer) => ({ answer }),
   })) as { answer?: unknown; graphics?: unknown }
   const answer = cleanClip(data.answer, 1500).trim()
   const out: AskResponse = { answer: answer || 'No answer was returned. Please try rephrasing.' }
