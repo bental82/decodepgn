@@ -38,9 +38,11 @@ export async function cloudList(): Promise<CloudGameMeta[] | null> {
 }
 
 /** Digests of every cloud game (server-computed, current formulas) — feeds
-    the live cross-game stats. Null when the feature is off. */
+    the live cross-game stats. Null when the feature is off. The first call
+    after an upgrade may summarize older games server-side, hence the longer
+    wait than the other listings. */
 export async function cloudListSummaries(): Promise<MetaGameSummary[] | null> {
-  const d = await fetchJson('/api/games?summaries=1')
+  const d = await fetchJson('/api/games?summaries=1', { signal: AbortSignal.timeout(30_000) })
   return d && d.enabled === true && Array.isArray(d.summaries)
     ? (d.summaries as MetaGameSummary[])
     : null

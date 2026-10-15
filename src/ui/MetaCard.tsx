@@ -20,8 +20,12 @@ interface Props {
   onOpenRule: (id: number) => void
   /** open a cited game at a specific move (from an insight's example link) */
   onOpenGame: (key: string, ply: number) => void
-  /** digests of the analysed games — context for the Ask thread */
+  /** digests of every analysed game (local + cloud) — the overall stats */
   summaries: MetaGameSummary[]
+  /** digests of this browser's games — the Ask thread's context. The server
+      adds the cloud archive itself, so the whole history needn't ride along
+      in every question (it would outgrow the request size limit). */
+  localSummaries: MetaGameSummary[]
   apiKey: string
   onNeedKey: () => void
 }
@@ -86,6 +90,7 @@ export default function MetaCard({
   onOpenRule,
   onOpenGame,
   summaries,
+  localSummaries,
   apiKey,
   onNeedKey,
 }: Props) {
@@ -202,7 +207,7 @@ export default function MetaCard({
           {error ? <div className="error small">{error}</div> : null}
           {available > 0 ? (
             <AskBox
-              context={{ summaries }}
+              context={{ summaries: localSummaries }}
               apiKey={apiKey}
               onNeedKey={onNeedKey}
               label="Ask about your play"

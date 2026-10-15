@@ -5,6 +5,12 @@
 import { gameAccuracy } from './accuracy.js'
 import type { Color, EngineEval, Focus, MetaGameSummary, MoveResult } from './types'
 
+/** The server stores each game's digest in its row (data.digest) so archive-wide
+    reads stay cheap. Bump this whenever summarizeGame's output changes — its
+    fields or any formula behind them, accuracy.ts included — and stored
+    digests from older versions are rebuilt on the next read. */
+export const DIGEST_VERSION = 1
+
 /** The minimal saved-game shape needed (SavedGame satisfies it structurally). */
 export interface SummarizableGame {
   key: string

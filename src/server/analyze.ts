@@ -9,8 +9,7 @@
 import { Chess } from 'chess.js'
 import { rulesForPrompt, RULE_COUNT, RULES_BY_ID } from '../shared/rules.js'
 import { isStudied, stripToolLeak } from '../shared/types.js'
-import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
-import { cloudConfigured, listCloudGameData } from './games.js'
+import { cloudConfigured, listCloudSummaries } from './games.js'
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
@@ -1122,12 +1121,11 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
   // Cross-game questions (the "Your play" card): ground the answer in the
   // player's whole analysed history, cloud archive included.
   if (Array.isArray(input.summaries)) {
-    const sums = await collectSummaries(input.summaries)
+    const sums = await collectSummaries(input.summaries, ASK_COLLECT_MS)
     if (sums.length) {
+      sums.sort((a, b) => playedAt(a) - playedAt(b))
       contextLines.push(
-        `The question is about the player's play ACROSS games — address them as "you". Their analysed game history:\n${sums
-          .map(summaryLine)
-          .join('\n\n')}`,
+        `The question is about the player's play ACROSS games — address them as "you". Their analysed game history (${sums.length} games, oldest first):\n${historyBlock(sums, ASK_HISTORY_CHARS)}`,
       )
     }
   }
@@ -1332,19 +1330,20 @@ function sanitizeSummaries(raw: unknown): MetaGameSummary[] {
       }
     }
     out.push(sum)
-    if (out.length >= 60) break
   }
   return out
 }
 
+const whoOf = (s: MetaGameSummary) =>
+  s.me ? `you were ${sideName(s.me)}` : `studied ${s.focus === 'both' ? 'both sides' : sideName(s.focus as Color)}`
+const ruleCounts = (arr: Array<{ id: number; n: number }>) =>
+  arr.map((r) => `#${r.id} x${r.n}`).join(', ') || 'none'
+
 function summaryLine(s: MetaGameSummary, i: number): string {
-  const who = s.me ? `you were ${sideName(s.me)}` : `studied ${s.focus === 'both' ? 'both sides' : sideName(s.focus as Color)}`
-  const rules = (arr: Array<{ id: number; n: number }>) =>
-    arr.map((r) => `#${r.id} x${r.n}`).join(', ') || 'none'
-  let line = `Game ${i + 1}: ${s.white} vs ${s.black} (${who}${s.result ? `, result ${s.result}` : ''}${s.date ? `, ${s.date}` : ''})
+  let line = `Game ${i + 1}: ${s.white} vs ${s.black} (${whoOf(s)}${s.result ? `, result ${s.result}` : ''}${s.date ? `, ${s.date}` : ''})
   Opening: ${s.opening}
   Analysed ${s.analysed} of your moves. Soundness: ${s.soundness.sound} sound / ${s.soundness.speculative} speculative / ${s.soundness.dubious} dubious.
-  Most-broken rules: ${rules(s.ruleBroken)}. Most-followed: ${rules(s.ruleFollowed)}.`
+  Most-broken rules: ${ruleCounts(s.ruleBroken)}. Most-followed: ${ruleCounts(s.ruleFollowed)}.`
   if (s.engine) {
     line += `\n  Stockfish: ${s.engine.accuracy != null ? `accuracy ${s.engine.accuracy}%, ` : ''}average loss ${(s.engine.avgCpLoss / 100).toFixed(2)} pawns/move over ${s.engine.checked} checked moves, worst single loss ${(s.engine.worst / 100).toFixed(1)}, blunders (>=1.5): ${s.engine.blunders}.`
   }
@@ -1356,24 +1355,117 @@ function summaryLine(s: MetaGameSummary, i: number): string {
   return line
 }
 
+/** One line per game — what an older game shrinks to when the full list
+    would overflow the prompt budget. No lesson lines, so nothing to cite. */
+function compactLine(s: MetaGameSummary, i: number): string {
+  const top3 = (arr: Array<{ id: number; n: number }>) => ruleCounts(arr.slice(0, 3))
+  const opening = s.opening.split(' ').slice(0, 10).join(' ')
+  const acc = s.engine?.accuracy != null ? `accuracy ${s.engine.accuracy}%` : 'no engine check'
+  return `Game ${i + 1}: ${s.white} vs ${s.black} (${whoOf(s)}${s.result ? `, ${s.result}` : ''}${s.date ? `, ${s.date}` : ''}) · ${opening} · ${acc} · broke ${top3(s.ruleBroken)} · followed ${top3(s.ruleFollowed)}`
+}
+
+/** The oldest games folded into one paragraph of totals — the last resort when
+    even one line per game would overflow the budget. Every game still counts. */
+function aggregateBlock(sums: MetaGameSummary[]): string {
+  const broken = new Map<number, number>()
+  const followed = new Map<number, number>()
+  const openings = new Map<string, number>()
+  const tally = { won: 0, drawn: 0, lost: 0 }
+  let accSum = 0
+  let accMoves = 0
+  for (const s of sums) {
+    for (const r of s.ruleBroken) broken.set(r.id, (broken.get(r.id) ?? 0) + r.n)
+    for (const r of s.ruleFollowed) followed.set(r.id, (followed.get(r.id) ?? 0) + r.n)
+    if (s.engine?.accuracy != null) {
+      accSum += s.engine.accuracy * Math.max(1, s.engine.checked)
+      accMoves += Math.max(1, s.engine.checked)
+    }
+    const side = s.me ?? (s.focus !== 'both' ? s.focus : undefined)
+    if (side) {
+      const first = s.opening.split(' ').slice(0, 6).join(' ')
+      openings.set(`${first} (as ${sideName(side)})`, (openings.get(`${first} (as ${sideName(side)})`) ?? 0) + 1)
+      if (s.result === '1/2-1/2') tally.drawn++
+      else if (s.result === '1-0') tally[side === 'w' ? 'won' : 'lost']++
+      else if (s.result === '0-1') tally[side === 'b' ? 'won' : 'lost']++
+    }
+  }
+  const top = (m: Map<number, number>) =>
+    ruleCounts([...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([id, n]) => ({ id, n })))
+  const topOpenings =
+    [...openings.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([o, n]) => `${o} x${n}`)
+      .join('; ') || 'unknown'
+  const dates = sums.map((s) => s.date).filter((d): d is string => !!d)
+  return `Games 1-${sums.length} (your OLDEST games, condensed into totals to keep this list readable — weigh them as the long-run baseline${dates.length ? `; played ${dates[0]} to ${dates[dates.length - 1]}` : ''}):
+  Results from your side: ${tally.won} won / ${tally.drawn} drawn / ${tally.lost} lost.
+  Accuracy: ${accMoves ? `${(accSum / accMoves).toFixed(1)}% over ${accMoves} engine-checked moves` : 'no engine data'}.
+  Most-broken rules across them: ${top(broken)}. Most-followed: ${top(followed)}.
+  Most-played openings: ${topOpenings}.`
+}
+
 /**
- * Client digests + the cloud archive, deduped and sanitized — the data both
- * the meta report and cross-game Ask questions run on. Cloud merge is
+ * The game list for a cross-game prompt, oldest first, kept inside `budget`
+ * characters however big the archive gets: every game gets its full entry
+ * while that fits; past that, the OLDEST games drop to one-line digests, and
+ * past that the oldest of all fold into a single aggregate. Recent games keep
+ * the most detail — they are what the trends read — and game numbers stay
+ * absolute either way, so cited "game N" always means withAnalysis[N - 1].
+ */
+function historyBlock(sums: MetaGameSummary[], budget: number): string {
+  const full = sums.map(summaryLine)
+  const compact = sums.map(compactLine)
+  let size = full.reduce((n, l) => n + l.length + 2, 0)
+  let firstFull = 0 // games before this index are compact (or aggregated)
+  while (size > budget && firstFull < sums.length) {
+    size -= full[firstFull].length - compact[firstFull].length
+    firstFull++
+  }
+  let firstListed = 0 // games before this index are aggregated
+  while (size > budget && firstListed < firstFull) {
+    size -= compact[firstListed].length + 1
+    firstListed++
+  }
+  const parts: string[] = []
+  if (firstListed > 0) parts.push(aggregateBlock(sums.slice(0, firstListed)))
+  if (firstFull > firstListed) parts.push(compact.slice(firstListed, firstFull).join('\n'))
+  if (firstFull < sums.length) parts.push(full.slice(firstFull).join('\n\n'))
+  return parts.join('\n\n')
+}
+
+// Character budgets for the game history in a cross-game prompt (~4 chars a
+// token): the report reads the whole archive, Ask stays light enough to be
+// interactive. Past these, older games condense (see historyBlock).
+const META_HISTORY_CHARS = 240_000
+const ASK_HISTORY_CHARS = 80_000
+// How long a request may spend summarizing archive rows that predate stored
+// digests (a one-time cost per row — see listCloudSummaries).
+const META_COLLECT_MS = 60_000
+const ASK_COLLECT_MS = 10_000
+
+/** When the game was played (PGN date), else when it entered the app — the
+    "oldest first" order every cross-game prompt reads. */
+function playedAt(s: MetaGameSummary): number {
+  if (s.date && /^\d{4}\.\d{2}\.\d{2}$/.test(s.date)) {
+    const t = Date.parse(s.date.replace(/\./g, '-'))
+    if (Number.isFinite(t)) return t
+  }
+  return s.addedAt ?? 0
+}
+
+/**
+ * Client digests + the whole cloud archive, deduped and sanitized — the data
+ * both the meta report and cross-game Ask questions run on. Cloud merge is
  * best-effort: with the database unreachable, the client's games suffice.
  */
-async function collectSummaries(raw: unknown): Promise<MetaGameSummary[]> {
+async function collectSummaries(raw: unknown, budgetMs: number): Promise<MetaGameSummary[]> {
   const summaries = sanitizeSummaries(raw)
   try {
     if (cloudConfigured()) {
       const seen = new Set(summaries.map((s) => s.key))
-      for (const data of await listCloudGameData()) {
-        const g = data as SummarizableGame
-        if (!g || typeof g.key !== 'string' || seen.has(g.key)) continue
-        if (!g.results || typeof g.results !== 'object') continue
-        seen.add(g.key)
-        summaries.push(...sanitizeSummaries([summarizeGame(g)]))
-        if (summaries.length >= 60) break
-      }
+      const cloud = (await listCloudSummaries(budgetMs)).filter((s) => !seen.has(s.key))
+      summaries.push(...sanitizeSummaries(cloud))
     }
   } catch {
     /* cloud unavailable — proceed with what the client sent */
@@ -1383,21 +1475,14 @@ async function collectSummaries(raw: unknown): Promise<MetaGameSummary[]> {
 
 export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
   const apiKey = resolveKey(input)
-  const withAnalysis = await collectSummaries(input.summaries)
+  const withAnalysis = await collectSummaries(input.summaries, META_COLLECT_MS)
   if (withAnalysis.length === 0) {
     throw new AnalyzeError('No analysed games to review yet — analyse a game or two first.')
   }
 
   // Oldest first, so "the last N games" genuinely means the player's most
   // recent play — that ordering is what the trends section reads.
-  const stampOf = (s: MetaGameSummary): number => {
-    if (s.date && /^\d{4}\.\d{2}\.\d{2}$/.test(s.date)) {
-      const t = Date.parse(s.date.replace(/\./g, '-'))
-      if (Number.isFinite(t)) return t
-    }
-    return s.addedAt ?? 0
-  }
-  withAnalysis.sort((a, b) => stampOf(a) - stampOf(b))
+  withAnalysis.sort((a, b) => playedAt(a) - playedAt(b))
   const recentN =
     withAnalysis.length >= 4 ? Math.min(5, Math.max(2, Math.round(withAnalysis.length / 3))) : 0
 
@@ -1406,6 +1491,8 @@ export async function runMeta(input: MetaRequest): Promise<MetaResponse> {
 Each game summary below was computed from full per-move analysis: the opening moves, which rules of thumb were followed or broken (with counts), a soundness tally, Stockfish accuracy (a chess.com-style accuracy %, average centipawn loss, worst slip, blunder count), and the lessons attached to the costliest moves. "you were White/Black" marks the player's own side — their habits are what you are profiling; ignore the opponent's play except as context. Games are listed OLDEST FIRST.
 
 Each lesson line carries its ply number. When an insight rests on a concrete moment, attach "examples": the game number exactly as listed plus that ply — the app turns them into links the player taps to open that exact move. Only cite plies that appear in the lesson lines.
+
+A long history is condensed to fit: the oldest games may appear as one-line digests, and the oldest of all as a single paragraph of totals. Count them fully for frequencies, results and the long-run baseline — they are real games — but cite examples only from full entries.
 
 Ground every claim in the data given — never invent games, moves or numbers. With a small sample (under ~5 games), say so and keep claims proportional. Where the engine data and the rule data disagree, trust the engine for accuracy and the rules for themes.`
 
@@ -1425,7 +1512,7 @@ Use the report_meta_coaching tool. What to produce:
 
   const user = `The player's analysed games, oldest first:
 
-${withAnalysis.map(summaryLine).join('\n\n')}
+${historyBlock(withAnalysis, META_HISTORY_CHARS)}
 ${recentN ? `\nGames ${withAnalysis.length - recentN + 1}-${withAnalysis.length} are the player's most recent — compare them with the earlier ones for the trends section.\n` : ''}
 Write your part of the meta-analysis.`
 

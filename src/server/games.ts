@@ -7,10 +7,15 @@
 // This module is server-only (it reads the service-role key). It must never be
 // imported by browser code.
 
-import { summarizeGame, type SummarizableGame } from '../shared/meta.js'
-import type { Focus } from '../shared/types'
+import { DIGEST_VERSION, summarizeGame, type SummarizableGame } from '../shared/meta.js'
+import type { Focus, MetaGameSummary } from '../shared/types'
 
-const LIST_LIMIT = 100
+// Listings walk the whole archive in pages of this many rows (under
+// Supabase's default 1000-row response cap).
+const PAGE_SIZE = 500
+// Legacy rows (no stored digest) are summarized from full data this many at a
+// time — each is up to a few hundred KB of analysis.
+const BACKFILL_BATCH = 10
 // The cross-game meta report lives in a reserved row of the same table
 // (excluded from every game listing) — no extra schema needed.
 const META_ROW_KEY = '__meta__'
@@ -61,6 +66,45 @@ async function sb(path: string, init?: RequestInit & { headers?: Record<string, 
   return resp
 }
 
+/**
+ * Every game row, however many there are: keyset pages over the primary key.
+ * (Not offset pages over saved_at — a run saving mid-walk would move its row
+ * and shift every offset after it, skipping or repeating games.) `select`
+ * must include `key`; `filter` is extra PostgREST filters, each `&`-prefixed.
+ */
+async function allRows<T>(select: string, filter = ''): Promise<T[]> {
+  const out: T[] = []
+  let after: string | null = null
+  for (;;) {
+    const from = after === null ? '' : `&key=gt.${encodeURIComponent(after)}`
+    const resp = await sb(
+      `games?select=${select}&key=neq.${META_ROW_KEY}${from}${filter}&order=key.asc&limit=${PAGE_SIZE}`,
+    )
+    const page = (await resp.json()) as Array<T & { key?: unknown }>
+    if (!Array.isArray(page)) break
+    out.push(...page)
+    const last = page[page.length - 1]?.key
+    if (page.length < PAGE_SIZE || typeof last !== 'string') break
+    after = last
+  }
+  return out
+}
+
+/** A PostgREST `in.(…)` list item: quoted, so any key text is taken literally. */
+const quoted = (s: string) => `"${s.replace(/["\\]/g, '\\$&')}"`
+
+/** The game with its cross-game digest (re)computed — see putCloudGame. */
+function withDigest(data: Record<string, unknown>): Record<string, unknown> {
+  const rest = { ...data }
+  delete rest.digest
+  try {
+    const digest = summarizeGame(rest as unknown as SummarizableGame)
+    return { ...rest, digest: { ...digest, v: DIGEST_VERSION } }
+  } catch {
+    return rest
+  }
+}
+
 /** What the landing list needs — everything except the heavy analysis data. */
 export interface CloudGameMeta {
   key: string
@@ -76,10 +120,7 @@ export interface CloudGameMeta {
 }
 
 export async function listCloudGames(): Promise<CloudGameMeta[]> {
-  const resp = await sb(
-    `games?select=key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt,job:data->job&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
-  )
-  const rows = (await resp.json()) as Array<{
+  const rows = await allRows<{
     key?: unknown
     pgn?: unknown
     focus?: unknown
@@ -89,8 +130,7 @@ export async function listCloudGames(): Promise<CloudGameMeta[]> {
     saved_at?: unknown
     added_at?: unknown
     job?: unknown
-  }>
-  if (!Array.isArray(rows)) return []
+  }>('key,pgn,focus,headers,analysed,has_quiz,saved_at,added_at:data->>addedAt,job:data->job')
   return rows
     .filter((r) => typeof r?.key === 'string' && typeof r?.pgn === 'string')
     .map((r) => {
@@ -123,6 +163,7 @@ export async function listCloudGames(): Promise<CloudGameMeta[]> {
           : {}),
       }
     })
+    .sort((a, b) => b.savedAt - a.savedAt)
 }
 
 /** The full saved game (the whole SavedGame JSON as the client stored it). */
@@ -201,6 +242,11 @@ export async function putCloudGame(
       toStore = { ...toStore, addedAt: exAdded }
     }
   }
+  // The cross-game digest rides inside the row (data.digest) so archive-wide
+  // reads — the "Your play" report, the landing stats — fetch ~1KB per game
+  // instead of every game's full analysis. Rebuilt on every write, so it can
+  // never lag the results it describes.
+  toStore = withDigest(toStore)
   const results = toStore.results
   const row = {
     key: g.key.trim().slice(0, 80),
@@ -225,17 +271,17 @@ export async function putCloudGame(
   })
 }
 
-/** Lean job listing: key, analysed count and the job object only — the
-    runner's claim scan and the client's status poll both ride on this. */
-export async function listJobRows(): Promise<
-  Array<{ key: string; analysed: number; job: unknown }>
-> {
-  const resp = await sb(
-    `games?select=key,analysed,job:data->job&key=neq.__meta__&order=saved_at.desc&limit=${LIST_LIMIT}`,
-  )
-  const rows = (await resp.json()) as Array<{ key?: unknown; analysed?: unknown; job?: unknown }>
+export interface JobRow {
+  key: string
+  analysed: number
+  job: unknown
+}
+
+const JOB_SELECT = 'key,analysed,job:data->job'
+
+function toJobRows(rows: unknown): JobRow[] {
   if (!Array.isArray(rows)) return []
-  return rows
+  return (rows as Array<{ key?: unknown; analysed?: unknown; job?: unknown }>)
     .filter((r) => typeof r?.key === 'string')
     .map((r) => ({
       key: r.key as string,
@@ -244,27 +290,80 @@ export async function listJobRows(): Promise<
     }))
 }
 
-/** Full saved-game payloads for the whole archive (for the meta-analysis). */
-export async function listCloudGameData(limit = 60): Promise<unknown[]> {
-  const resp = await sb(`games?select=data&key=neq.__meta__&order=saved_at.desc&limit=${limit}`)
-  const rows = (await resp.json()) as Array<{ data?: unknown }>
-  return Array.isArray(rows) ? rows.map((r) => r?.data).filter(Boolean) : []
+/** Every game whose analysis job is queued or running — the runner's claim
+    scan and the tick's work check. Filtered in the database, so a job on the
+    oldest game in a large archive is found as surely as one on the newest. */
+export async function listActiveJobRows(): Promise<JobRow[]> {
+  return toJobRows(await allRows(JOB_SELECT, '&data->job->>status=in.(queued,running)'))
 }
 
-/** Compact digests of the whole cloud archive, computed fresh (so stats like
-    accuracy always use the current formula) — powers the client's live
-    cross-game numbers without downloading full games. */
-export async function listCloudSummaries(limit = 60): Promise<unknown[]> {
-  const out: unknown[] = []
-  for (const data of await listCloudGameData(limit)) {
-    const g = data as SummarizableGame
-    if (!g || typeof g.key !== 'string' || !g.results || typeof g.results !== 'object') continue
-    try {
-      const s = summarizeGame(g)
+/** One game's job + analysed count — the client's cheap status poll. */
+export async function getJobRow(key: string): Promise<JobRow | null> {
+  const resp = await sb(`games?select=${JOB_SELECT}&key=eq.${encodeURIComponent(key)}&limit=1`)
+  return toJobRows(await resp.json())[0] ?? null
+}
+
+type StoredDigest = MetaGameSummary & { v?: unknown }
+
+/** A stored digest without its version stamp, or null when it is missing or
+    was built by an older summary formula. */
+function currentDigest(d: unknown): MetaGameSummary | null {
+  const s = d as StoredDigest | null
+  if (!s || typeof s !== 'object' || s.v !== DIGEST_VERSION) return null
+  const out = { ...s }
+  delete out.v
+  return out
+}
+
+/**
+ * Digests of EVERY analysed game in the archive — the cross-game report and
+ * the landing's live stats. Reads the digest each row stores (~1KB a game),
+ * never the full analyses. A row written before digests existed, or under an
+ * older summary formula, is summarized from its full data once and the digest
+ * written back, so the next listing is cheap again. That backfill stops at
+ * `budgetMs`; rows it didn't reach are left out this time and caught up on the
+ * next call.
+ */
+export async function listCloudSummaries(budgetMs = 20_000): Promise<MetaGameSummary[]> {
+  const stopAt = Date.now() + budgetMs
+  const rows = await allRows<{ key?: unknown; digest?: unknown }>('key,digest:data->digest')
+  const out: MetaGameSummary[] = []
+  const stale: string[] = []
+  for (const r of rows) {
+    if (typeof r.key !== 'string') continue
+    const s = currentDigest(r.digest)
+    if (!s) stale.push(r.key)
+    else if (s.analysed > 0) out.push(s)
+  }
+  for (let i = 0; i < stale.length && Date.now() < stopAt; i += BACKFILL_BATCH) {
+    const keys = stale.slice(i, i + BACKFILL_BATCH).map(quoted).join(',')
+    const resp = await sb(`games?select=key,data,updated_at&key=in.(${encodeURIComponent(keys)})`)
+    const full = (await resp.json()) as Array<{ key?: unknown; data?: unknown; updated_at?: unknown }>
+    const writes: Promise<unknown>[] = []
+    for (const row of Array.isArray(full) ? full : []) {
+      const data = row.data as Record<string, unknown> | null
+      if (typeof row.key !== 'string' || !data || typeof data.pgn !== 'string') continue
+      const next = withDigest(data)
+      const s = currentDigest(next.digest)
+      if (!s) continue
       if (s.analysed > 0) out.push(s)
-    } catch {
-      /* skip malformed rows */
+      // Write it back only if the row is untouched since we read it: a run or
+      // save that landed in between carries its own fresh digest, and this
+      // whole-row write must never roll its results back.
+      if (typeof row.updated_at === 'string') {
+        writes.push(
+          sb(
+            `games?key=eq.${encodeURIComponent(row.key)}&updated_at=eq.${encodeURIComponent(row.updated_at)}`,
+            {
+              method: 'PATCH',
+              headers: { prefer: 'return=minimal' },
+              body: JSON.stringify({ data: next }),
+            },
+          ).catch(() => {}),
+        )
+      }
     }
+    await Promise.all(writes)
   }
   return out
 }

@@ -2,6 +2,8 @@
 // and per game. Uses the openly documented Lichess formulas: win probability
 // from centipawns, exponential decay on the win% a move throws away, and a
 // volatility-weighted game average (sharp phases count more than dead ones).
+// Changing a formula here? Bump DIGEST_VERSION in meta.ts — stored cross-game
+// digests carry accuracy figures computed with it.
 
 import type { EngineEval } from './types'
 

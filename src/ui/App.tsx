@@ -2386,6 +2386,7 @@ export default function App() {
             }}
             onOpenRule={openRule}
             summaries={allSummaries}
+            localSummaries={metaSummaries}
             apiKey={apiKey}
             onNeedKey={() => setShowSettings(true)}
           />

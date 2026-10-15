@@ -12,7 +12,7 @@ import { parsePgn, toGameMoves, toTargets } from '../game.js'
 import { isStudied, type Focus, type MoveResult, type ParsedMove } from '../shared/types.js'
 import { runAnalyze, runOverview, hasLiteKey } from './analyze.js'
 import { gameAccuracy } from '../shared/accuracy.js'
-import { getCloudGame, putCloudGame, listJobRows, GamesError } from './games.js'
+import { getCloudGame, putCloudGame, getJobRow, listActiveJobRows, GamesError } from './games.js'
 import {
   clearEngineCache,
   engineAvailable,
@@ -167,14 +167,13 @@ export async function enqueueJob(
 export async function jobStatus(
   key: string,
 ): Promise<{ job: AnalysisJob | null; analysed: number }> {
-  const rows = await listJobRows()
-  const row = rows.find((r) => r.key === key)
+  const row = await getJobRow(key)
   return { job: (row?.job as AnalysisJob) ?? null, analysed: row?.analysed ?? 0 }
 }
 
 /** True when some queued/stale job needs a worker (the poll's kick signal). */
 export async function workWaiting(): Promise<boolean> {
-  const rows = await listJobRows()
+  const rows = await listActiveJobRows()
   return rows.some((r) => {
     const j = r.job as AnalysisJob | null
     if (!jobActive(j)) return false
@@ -185,7 +184,7 @@ export async function workWaiting(): Promise<boolean> {
 /** Claim the next workable job: queued first (oldest tap), then stale
     running jobs (their chain died). Returns null when there is nothing. */
 async function claimNext(runnerId: string): Promise<GameData | null> {
-  const rows = await listJobRows()
+  const rows = await listActiveJobRows()
   const claimable = rows
     .map((r) => ({ key: r.key, job: r.job as AnalysisJob | null }))
     .filter((r): r is { key: string; job: AnalysisJob } => jobActive(r.job))
