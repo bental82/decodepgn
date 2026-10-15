@@ -23,11 +23,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         build: 'quiz-2', // bump on deploys to confirm the live version (shown in Settings)
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
-        model: process.env.ANTHROPIC_MODEL || 'claude-opus-4-8',
-        modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5',
+        model: process.env.ANTHROPIC_MODEL || 'claude-opus-5-5',
+        modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5-5',
         // opponent-move (lite) tier — rides the same Anthropic key, always on
         hasLiteKey: true,
-        modelLite: process.env.ANTHROPIC_MODEL_LITE || 'claude-haiku-4-5',
+        modelLite: process.env.ANTHROPIC_MODEL_LITE || 'claude-haiku-5-5',
         runtime: process.version,
       })
       return

@@ -1,7 +1,8 @@
 // Server-side analysis: send the game + target moves to Claude Opus and get back,
 // for each move, which of the rules of thumb are relevant and how the move
-// relates to them. Structured output is obtained via a forced tool call, which
-// works across SDK versions and models.
+// relates to them. Structured output comes back as a tool call — requested in
+// the prompt and retried once if missing (the newest models refuse a forced
+// tool_choice, so nothing here relies on one).
 //
 // This module is server-only (it imports the Anthropic SDK and reads the API
 // key). It must never be imported by browser code.
@@ -38,15 +39,15 @@ import type {
   Soundness,
 } from '../shared/types'
 
-export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-8'
+export const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-5-5'
 /** Cheaper model for routine per-move analysis. Key moments (a meaningful
     engine loss, or no engine check to vouch for the move) stay on MODEL, as
     do the game overview, the cross-game meta report, quiz and ask. */
-export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5'
+export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5-5'
 /** Bargain model for the NON-studied side's moves — context the reader
     browses past, not the coaching itself. Rides the same Anthropic key as
     the other tiers, so it is available whenever analysis is at all. */
-export const MODEL_LITE = process.env.ANTHROPIC_MODEL_LITE || 'claude-haiku-4-5'
+export const MODEL_LITE = process.env.ANTHROPIC_MODEL_LITE || 'claude-haiku-5-5'
 export const hasLiteKey = () => true
 /** Engine loss (centipawns) from which a move counts as a key moment. */
 const KEY_MOVE_CP_LOSS = 60
@@ -201,6 +202,7 @@ function systemWith(task: string) {
 }
 
 interface ClaudeOpts {
+  /** room for the ANSWER; thinking headroom is added on top (see below) */
   maxTokens: number
   tool?: unknown
   toolName?: string
@@ -209,7 +211,28 @@ interface ClaudeOpts {
   timeoutMs?: number
   /** override the model for this call (default MODEL) */
   model?: string
+  /** how hard the model thinks first (default 'low': the per-move, quiz, ask
+      and overview calls are latency-bound and ran with no thinking at all on
+      the previous models) */
+  effort?: 'low' | 'medium'
 }
+
+/** `output_config.effort` exists from Opus 4.5, Sonnet 4.6 and Haiku 5.5 on
+    (and on every Fable/Mythos model); older models reject the field. Only
+    matters when an ANTHROPIC_MODEL* env var pins an older model. */
+function supportsEffort(model: string): boolean {
+  const m = /^claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|$)/.exec(model)
+  if (!m) return false
+  const version = Number(m[2]) + Number(m[3] ?? 0) / 10
+  if (m[1] === 'opus') return version >= 4.5
+  if (m[1] === 'sonnet') return version >= 4.6
+  if (m[1] === 'haiku') return version >= 5.5
+  return true
+}
+
+// Models whose safety classifiers can decline a request and that accept the
+// server-side `fallbacks` retry. Haiku 5.5 has classifiers but no fallback.
+const SERVER_FALLBACK_RE = /^claude-(opus-5|opus-5-5|sonnet-5-5|fable-5-1)$/
 
 /** Single place that calls the Anthropic Messages API over HTTP and maps errors. */
 async function callClaude(
@@ -219,6 +242,67 @@ async function callClaude(
   opts: ClaudeOpts,
 ): Promise<unknown> {
   const messages = typeof user === 'string' ? [{ role: 'user', content: user }] : user
+  const model = opts.model ?? MODEL
+  const effort = supportsEffort(model) ? (opts.effort ?? 'low') : null
+  const fallback = SERVER_FALLBACK_RE.test(model)
+  // Opus/Sonnet 5.5 reject a forced tool_choice (400), so every model gets
+  // `auto` plus this instruction — and one retry below if the reply still
+  // comes back as prose. It rides after the cached rules block, so the cache
+  // prefix is untouched.
+  const toolSystem =
+    opts.tool && Array.isArray(system)
+      ? [
+          ...system,
+          {
+            type: 'text',
+            text: `Answer ONLY by calling the ${opts.toolName} tool: everything you have to say goes in its arguments, with no reply text.`,
+          },
+        ]
+      : system
+  const body = JSON.stringify({
+    model,
+    // Thinking (always on for the 5.5 models) counts toward max_tokens even
+    // though its text isn't returned — headroom so it never eats the answer.
+    max_tokens: opts.maxTokens + (effort === 'medium' ? 12_000 : effort ? 6_000 : 0),
+    system: toolSystem,
+    messages,
+    ...(effort ? { output_config: { effort } } : {}),
+    // a classifier decline is re-run server-side on Anthropic's recommended
+    // model instead of surfacing as an error
+    ...(fallback ? { fallbacks: 'default' } : {}),
+    ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'auto' } } : {}),
+  })
+  for (let attempt = 0; ; attempt++) {
+    const message = await postMessages(apiKey, body, fallback, opts.timeoutMs ?? 55_000)
+    if (message.stop_reason === 'refusal') {
+      throw new AnalyzeError('Claude declined to answer this one. Try rephrasing it.', 422)
+    }
+    if (!opts.tool) {
+      const textBlock = message.content?.find((b) => b.type === 'text')
+      return typeof textBlock?.text === 'string' ? textBlock.text : ''
+    }
+    // A response cut off by max_tokens carries a PARTIAL tool input — early
+    // fields present, the rest silently missing. Fail loudly instead of
+    // returning a half-report that renders as mysteriously truncated output.
+    if (message.stop_reason === 'max_tokens') {
+      throw new AnalyzeError('The answer ran out of room mid-way. Please try again.', 502)
+    }
+    const toolUse = message.content?.find((b) => b.type === 'tool_use')
+    if (toolUse && typeof toolUse.input === 'object' && toolUse.input !== null) return toolUse.input
+    if (attempt >= 1) throw new AnalyzeError('Claude did not return structured output.', 502)
+  }
+}
+
+/** One Messages API round trip; transport and HTTP errors become AnalyzeErrors. */
+async function postMessages(
+  apiKey: string,
+  body: string,
+  fallback: boolean,
+  timeoutMs: number,
+): Promise<{
+  content?: Array<{ type: string; input?: unknown; text?: string }>
+  stop_reason?: string
+}> {
   let resp: Response
   try {
     resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -227,15 +311,10 @@ async function callClaude(
         'content-type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        ...(fallback ? { 'anthropic-beta': 'server-side-fallback-2026-07-01' } : {}),
       },
-      body: JSON.stringify({
-        model: opts.model ?? MODEL,
-        max_tokens: opts.maxTokens,
-        system,
-        messages,
-        ...(opts.tool ? { tools: [opts.tool], tool_choice: { type: 'tool', name: opts.toolName } } : {}),
-      }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
@@ -257,25 +336,10 @@ async function callClaude(
     const status = resp.status >= 400 && resp.status <= 599 ? resp.status : 502
     throw new AnalyzeError(friendlyAnthropicMessage(status, detail), status)
   }
-  const message = (await resp.json()) as {
+  return (await resp.json()) as {
     content?: Array<{ type: string; input?: unknown; text?: string }>
     stop_reason?: string
   }
-  if (opts.tool) {
-    // A response cut off by max_tokens carries a PARTIAL tool input — early
-    // fields present, the rest silently missing. Fail loudly instead of
-    // returning a half-report that renders as mysteriously truncated output.
-    if (message.stop_reason === 'max_tokens') {
-      throw new AnalyzeError('The answer ran out of room mid-way. Please try again.', 502)
-    }
-    const toolUse = message.content?.find((b) => b.type === 'tool_use')
-    if (!toolUse || typeof toolUse.input !== 'object' || toolUse.input === null) {
-      throw new AnalyzeError('Claude did not return structured output.', 502)
-    }
-    return toolUse.input
-  }
-  const textBlock = message.content?.find((b) => b.type === 'text')
-  return typeof textBlock?.text === 'string' ? textBlock.text : ''
 }
 
 
@@ -540,8 +604,7 @@ Analyse the following ${label}move(s); return exactly one result object per ply 
 ${targetLinesOf(ts)}`
 
   // The NON-studied side's moves are context, not coaching — they go to the
-  // bargain lite model (OpenRouter) when a key for it is configured, and are
-  // simply dropped when not. Everything the reader actually studies stays on
+  // bargain lite model. Everything the reader actually studies stays on
   // the Claude tiers below.
   const isLite = (t: (typeof targets)[number]) => {
     const m = byPly.get(t.ply)
@@ -585,8 +648,7 @@ ${targetLinesOf(ts)}`
       }),
     ),
     // Best-effort: a lite-tier failure must never sink the main results. One
-    // retry covers transient overloads; Haiku is dependable at forced tool
-    // calls, so the old multi-attempt salvage loop is gone.
+    // retry covers transient overloads.
     ...(liteTargets.length
       ? [
           (async (): Promise<AnalyzeResponse> => {
@@ -1523,12 +1585,14 @@ Write your part of the meta-analysis.`
     callClaude(apiKey, coreSystem, user, {
       maxTokens: 3000,
       timeoutMs: 280_000,
+      effort: 'medium',
       tool: META_CORE_TOOL,
       toolName: 'report_meta_core',
     }),
     callClaude(apiKey, coachSystem, user, {
       maxTokens: 3500,
       timeoutMs: 280_000,
+      effort: 'medium',
       tool: META_COACH_TOOL,
       toolName: 'report_meta_coaching',
     }),
