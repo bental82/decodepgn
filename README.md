@@ -20,10 +20,13 @@ objectively best moves don’t get scolded for “breaking” a rule of thumb.
   move and why), a **key lesson** line when the move teaches a habit, and the
   1-2 rules in play as chips labelled **Followed / Mixed / Broke / In play**.
   Rules already explained earlier in the game are named, not re-explained. The
-  coach **draws on the board**: tinted squares and arrows (green = good, red =
-  danger, yellow = watch, blue = plan; knight moves drawn as an L) shown on the
-  sticky board — toggle a rule's graphics with its **◈** button, and show the
-  better move as an arrow on the position where it applied. A progress strip shows which of your moves are
+  board tells each move's story the way the quiz does: when a move cost
+  something, **your move in red and the better move in green** — nothing else
+  competing (◈ on the "Better" line shows the same two arrows on the position
+  before the move). A sound move shows the coach's own marks instead: tinted
+  squares and arrows (green = good, red = danger, yellow = watch, blue =
+  plan), and any rule's marks are one tap away with its **◈** button. Knight
+  moves are drawn as an L. A progress strip shows which of your moves are
   analysed, and an **Ask** box answers free-form questions about the current
   move — answers can point at the board too, on a mini board in the thread.
 - **Quiz** — guess the move: your game's costliest moments (per Stockfish),

@@ -485,7 +485,7 @@ select { border: 1px solid var(--line); }
 .better { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; font-size: 14px; }
 .better-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; }
 .better-move { display: inline-flex; align-items: center; gap: 6px; }
-.better-move strong { font-family: var(--font-mono); color: var(--accent); }
+.better-move strong { font-family: var(--font-mono); color: var(--good-text); } /* = its green arrow */
 .better-move .eng-note { font-size: 12.5px; }
 .rule-notes { margin: 2px 0 6px; font-size: 13.5px; color: var(--muted); }
 .rule-notes summary { cursor: pointer; width: fit-content; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; padding: 4px 0; }

@@ -1768,10 +1768,9 @@ export default function App() {
     }
   }, [results, selectedPly, moves])
 
-  // Stockfish's best move resolved the same way — shown in blue so "the engine
-  // says" reads apart from the coach's green suggestion. Only when the played
-  // move actually lost something: on an engine-approved move the arrow is
-  // clutter, drawn over a move that needed no fixing.
+  // Stockfish's best move resolved the same way. Only when the played move
+  // actually lost something: on an engine-approved move the arrow is clutter,
+  // drawn over a move that needed no fixing.
   const engineArrow = useMemo(() => {
     const e = results[selectedPly]?.engine
     const m = moves[selectedPly]
@@ -1784,43 +1783,52 @@ export default function App() {
     }
   }, [results, selectedPly, moves])
 
-  // The rule whose graphics show by default: the most relevant one that has any.
+  // The better move when this one cost something: Stockfish's, else (no
+  // engine check) the coach's alternative. Null for a sound move.
+  const betterArrow = useMemo(() => {
+    const m = moves[selectedPly]
+    const r = results[selectedPly]
+    const b = engineArrow ?? (r && !r.engine ? altArrow : null)
+    return m && b && !(b.from === m.from && b.to === m.to) ? b : null
+  }, [engineArrow, altArrow, results, selectedPly, moves])
+
+  // The rule whose graphics show by default: the most relevant one that has
+  // any — for a sound move. A move that cost something tells its story with
+  // the two arrows instead (see boardAnnotations).
   const autoGfxRule = useMemo(() => {
     const r = results[selectedPly]
-    if (!r) return undefined
+    if (!r || betterArrow) return undefined
     return [...r.rules]
       .sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
       .find((h) => h.graphics && (h.graphics.squares?.length || h.graphics.arrows?.length))
-  }, [results, selectedPly])
+  }, [results, selectedPly, betterArrow])
 
   const boardAnnotations = useMemo<BoardAnnotations | undefined>(() => {
     if (gfx.kind === 'off') return undefined
-    if (gfx.kind === 'alt') {
-      return altArrow ? { arrows: [{ from: altArrow.from, to: altArrow.to, color: 'green' }] } : undefined
-    }
-    if (gfx.kind === 'engine') {
-      return engineArrow
-        ? { arrows: [{ from: engineArrow.from, to: engineArrow.to, color: 'blue' }] }
+    const m = moves[selectedPly]
+    // The quiz's story: the move played in red, the better one in green —
+    // just those two, nothing competing with them.
+    const story = (better: { from: string; to: string } | null): BoardAnnotations | undefined =>
+      m && better && !(better.from === m.from && better.to === m.to)
+        ? {
+            arrows: [
+              { from: m.from, to: m.to, color: 'red' },
+              { from: better.from, to: better.to, color: 'green' },
+            ],
+          }
         : undefined
-    }
+    // the "Better" line's board buttons: the same story on the position
+    // BEFORE the move, exactly as the quiz draws it
+    if (gfx.kind === 'alt') return story(altArrow)
+    if (gfx.kind === 'engine') return story(engineArrow)
     const r = results[selectedPly]
     if (!r) return undefined
     if (gfx.kind === 'rule') return r.rules.find((h) => h.id === gfx.id)?.graphics
-    // auto: the key rule's graphics PLUS the better-move arrow, chess.com
-    // style — Stockfish's best in blue whenever the played move wasn't it,
-    // falling back to the coach's cleaner alternative (green) when there is
-    // no engine check. No tapping a chip required; "off" still hides all.
-    const base = autoGfxRule?.graphics
-    const better = engineArrow
-      ? { from: engineArrow.from, to: engineArrow.to, color: 'blue' as const }
-      : !r.engine && altArrow
-        ? { from: altArrow.from, to: altArrow.to, color: 'green' as const }
-        : null
-    if (!better) return base
-    const arrows = [...(base?.arrows ?? [])]
-    if (!arrows.some((a) => a.from === better.from && a.to === better.to)) arrows.push(better)
-    return { ...(base?.squares?.length ? { squares: base.squares } : {}), arrows }
-  }, [gfx, altArrow, engineArrow, results, selectedPly, autoGfxRule])
+    // auto: a move that cost something shows the story on the board as
+    // played; a sound one shows its key idea (the coach's marks). Either way
+    // "off" hides it all, and a rule chip's ◈ brings up that rule's marks.
+    return betterArrow ? story(betterArrow) : autoGfxRule?.graphics
+  }, [gfx, altArrow, engineArrow, betterArrow, results, selectedPly, autoGfxRule, moves])
 
   // Eval (White's perspective) after the current move: sweep result first,
   // falling back to the per-move engine check when the sweep hasn't reached it.
