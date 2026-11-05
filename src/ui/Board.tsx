@@ -26,30 +26,52 @@ function squareCenter(sq: string, orientation: Orientation): { x: number; y: num
   return orientation === 'b' ? { x: 7 - f + 0.5, y: r - 1 + 0.5 } : { x: f + 0.5, y: 8 - r + 0.5 }
 }
 
-/** Shaft + head geometry for one arrow; null when the squares are junk. */
+// Arrow proportions, in squares (lichess-like: a slim shaft under a broad,
+// unmistakable head whose tip stops just short of the target's centre).
+const SHAFT_INSET = 0.18 // shaft starts this far off the origin centre
+const HEAD_LEN = 0.44
+const HEAD_HALF = 0.3
+const TIP_INSET = 0.1
+
+/**
+ * Geometry for one arrow: the shaft as a path (bent into an L for a knight's
+ * jump, the way the piece actually travels) and the head as a triangle along
+ * the last leg. `origin` is where the draw-in animation grows from. Null when
+ * the squares are junk.
+ */
 function arrowShape(from: string, to: string, orientation: Orientation) {
   const p1 = squareCenter(from, orientation)
   const p2 = squareCenter(to, orientation)
   if (!p1 || !p2) return null
-  const dx = p2.x - p1.x
-  const dy = p2.y - p1.y
-  const len = Math.hypot(dx, dy)
-  if (len < 0.5) return null
-  const ux = dx / len
-  const uy = dy / len
-  const head = 0.38 // arrowhead length
-  const halfW = 0.2 // arrowhead half-width
-  const start = { x: p1.x + ux * 0.3, y: p1.y + uy * 0.3 } // keep the piece visible
-  const base = { x: p2.x - ux * head, y: p2.y - uy * head }
-  const px = -uy
-  const py = ux
+  const adx = Math.abs(p2.x - p1.x)
+  const ady = Math.abs(p2.y - p1.y)
+  if (Math.hypot(adx, ady) < 0.5) return null
+  // knight jump: run the long leg first, then turn onto the target
+  const corner =
+    adx * ady === 2 ? (adx > ady ? { x: p2.x, y: p1.y } : { x: p1.x, y: p2.y }) : null
+  const unit = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    return { x: (b.x - a.x) / len, y: (b.y - a.y) / len }
+  }
+  const first = unit(p1, corner ?? p2)
+  const last = unit(corner ?? p1, p2)
+  const start = { x: p1.x + first.x * SHAFT_INSET, y: p1.y + first.y * SHAFT_INSET }
+  const tip = { x: p2.x - last.x * TIP_INSET, y: p2.y - last.y * TIP_INSET }
+  // the shaft ends a little INSIDE the head so no seam shows at the join
+  const base = { x: tip.x - last.x * HEAD_LEN, y: tip.y - last.y * HEAD_LEN }
+  const shaftEnd = { x: base.x + last.x * 0.06, y: base.y + last.y * 0.06 }
+  const f = (n: number) => +n.toFixed(3)
+  const pt = (p: { x: number; y: number }) => `${f(p.x)},${f(p.y)}`
   return {
-    line: { x1: start.x, y1: start.y, x2: base.x, y2: base.y },
+    shaft: corner
+      ? `M${pt(start)} L${pt(corner)} L${pt(shaftEnd)}`
+      : `M${pt(start)} L${pt(shaftEnd)}`,
     head: [
-      `${p2.x},${p2.y}`,
-      `${base.x + px * halfW},${base.y + py * halfW}`,
-      `${base.x - px * halfW},${base.y - py * halfW}`,
+      pt(tip),
+      pt({ x: base.x - last.y * HEAD_HALF, y: base.y + last.x * HEAD_HALF }),
+      pt({ x: base.x + last.y * HEAD_HALF, y: base.y - last.x * HEAD_HALF }),
     ].join(' '),
+    origin: start,
   }
 }
 
@@ -101,7 +123,13 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
 
   const ordered = orientation === 'b' ? [...cells].reverse() : cells
   const tints = tintMap(annotations)
-  const arrows = (annotations?.arrows ?? []).filter((a) => a && ANNO_COLORS.has(a.color))
+  // de-duplicated, so each arrow's key is simply what it shows
+  const arrows = (annotations?.arrows ?? []).filter(
+    (a, i, all) =>
+      a &&
+      ANNO_COLORS.has(a.color) &&
+      all.findIndex((b) => b && b.from === a.from && b.to === a.to && b.color === a.color) === i,
+  )
   // (arrows and square tints render only after the glide lands — see below)
 
   // Tap/drag interaction (drill mode): tap a piece to select it (legal
@@ -374,12 +402,19 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
           })()}
         {!active && arrows.length > 0 && (
           <svg className="board-arrows" viewBox="0 0 8 8" aria-hidden="true">
-            {arrows.map((a, i) => {
+            {arrows.map((a) => {
               const shape = arrowShape(a.from, a.to, orientation)
               if (!shape) return null
+              // keyed by WHAT it shows: an arrow that stays put across a
+              // re-render keeps its element (no replayed animation), while a
+              // new one mounts fresh and draws in from its origin square
               return (
-                <g key={i} className={'ar-' + a.color}>
-                  <line {...shape.line} />
+                <g
+                  key={`${a.from}${a.to}${a.color}${orientation}`}
+                  className={'ar-' + a.color}
+                  style={{ transformOrigin: `${shape.origin.x}px ${shape.origin.y}px` }}
+                >
+                  <path d={shape.shaft} />
                   <polygon points={shape.head} />
                 </g>
               )
