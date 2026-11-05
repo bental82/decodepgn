@@ -80,7 +80,8 @@ When the deployment has the games database (below), whole-game analysis runs
 **in the cloud instead of the browser**: tapping “Analyse” queues a job (stored
 inside the game’s row — no extra schema) and `/api/analyze-run` works through
 it in batches — Stockfish (the same lite WASM build, running in Node) plus the
-Claude tiers — merging results into the row as they land. The phone can lock,
+Claude tiers, with the engine checking the next batch while Claude writes the
+current one — merging results into the row as they land. The phone can lock,
 the tab can close: the run keeps going, chaining fresh invocations of itself
 when it nears the serverless time limit, and any stalled chain is re-kicked by
 the app’s status polls (stale heartbeat). The app just streams the results in

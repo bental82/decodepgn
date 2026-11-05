@@ -9,7 +9,14 @@
 // This module is server-only. It must never be imported by browser code.
 
 import { parsePgn, toGameMoves, toTargets } from '../game.js'
-import { coveredRuleIds, isStudied, type Focus, type MoveResult, type ParsedMove } from '../shared/types.js'
+import {
+  coveredRuleIds,
+  isStudied,
+  type EngineEval,
+  type Focus,
+  type MoveResult,
+  type ParsedMove,
+} from '../shared/types.js'
 import { runAnalyze, runOverview, hasLiteKey } from './analyze.js'
 import { gameAccuracy } from '../shared/accuracy.js'
 import { getCloudGame, putCloudGame, getJobRow, listActiveJobRows, GamesError } from './games.js'
@@ -229,22 +236,43 @@ async function claimNext(runnerId: string): Promise<GameData | null> {
   return null
 }
 
-async function analyzeBatch(
+type EngineChecks = Map<number, EngineEval>
+
+/**
+ * Stockfish checks for one batch, ply → eval. Best-effort, like the checks
+ * always were: with the engine unavailable or an evaluation failing, the
+ * move is analysed without one (neither call below ever throws). `stop`
+ * ends a look-ahead early once its run has moved on, between moves.
+ */
+async function engineChecks(
   moves: ParsedMove[],
   focus: Focus,
   batch: number[],
   fresh: boolean,
+  stop: () => boolean = () => false,
+): Promise<EngineChecks> {
+  const out: EngineChecks = new Map()
+  if (!(await engineAvailable())) return out
+  for (const ply of batch) {
+    if (stop()) break
+    const pm = moves[ply]
+    if (!pm) continue
+    const ev = await evaluateMoveServer(pm, { fresh, quick: !isStudied(pm.color, focus) })
+    if (ev) out.set(ply, ev)
+  }
+  return out
+}
+
+async function analyzeBatch(
+  moves: ParsedMove[],
+  focus: Focus,
+  batch: number[],
+  checks: EngineChecks,
   known: Record<number, MoveResult> | undefined,
 ): Promise<MoveResult[]> {
   const targets = toTargets(moves, batch)
-  const engineOk = await engineAvailable()
   for (const t of targets) {
-    const pm = moves[t.ply]
-    if (!pm || !engineOk) continue
-    const ev = await evaluateMoveServer(pm, {
-      fresh,
-      quick: !isStudied(pm.color, focus),
-    })
+    const ev = checks.get(t.ply)
     if (ev) t.engine = ev
   }
   const req = {
@@ -389,8 +417,28 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
     let pending = [...(job.pending ?? [])]
     let failures = 0
     let lost = false
+    // Stockfish works one batch AHEAD: while Claude writes batch N (a network
+    // wait of several seconds), the engine runs batch N+1's checks. A search
+    // yields to the event loop every few ms, so the in-flight request is not
+    // held up. Checks are memoised per batch, so a retried batch reuses its
+    // own instead of searching again; `stopped` halts a look-ahead once this
+    // run moves on (deadline, job lost or failed).
+    let stopped = false
+    const checksByBatch = new Map<string, Promise<EngineChecks>>()
+    const checksFor = (plies: number[]): Promise<EngineChecks> => {
+      const id = plies.join(',')
+      let checks = checksByBatch.get(id)
+      if (!checks) {
+        checks = engineChecks(moves, claimed.focus, plies, job.force, () => stopped).catch(
+          () => new Map(),
+        )
+        checksByBatch.set(id, checks)
+      }
+      return checks
+    }
     while (pending.length > 0) {
       if (cutoff()) {
+        stopped = true
         // chain: release first, or the successor can't claim what we drop
         await releaseJob(claimed.key, runnerId).catch(() => {})
         return true
@@ -408,7 +456,12 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
       ).catch(() => {})
       let after: AnalysisJob | null | 'lost' = null
       try {
-        const results = await analyzeBatch(moves, claimed.focus, batch, job.force, fresh.results)
+        const checks = await checksFor(batch)
+        // start the next batch's engine work now, before this batch's Claude
+        // call — it runs while that request is out
+        const next = pending.slice(BATCH, BATCH * 2)
+        if (next.length > 0) void checksFor(next)
+        const results = await analyzeBatch(moves, claimed.focus, batch, checks, fresh.results)
         // Final batch: generate the game overview now and land it in the same
         // write as the 'done' transition — the client's poll then sees a
         // complete review the moment the job finishes. Skipped when a
@@ -429,6 +482,7 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
         continue // retry the same batch (a lost merge just re-runs it)
       }
       failures = 0
+      checksByBatch.delete(batch.join(','))
       if (after === 'lost') {
         lost = true // game deleted or job taken over — stop quietly
         break
@@ -436,6 +490,8 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
       pending = [...(after.pending ?? [])]
       if (after.status !== 'running') break
     }
+    // done, failed or lost: any look-ahead still running is no longer wanted
+    stopped = true
     if (lost) continue
   }
   return true
