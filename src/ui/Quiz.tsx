@@ -8,6 +8,7 @@ import type { BoardAnnotations } from '../shared/types'
 import type { QuizProps } from './contract'
 import type { QuizPosition } from '../lib/store'
 import { winPct } from '../shared/accuracy'
+import { whyCantMove } from './moveHints'
 
 // A try this close to the engine's best (in centipawns) also solves the
 // position — several moves are often equally strong, and demanding the
@@ -451,6 +452,10 @@ export default function Quiz({
                   color: move.color,
                   targets,
                   onMove: (from, to) => void attempt(from, to),
+                  onNoMove: (sq, held) => {
+                    const why = whyCantMove(move.fenBefore, sq, held)
+                    if (why) flash('info', why)
+                  },
                 }
               : undefined
           }
@@ -458,7 +463,7 @@ export default function Quiz({
             toast ? (
               <div
                 key={toast.id}
-                className={'quiz-toast t-' + toast.kind}
+                className={'board-toast t-' + toast.kind}
                 role="status"
                 aria-live="polite"
               >

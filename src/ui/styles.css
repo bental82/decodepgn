@@ -728,7 +728,7 @@ select { border: 1px solid var(--line); }
 /* the quiz's status, ON the board: on a phone the board fills the screen and
    text under it is out of sight. Over the far (opponent's) edge, so the
    player's own pieces stay in view; taps pass through to the squares. */
-.quiz-toast {
+.board-toast {
   position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 8;
   width: max-content; max-width: calc(100% - 24px);
   display: flex; align-items: center; justify-content: center; gap: 9px;
@@ -737,9 +737,9 @@ select { border: 1px solid var(--line); }
   font-size: 14px; font-weight: 600; line-height: 1.35; text-align: center; text-wrap: balance;
   pointer-events: none; animation: toast-in 180ms ease-out both;
 }
-.quiz-toast .spinner { flex: none; }
-.quiz-toast.t-good { border-color: rgba(132, 176, 106, 0.7); color: var(--good-text); }
-.quiz-toast.t-bad { border-color: rgba(202, 106, 87, 0.7); color: #f2b6a8; }
+.board-toast .spinner { flex: none; }
+.board-toast.t-good { border-color: rgba(132, 176, 106, 0.7); color: var(--good-text); }
+.board-toast.t-bad { border-color: rgba(202, 106, 87, 0.7); color: #f2b6a8; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .quiz-prompt { font-size: 16px; margin: 6px 0 14px; }
 .quiz-tools { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }

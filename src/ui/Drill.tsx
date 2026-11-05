@@ -5,6 +5,7 @@ import Icon from './Icon'
 import type { BoardAnnotations } from '../shared/types'
 import RuleText from './RuleText'
 import { RULES_BY_ID } from '../shared/rules'
+import { whyCantMove } from './moveHints'
 import type { Color } from '../shared/types'
 
 /** One mistake position mined from the saved analyses (built in App). */
@@ -123,6 +124,17 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
   let liveIdx = idx
   while (liveIdx < queue.length && !byKey.get(queue[liveIdx])) liveIdx++
   const item = liveIdx < queue.length ? byKey.get(queue[liveIdx]) : undefined
+
+  // Why a tap did nothing (a piece with no legal moves, an opponent's piece),
+  // said on the board itself; fades after a few seconds, never carries over.
+  const [notice, setNotice] = useState<{ text: string; id: number } | null>(null)
+  const noticeSeq = useRef(0)
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice((cur) => (cur && cur.id === notice.id ? null : cur)), 4500)
+    return () => clearTimeout(t)
+  }, [notice])
+  useEffect(() => setNotice(null), [item?.key])
 
   // Verbose legal moves for the current puzzle: powers tap/drag input
   // (from->to squares) and the reveal arrows.
@@ -289,8 +301,19 @@ export default function Drill({ items, onOpenRule, onOpenGame, onExit }: Props) 
                     const san = sanFor(from, to)
                     if (san) answer(san)
                   },
+                  onNoMove: (sq, held) => {
+                    const why = whyCantMove(item.fen, sq, held)
+                    if (why) setNotice({ text: why, id: ++noticeSeq.current })
+                  },
                 }
               : undefined
+          }
+          overlay={
+            notice && chosen === null ? (
+              <div key={notice.id} className="board-toast t-info" role="status" aria-live="polite">
+                <span>{notice.text}</span>
+              </div>
+            ) : null
           }
         />
       </div>

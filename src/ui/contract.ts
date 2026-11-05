@@ -40,6 +40,9 @@ export interface BoardProps {
     /** legal destinations per from-square (precomputed by the caller) */
     targets: Record<string, string[]>
     onMove: (from: string, to: string) => void
+    /** a press that neither moved nor picked up a piece (a piece with no legal
+        moves, an opponent's piece…) — `selected` is what was held before it */
+    onNoMove?: (square: string, selected: string | null) => void
   }
   /** drawn over the squares, positioned against the board itself (the quiz's
       on-board status) */

@@ -182,6 +182,9 @@ export default function Board({
         clearInteraction()
       } else if ((interact.targets[cur] ?? []).length) {
         setSel(sel === cur ? null : cur)
+      } else {
+        setSel(null)
+        interact.onNoMove?.(cur, sel)
       }
       return
     }
@@ -220,7 +223,10 @@ export default function Board({
       pressRef.current = { from: sq, startX: e.clientX, startY: e.clientY, dragging: false }
       boardRef.current?.setPointerCapture(e.pointerId)
     } else {
+      // nothing to pick up here — let the caller say why (silence reads as
+      // "this piece can't be chosen")
       setSel(null)
+      interact.onNoMove?.(sq, sel)
     }
   }
   const onPointerMove = (e: React.PointerEvent) => {
