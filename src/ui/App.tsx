@@ -6,7 +6,7 @@ import {
   clearEngineCache,
   engineAvailable,
   evalAfterMoveWhite,
-  evalCandidateMove,
+  gradeCandidate,
   evaluateMove,
 } from '../lib/engine'
 import {
@@ -1304,11 +1304,14 @@ export default function App() {
     sweepRef.current = key
     const gen = genRef.current
     const known = forced ? new Set<number>() : new Set(Object.keys(evals).map(Number))
+    const missing = moves.filter((m) => !known.has(m.ply))
+    // Nothing to fill (a server-run game arrives with every eval saved):
+    // don't start the browser engine at all — on a phone it is a ~79MB load.
+    if (missing.length === 0) return
     void (async () => {
       if (!(await engineAvailable())) return
-      for (const m of moves) {
+      for (const m of missing) {
         if (genRef.current !== gen) return
-        if (known.has(m.ply)) continue
         const cp = await evalAfterMoveWhite(m.fenAfter, m.color)
         if (cp === null || genRef.current !== gen) continue
         setEvals((prev) => (prev[m.ply] !== undefined ? prev : { ...prev, [m.ply]: cp }))
@@ -2755,7 +2758,7 @@ export default function App() {
                 setQuizSaved((q) => (q && storeRef.current?.key === key ? update(q) : q)))(
                 overviewGameKey,
               )}
-              gradeMove={evalCandidateMove}
+              gradeMove={gradeCandidate}
               explain={explainQuiz}
               onOpenRule={openRule}
               onJump={(ply) => {

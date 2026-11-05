@@ -200,6 +200,28 @@ export function evalAfterFromCache(fenAfter: string, mover: 'w' | 'b'): number |
   return mover === 'w' ? -sc.cp : sc.cp
 }
 
+/**
+ * Quiz grading: the deep eval of one candidate move, in centipawns from the
+ * MOVER's perspective — the same build and budget as the stored per-move
+ * checks, so a try's loss compares like for like (and a phone never has to
+ * download an engine to play the quiz). Null when the engine is unavailable
+ * or the move doesn't parse.
+ */
+export async function evalCandidateServer(fenBefore: string, san: string): Promise<number | null> {
+  if (!(await engineAvailable())) return null
+  try {
+    const g = new Chess(fenBefore)
+    const mv = g.move(san, { strict: false })
+    if (!mv) return null
+    if (g.isCheckmate()) return MATE_CP // the candidate delivers mate
+    if (g.isDraw()) return 0
+    const sc = await scorePosition(g.fen(), DEEP_MOVETIME_MS) // opponent to move
+    return -sc.cp
+  } catch {
+    return null
+  }
+}
+
 /** Port of the client's evaluateMove (src/lib/engine.ts): best move, evals of
     best vs played, centipawn loss. Null when the engine is unavailable or an
     evaluation fails. */

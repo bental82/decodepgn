@@ -47,16 +47,18 @@ let initFailures = 0
 let candidateIdx = 0
 const MAX_INIT_FAILURES = 3 // per candidate build
 let engineId: string | null = null
-// Single worker — searches are serialized through a two-lane queue. QUICK
+// Single worker — searches are serialized through a lane queue. QUICK
 // requests (the eval bar sweep) take the fast lane and jump ahead of queued
 // DEEP per-move checks: the user should see the Stockfish score of every
 // position within seconds of loading a game, not after the whole analysis.
+// URGENT (a quiz try someone is waiting on) jumps ahead of both.
 let engineBusyRunning = false
+const urgentLane: Array<() => Promise<void>> = []
 const quickLane: Array<() => Promise<void>> = []
 const deepLane: Array<() => Promise<void>> = []
 function pumpEngineQueue() {
   if (engineBusyRunning) return
-  const next = quickLane.shift() ?? deepLane.shift()
+  const next = urgentLane.shift() ?? quickLane.shift() ?? deepLane.shift()
   if (!next) return
   engineBusyRunning = true
   void next().finally(() => {
@@ -141,7 +143,11 @@ export async function engineAvailable(): Promise<boolean> {
   }
 }
 
-function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<ScoredPosition> {
+function scorePosition(
+  fen: string,
+  movetime = QUICK_MOVETIME_MS,
+  urgent = false,
+): Promise<ScoredPosition> {
   const hit = scoreCache.get(fen)
   // a cached deep score serves quick requests, never the other way round
   if (hit && hit.movetime >= movetime) return Promise.resolve(hit)
@@ -213,7 +219,7 @@ function scorePosition(fen: string, movetime = QUICK_MOVETIME_MS): Promise<Score
     })
   }
   return new Promise<ScoredPosition>((resolve, reject) => {
-    const lane = movetime <= QUICK_MOVETIME_MS ? quickLane : deepLane
+    const lane = urgent ? urgentLane : movetime <= QUICK_MOVETIME_MS ? quickLane : deepLane
     lane.push(() => run().then(resolve, reject))
     pumpEngineQueue()
   })
@@ -259,11 +265,40 @@ export async function evalCandidateMove(fenBefore: string, san: string): Promise
     if (!mv) return null
     if (g.isCheckmate()) return MATE_CP // the candidate delivers mate
     if (g.isDraw()) return 0
-    const sc = await scorePosition(g.fen(), DEEP_MOVETIME_MS) // opponent to move
+    const sc = await scorePosition(g.fen(), DEEP_MOVETIME_MS, true) // opponent to move
     return -sc.cp
   } catch {
     return null
   }
+}
+
+/**
+ * Grades a quiz try, server first: the deployment's own Stockfish is the same
+ * build and budget as the stored checks, and needs nothing downloaded — the
+ * browser engine is a ~79MB first load, which on a phone could leave a try
+ * "checking" for minutes. Falls back to the browser engine (no server, e.g.
+ * local dev), and gives up after a while rather than spinning forever.
+ * Centipawns from the mover's perspective; null when nothing could grade it.
+ */
+export async function gradeCandidate(fenBefore: string, san: string): Promise<number | null> {
+  try {
+    const r = await fetch('/api/analyze-run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ grade: { fen: fenBefore, san } }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (r.ok) {
+      const d = (await r.json()) as { cp?: unknown }
+      if (typeof d.cp === 'number' && Number.isFinite(d.cp)) return d.cp
+    }
+  } catch {
+    /* no server engine reachable — grade here instead */
+  }
+  return Promise.race([
+    evalCandidateMove(fenBefore, san),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 30_000)),
+  ])
 }
 
 /** Drop every cached score. Explicit re-analysis calls this path (via

@@ -26,13 +26,13 @@ objectively best moves don’t get scolded for “breaking” a rule of thumb.
   better move as an arrow on the position where it applied. A progress strip shows which of your moves are
   analysed, and an **Ask** box answers free-form questions about the current
   move — answers can point at the board too, on a mini board in the thread.
-- **Quiz** — two kinds. A **rules quiz**: multiple-choice questions generated
-  from this game and the 120 rules. And a **best-move quiz**: positions from
-  your own game where you're asked for the strongest move — built around the
-  moments your move wasn't ideal (per Stockfish and the analysis), with the
-  game move among the options, an explanation of why the better move wins,
-  and the correct/chosen moves drawn as arrows after you answer. Both give
-  instant feedback and a running score.
+- **Quiz** — guess the move: your game's costliest moments (per Stockfish),
+  replayed on the board. Play the move you think is strongest; each try is
+  graded by Stockfish on the server (the browser engine is the fallback), and
+  the verdict shows **on the board** — a wrong try slides back and stays as a
+  red arrow. A hint marks the piece to move, a reveal draws the answer, and
+  every finished position ends with coaching on why the game move fell short
+  and why the best move works.
 - **By rule** — a **game-takeaways** panel (your most-broken and most-followed
   principles, plus a soundness tally) over a map of where each rule came up; every
   move chip jumps to that position on the board.
@@ -220,7 +220,9 @@ The engine check uses **[Stockfish](https://stockfishchess.org/)** (WASM builds
 from the [stockfish npm package](https://www.npmjs.com/package/stockfish)),
 licensed under the
 [GPL v3](https://github.com/official-stockfish/Stockfish/blob/master/Copying.txt).
-It runs entirely in the user’s browser. Two builds are shipped: the
+It runs in the user’s browser — loaded only when something needs it — and,
+for server-side analysis runs and quiz grading, in the serverless function
+(the lite build). Two browser builds are shipped: the
 **full-strength** single-threaded build (~79MB, downloaded once and cached —
 copied into `public/engine/` from the npm package by
 [`scripts/engine-assets.mjs`](scripts/engine-assets.mjs) on install/build, not

@@ -41,6 +41,9 @@ export interface BoardProps {
     targets: Record<string, string[]>
     onMove: (from: string, to: string) => void
   }
+  /** drawn over the squares, positioned against the board itself (the quiz's
+      on-board status) */
+  overlay?: React.ReactNode
 }
 
 /** What the sticky board is currently illustrating for the selected move. */

@@ -98,7 +98,16 @@ interface Slide {
   go: boolean
 }
 
-export default function Board({ fen, orientation, lastMove, caption, annotations, anim, interact }: BoardProps) {
+export default function Board({
+  fen,
+  orientation,
+  lastMove,
+  caption,
+  annotations,
+  anim,
+  interact,
+  overlay,
+}: BoardProps) {
   const placement = fen.split(' ')[0]
   const rows = placement.split('/')
 
@@ -421,6 +430,7 @@ export default function Board({ fen, orientation, lastMove, caption, annotations
             })}
           </svg>
         )}
+        {overlay}
       </div>
     </div>
   )

@@ -5,6 +5,9 @@
 //     brand-new game that has no cloud row yet can be enqueued.
 //   POST {work: true}  → the worker: claims jobs and processes batches until
 //     near the time limit, then chains a fresh invocation of itself.
+//   POST {grade: {fen, san}}  → quiz grading: the deep eval of one candidate
+//     move on this function's Stockfish ({cp}, mover's view). Needs no
+//     database, and spares a phone the big browser-engine download.
 //   GET ?key=…  → the job/analysed state for one game (the client's poll).
 //     Also re-kicks a worker when a job looks stalled, so a dead chain
 //     self-heals off the polls alone.
@@ -107,6 +110,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'Method not allowed' })
+      return
+    }
+    const grade = (req.body as { grade?: { fen?: unknown; san?: unknown } } | undefined)?.grade
+    if (grade) {
+      if (
+        typeof grade.fen !== 'string' ||
+        typeof grade.san !== 'string' ||
+        grade.fen.length > 100 ||
+        grade.san.length > 12
+      ) {
+        res.status(400).json({ error: 'Malformed grade request.' })
+        return
+      }
+      const engine = await import('../src/server/engine.js')
+      res.status(200).json({ cp: await engine.evalCandidateServer(grade.fen, grade.san) })
       return
     }
     if (!store.cloudConfigured()) {

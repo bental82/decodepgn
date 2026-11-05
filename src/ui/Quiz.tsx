@@ -27,6 +27,30 @@ interface Verdict {
   cpLoss?: number
 }
 
+/** The status shown ON the board — on a phone the board fills the screen and
+    anything printed under it is out of sight, so a try must answer here. */
+interface Toast {
+  kind: 'busy' | 'good' | 'bad' | 'info'
+  text: string
+  id: number
+}
+/** A try on the board: the one being graded, or the last one rejected. */
+interface BoardTry {
+  ply: number
+  from: string
+  to: string
+}
+
+/** The position after `san`, for showing a try on the board while it's graded. */
+function fenAfter(fen: string, san: string): string | null {
+  try {
+    const g = new Chess(fen)
+    return g.move(san, { strict: false }) ? g.fen() : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Guess the move: the game's costliest engine-flagged moments, answered ON
  * THE BOARD. Wrong tries get unlimited retries (each graded by Stockfish), a
@@ -61,6 +85,20 @@ export default function Quiz({
   // window.confirm, so the dialog matches the rest of the app).
   const [confirmRestart, setConfirmRestart] = useState(false)
   const fetchingRef = useRef<Set<number>>(new Set())
+  // the try being graded (drawn on the board at once, so a tap visibly
+  // lands) and the last rejected one (slides back, kept as a red arrow)
+  const [grading, setGrading] = useState<BoardTry | null>(null)
+  const [lastMiss, setLastMiss] = useState<BoardTry | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const toastSeq = useRef(0)
+  const flash = (kind: Toast['kind'], text: string) => setToast({ kind, text, id: ++toastSeq.current })
+  // verdicts fade after a few seconds (the full text stays below the board);
+  // the "checking" status stays until its grade lands
+  useEffect(() => {
+    if (!toast || toast.kind === 'busy') return
+    const t = setTimeout(() => setToast((cur) => (cur && cur.id === toast.id ? null : cur)), 4500)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const pos = saved ? saved.positions[saved.current] : null
   const move = pos ? moves[pos.ply] : undefined
@@ -71,6 +109,8 @@ export default function Quiz({
   // feedback never carries over to a different position
   useEffect(() => {
     setVerdict(null)
+    setLastMiss(null)
+    setToast(null)
   }, [pos?.ply])
   // the ply on screen right now, readable after an await (stale closures)
   const curPlyRef = useRef<number | null>(null)
@@ -262,7 +302,9 @@ export default function Quiz({
     if (!san) return
     const ply = pos.ply
     setVerdict(null)
+    setLastMiss(null)
     if (plain(san) === plain(engine.bestSan)) {
+      flash('good', `✓ ${san} — that's the move! Coaching below.`)
       finish(san, 0)
       return
     }
@@ -273,17 +315,27 @@ export default function Quiz({
         attempts: [...p.attempts, { san, cpLoss: engine.cpLoss, isGameMove: true }],
       }))
       setVerdict({ kind: 'game', san, cpLoss: engine.cpLoss })
+      setLastMiss({ ply, from, to })
+      flash('bad', `${san} is the move from your game — it cost ${lossText(engine.cpLoss)}. Try again.`)
       return
     }
     setGradingPly(ply)
+    setGrading({ ply, from, to })
+    flash('busy', `Checking ${san} with Stockfish…`)
     let cp: number | null = null
     try {
       cp = await gradeMove(move.fenBefore, san)
     } finally {
       setGradingPly(null)
+      setGrading(null)
+      // only the "checking" status goes — a hint shown meanwhile on another
+      // position stays
+      setToast((cur) => (cur?.kind === 'busy' ? null : cur))
     }
+    const onScreen = curPlyRef.current === ply
     const cpLoss = cp === null ? undefined : Math.max(0, engine.evalBest - cp)
     if (cpLoss !== undefined && cpLoss <= GOOD_ENOUGH_CP) {
+      if (onScreen) flash('good', `✓ ${san} — as strong as the engine's move! Coaching below.`)
       finish(san, cpLoss)
       return
     }
@@ -292,15 +344,27 @@ export default function Quiz({
       attempts: [...p.attempts, { san, ...(cpLoss !== undefined ? { cpLoss } : {}) }],
     }))
     // the transient feedback only belongs on the position that was graded
-    if (curPlyRef.current === ply) {
+    if (onScreen) {
       setVerdict({ kind: cpLoss === undefined ? 'unchecked' : 'wrong', san, cpLoss })
+      setLastMiss({ ply, from, to })
+      flash(
+        cpLoss === undefined ? 'info' : 'bad',
+        cpLoss === undefined
+          ? `${san} isn't the engine's move (it couldn't be graded just now). Try again.`
+          : `✗ ${san} — ${lossText(cpLoss)} below the best move. Try again.`,
+      )
     }
   }
 
-  const useHint = () => patchPos(pos.ply, (p) => ({ ...p, hintUsed: true }))
+  const useHint = () => {
+    patchPos(pos.ply, (p) => ({ ...p, hintUsed: true }))
+    flash('info', 'Hint: the yellow square holds the piece to move.')
+  }
   const reveal = () => {
     patchPos(pos.ply, (p) => ({ ...p, revealed: true }))
     setVerdict(null)
+    setLastMiss(null)
+    flash('info', `The answer: ${engine.bestSan} (green arrow). Coaching below.`)
     void fetchExplain({ ...pos, revealed: true })
   }
 
@@ -321,10 +385,22 @@ export default function Quiz({
       if (s) arrows.push({ from: s.from, to: s.to, color: 'blue' })
     }
     if (arrows.length) annotations = { arrows }
-  } else if (pos.hintUsed) {
-    const best = squaresOf(engine.bestSan)
-    if (best) annotations = { squares: [{ square: best.from, color: 'yellow' }] }
+  } else if (!grading) {
+    // the last rejected try stays as a red arrow until the next one
+    const miss = lastMiss && lastMiss.ply === pos.ply ? lastMiss : null
+    const best = pos.hintUsed ? squaresOf(engine.bestSan) : null
+    if (miss || best) {
+      annotations = {
+        ...(best ? { squares: [{ square: best.from, color: 'yellow' as const }] } : {}),
+        ...(miss ? { arrows: [{ from: miss.from, to: miss.to, color: 'red' as const }] } : {}),
+      }
+    }
   }
+  // While a try is being graded the board shows it played (a tap visibly
+  // lands); a rejected try slides back to where it came from.
+  const shownTry = grading && grading.ply === pos.ply ? grading : null
+  const shownFen = (shownTry && fenAfter(move.fenBefore, sanFor(shownTry.from, shownTry.to) ?? '')) || move.fenBefore
+  const missBack = !shownTry && lastMiss && lastMiss.ply === pos.ply ? lastMiss : null
 
   // Winning-chances context, from the stored engine numbers (mover's view).
   const chancesBest = Math.round(winPct(engine.evalBest))
@@ -359,9 +435,11 @@ export default function Quiz({
 
       <div className="quiz-board">
         <Board
-          fen={move.fenBefore}
+          fen={shownFen}
           orientation={move.color}
           annotations={annotations}
+          lastMove={shownTry ? { from: shownTry.from, to: shownTry.to } : undefined}
+          anim={missBack ? { from: missBack.to, to: missBack.from } : undefined}
           caption={
             finished
               ? `Move ${move.moveNumber}${move.color === 'w' ? '.' : '…'} — the moment from your game`
@@ -375,6 +453,19 @@ export default function Quiz({
                   onMove: (from, to) => void attempt(from, to),
                 }
               : undefined
+          }
+          overlay={
+            toast ? (
+              <div
+                key={toast.id}
+                className={'quiz-toast t-' + toast.kind}
+                role="status"
+                aria-live="polite"
+              >
+                {toast.kind === 'busy' ? <span className="spinner" /> : null}
+                <span>{toast.text}</span>
+              </div>
+            ) : null
           }
         />
       </div>
