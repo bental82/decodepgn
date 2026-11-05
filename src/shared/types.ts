@@ -9,6 +9,33 @@ export function isStudied(color: Color, focus: Focus): boolean {
   return focus === 'both' || color === focus
 }
 
+/**
+ * Rules the game's coaching has already explained: cited on at least `min`
+ * other analysed moves of the studied side. The analysis prompt names them
+ * as known so the coach stops re-explaining one principle move after move.
+ * Only concise-format results count (they carry a `comment`) — a forced
+ * re-analysis of an older game must not treat its old text as already said.
+ * Most-cited first.
+ */
+export function coveredRuleIds(
+  results: Record<number, MoveResult> | undefined,
+  studiedPly: (ply: number) => boolean,
+  exclude: Iterable<number>,
+  min = 2,
+): number[] {
+  const skip = new Set(exclude)
+  const counts = new Map<number, number>()
+  for (const r of Object.values(results ?? {})) {
+    if (!r?.comment || skip.has(r.ply) || !studiedPly(r.ply)) continue
+    for (const h of r.rules ?? []) counts.set(h.id, (counts.get(h.id) ?? 0) + 1)
+  }
+  return [...counts]
+    .filter(([, n]) => n >= min)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([id]) => id)
+}
+
 // The model very occasionally leaks its tool-call syntax into a prose field —
 // the text ends with something like:
 //   "…every move (Rule 62). </parameter> <parameter name=\"graphics\">{…}"
@@ -68,6 +95,9 @@ export interface AnalyzeRequest {
   focus: Focus
   game: GameMove[]
   targets: AnalyzeTarget[]
+  /** rule ids already explained on other moves of this game — the coach
+      names them without re-explaining (cuts the repetition across moves) */
+  covered?: number[]
   /** optional bring-your-own Anthropic API key (used if the server has none). */
   apiKey?: string
 }
@@ -102,7 +132,9 @@ export type Soundness = 'sound' | 'speculative' | 'dubious'
 export interface RuleHit {
   id: number // rule number (1..RULE_COUNT)
   status: RuleStatus
-  why: string
+  /** one sentence per rule — older analyses only; the move's comment now
+      carries the explanation and rules show as chips */
+  why?: string
   /** 1-5: how central this rule is to THIS move (5 = the key idea). Results are sorted by it. */
   relevance?: number
   /** squares/arrows that show this rule's point on the board */
@@ -112,12 +144,17 @@ export interface RuleHit {
 /** A cleaner alternative move, suggested when the played move breaks a principle. */
 export interface MoveAlternative {
   move: string // SAN, e.g. "Nf3"
-  why: string
+  /** older analyses only — the comment now says why */
+  why?: string
 }
 
 export interface MoveResult {
   ply: number
+  /** THE coaching for the move: one short paragraph. Absent on analyses
+      made before the concise format, where `lesson` carried the text. */
+  comment?: string
   rules: RuleHit[]
+  /** the one habit to take away — empty on routine moves (concise format) */
   lesson: string
   soundness?: Soundness
   alternative?: MoveAlternative | null

@@ -133,6 +133,9 @@ export interface AskBoxProps {
   label?: string
   /** when set, rule citations in answers ("#42", "rule 42") open the rule popup */
   onOpenRule?: (id: number) => void
+  /** start as a single "Ask…" button that opens the input — keeps the card
+      short until the reader actually has a question */
+  collapsible?: boolean
 }
 
 export interface RelevanceMapProps {
@@ -192,6 +195,10 @@ export function statusMeta(status: RuleStatus): StatusMeta {
       return { label: 'In play', cls: 'st-relevant', icon: '•', desc: 'This principle matters here, but the move is neutral toward it.' }
   }
 }
+
+/** Below this loss (centipawns) Stockfish approves the move: the card shows
+    no "better move" for it and the board draws no engine arrow. */
+export const ENGINE_APPROVED_CP = 30
 
 /** The four rule states, in reading order, for the legend. */
 export const STATUS_ORDER: RuleStatus[] = ['follows', 'partially', 'violates', 'relevant']

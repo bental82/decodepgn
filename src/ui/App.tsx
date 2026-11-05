@@ -36,7 +36,7 @@ import {
 import { RULE_COUNT } from '../shared/rules'
 import { gameAccuracy } from '../shared/accuracy'
 import { summarizeGame } from '../shared/meta'
-import { isStudied } from '../shared/types'
+import { coveredRuleIds, isStudied } from '../shared/types'
 import type {
   BoardAnnotations,
   Color,
@@ -48,7 +48,7 @@ import type {
   ParsedMove,
   QuizExplanation,
 } from '../shared/types'
-import { colorName } from './contract'
+import { colorName, ENGINE_APPROVED_CP } from './contract'
 import type { GfxSelection } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
@@ -75,7 +75,7 @@ const META_KEY = 'decodepgn.meta.v1'
 
 /** An empty placeholder recorded when a model skipped a ply — it renders as a
     blank card, so the repair paths treat it as "not analysed yet". */
-const isEmptyResult = (r?: MoveResult) => !!r && r.rules.length === 0 && !r.lesson
+const isEmptyResult = (r?: MoveResult) => !!r && r.rules.length === 0 && !r.lesson && !r.comment
 // Smooth scrolling honours the user's reduced-motion setting.
 const smoothBehavior = (): ScrollBehavior =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -450,6 +450,11 @@ export default function App() {
           focus: f,
           game: toGameMoves(mvs),
           targets: targetObjs,
+          covered: coveredRuleIds(
+            knownResults,
+            (ply) => !!mvs[ply] && isStudied(mvs[ply].color, f),
+            targets,
+          ),
           apiKey: apiKey.trim() || undefined,
         }
         // One retry: a transient stall (or a response that never finishes
@@ -1587,7 +1592,7 @@ export default function App() {
           cpLoss: r.engine?.cpLoss,
           ruleIds: r.rules.filter((h) => h.status === 'violates').map((h) => h.id),
           lesson: r.lesson,
-          why: r.alternative?.why,
+          why: r.comment || r.alternative?.why,
           label: `${g.headers.White ?? 'White'} vs ${g.headers.Black ?? 'Black'} · move ${Math.floor(r.ply / 2) + 1}`,
         })
       }
@@ -1732,15 +1737,10 @@ export default function App() {
 
   // Saved analyses from before the board-graphics feature have no graphics on
   // any rule — that's the cue to offer a one-tap full re-analysis.
-  const hasAnyGraphics = useMemo(
-    () =>
-      Object.values(results).some((r) =>
-        r.rules.some(
-          (h) => h.graphics && (h.graphics.squares?.length ?? 0) + (h.graphics.arrows?.length ?? 0) > 0,
-        ),
-      ),
-    [results],
-  )
+  // Analysed before the concise format (no move carries a comment — that
+  // includes the analyses old enough to predate board graphics): the card
+  // still reads short, but a re-analysis gets the real thing.
+  const hasConcise = useMemo(() => Object.values(results).some((r) => !!r.comment), [results])
 
   const move = moves[selectedPly]
   // Flip inverts the default (studied-side) orientation — session-only.
@@ -1766,11 +1766,13 @@ export default function App() {
   }, [results, selectedPly, moves])
 
   // Stockfish's best move resolved the same way — shown in blue so "the engine
-  // says" reads apart from the coach's green suggestion.
+  // says" reads apart from the coach's green suggestion. Only when the played
+  // move actually lost something: on an engine-approved move the arrow is
+  // clutter, drawn over a move that needed no fixing.
   const engineArrow = useMemo(() => {
     const e = results[selectedPly]?.engine
     const m = moves[selectedPly]
-    if (!e || e.isBest || !m) return null
+    if (!e || e.isBest || e.cpLoss < ENGINE_APPROVED_CP || !m) return null
     try {
       const mv = new Chess(m.fenBefore).move(e.bestSan, { strict: false })
       return mv ? { from: mv.from, to: mv.to } : null
@@ -2149,9 +2151,9 @@ export default function App() {
               Which rules apply, <em>move by move</em>
             </h1>
             <p>
-              Paste a game and pick your side. For each of your moves, a coach shows which classic
-              principles are in play — followed, mixed, or broken — with a reason, a lesson, and the
-              ideas drawn on the board.
+              Paste a game and pick your side. For each of your moves, a coach gives one short
+              paragraph on what to improve, the habit worth keeping, and the classic principles in
+              play — with the ideas drawn on the board.
             </p>
           </div>
           <PgnInput
@@ -2482,11 +2484,11 @@ export default function App() {
               {/* Only when the game is otherwise DONE: while moves are still
                   unanalysed, "Analyse remaining" is the one action on screen —
                   a second enabled re-analyse button just competes with it. */}
-              {analyzedFocus > 0 && !hasAnyGraphics && analyseRemainingCount === 0 ? (
+              {analyzedFocus > 0 && !hasConcise && analyseRemainingCount === 0 ? (
                 <div className="regen-banner">
                   <span>
-                    This analysis predates the <strong>board graphics</strong> — re-analyse to get
-                    squares and arrows with each rule.
+                    This game has the older, longer analysis — re-analyse for{' '}
+                    <strong>short, one-paragraph coaching</strong> per move.
                   </span>
                   <button
                     className="btn"
@@ -2726,6 +2728,7 @@ export default function App() {
                   label="Ask about this move"
                   placeholder="e.g. why is this move risky here?"
                   onOpenRule={openRule}
+                  collapsible
                 />
               </div>
               </div>

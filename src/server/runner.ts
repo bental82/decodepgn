@@ -9,7 +9,7 @@
 // This module is server-only. It must never be imported by browser code.
 
 import { parsePgn, toGameMoves, toTargets } from '../game.js'
-import { isStudied, type Focus, type MoveResult, type ParsedMove } from '../shared/types.js'
+import { coveredRuleIds, isStudied, type Focus, type MoveResult, type ParsedMove } from '../shared/types.js'
 import { runAnalyze, runOverview, hasLiteKey } from './analyze.js'
 import { gameAccuracy } from '../shared/accuracy.js'
 import { getCloudGame, putCloudGame, getJobRow, listActiveJobRows, GamesError } from './games.js'
@@ -112,7 +112,7 @@ const MAX_CONSECUTIVE_FAILURES = 3
 const now = () => Date.now()
 
 function isEmptyResult(r: MoveResult | undefined): boolean {
-  return !!r && (!r.rules || r.rules.length === 0) && !r.lesson
+  return !!r && (!r.rules || r.rules.length === 0) && !r.lesson && !r.comment
 }
 
 export function jobActive(job: unknown): job is AnalysisJob {
@@ -234,6 +234,7 @@ async function analyzeBatch(
   focus: Focus,
   batch: number[],
   fresh: boolean,
+  known: Record<number, MoveResult> | undefined,
 ): Promise<MoveResult[]> {
   const targets = toTargets(moves, batch)
   const engineOk = await engineAvailable()
@@ -246,7 +247,13 @@ async function analyzeBatch(
     })
     if (ev) t.engine = ev
   }
-  const req = { focus, game: toGameMoves(moves), targets }
+  const req = {
+    focus,
+    game: toGameMoves(moves),
+    targets,
+    // batches run in order, so each one sees what the earlier ones explained
+    covered: coveredRuleIds(known, (ply) => !!moves[ply] && isStudied(moves[ply].color, focus), batch),
+  }
   let resp = await runAnalyze(req).catch(async () => {
     await new Promise((r) => setTimeout(r, 2000))
     return runAnalyze(req)
@@ -401,7 +408,7 @@ export async function processJobs(deadlineAt: number): Promise<boolean> {
       ).catch(() => {})
       let after: AnalysisJob | null | 'lost' = null
       try {
-        const results = await analyzeBatch(moves, claimed.focus, batch, job.force)
+        const results = await analyzeBatch(moves, claimed.focus, batch, job.force, fresh.results)
         // Final batch: generate the game overview now and land it in the same
         // write as the 'done' transition — the client's poll then sees a
         // complete review the moment the job finishes. Skipped when a

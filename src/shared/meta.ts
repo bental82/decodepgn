@@ -70,7 +70,8 @@ export function summarizeGame(g: SummarizableGame): MetaGameSummary {
       if (r.engine.cpLoss >= 150) blunders++
       if (!meSide || (r.ply % 2 === 0 ? 'w' : 'b') === meSide) ownEvals.push(r.engine)
     }
-    if (r.lesson) lessons.push({ cp: r.engine?.cpLoss ?? 0, ply: r.ply, text: r.lesson })
+    const lessonText = r.lesson || r.comment
+    if (lessonText) lessons.push({ cp: r.engine?.cpLoss ?? 0, ply: r.ply, text: lessonText })
   }
 
   const out: MetaGameSummary = {

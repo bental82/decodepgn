@@ -1,7 +1,7 @@
 import { RULES_BY_ID } from '../shared/rules'
 import type { RuleHit } from '../shared/types'
 import type { MoveAnalysisProps } from './contract'
-import { soundnessMeta, statusMeta } from './contract'
+import { ENGINE_APPROVED_CP, soundnessMeta, statusMeta } from './contract'
 import Icon from './Icon'
 import RuleText from './RuleText'
 
@@ -11,6 +11,19 @@ function hasGraphics(h: RuleHit): boolean {
 
 const plainSan = (san: string) => san.replace(/[+#]/g, '')
 
+/** Stockfish's verdict in a few characters — the badge row stays one line. */
+function engineLabel(isBest: boolean, cpLoss: number): string {
+  if (isBest) return 'Engine’s top'
+  if (cpLoss < ENGINE_APPROVED_CP) return 'Engine-approved'
+  // mate-scale losses read as "−M", like the eval bar
+  return cpLoss >= 5000 ? 'Engine −M' : `Engine −${(cpLoss / 100).toFixed(1)}`
+}
+
+// One move's coaching, kept short on purpose: a single paragraph, the habit
+// to take away (only when there is one), the rules as chips, and the better
+// move. Analyses made before the concise format still render — their one-line
+// lesson becomes the paragraph and the old per-rule sentences fold away under
+// "Rule notes", so older games read short without re-analysing.
 export default function MoveAnalysis({
   move,
   result,
@@ -51,7 +64,7 @@ export default function MoveAnalysis({
         {head}
         <div className="loading-row">
           <span className="spinner" />
-          Asking Claude which rules apply…
+          Coaching this move…
         </div>
       </div>
     )
@@ -66,20 +79,82 @@ export default function MoveAnalysis({
   const altShown = gfx.kind === 'alt'
   const engShown = gfx.kind === 'engine'
 
-  // Stockfish's recommendation always accompanies the cleaner-move box, as
-  // long as the engine actually preferred a DIFFERENT move to the one played.
+  // The paragraph: the concise format's comment, else an older analysis's lesson.
+  const paragraph = result.comment || result.lesson
+  const keyLesson = result.comment ? result.lesson : ''
+  const rules = [...result.rules].sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
+  const legacyNotes = result.comment ? [] : rules.filter((h) => h.why)
+  const legacyAltWhy = result.comment ? undefined : result.alternative?.why
+
+  // The better move: the coach's alternative and/or Stockfish's best, shown
+  // once — Stockfish's only when the played move actually cost something
+  // (an "about equal" engine pick on an approved move is noise, not a fix).
   const alt = result.alternative
-  const engBest = eng && !eng.isBest && plainSan(eng.bestSan) !== plainSan(move.san) ? eng : null
+  const engBest =
+    eng &&
+    !eng.isBest &&
+    eng.cpLoss >= ENGINE_APPROVED_CP &&
+    plainSan(eng.bestSan) !== plainSan(move.san)
+      ? eng
+      : null
   const engSameAsAlt = !!alt && !!engBest && plainSan(alt.move) === plainSan(engBest.bestSan)
   const engGain = engBest
-    ? engBest.cpLoss >= 10
-      ? `saves ≈${(engBest.cpLoss / 100).toFixed(1)} pawns`
-      : 'about equal by eval'
+    ? engBest.cpLoss >= 5000
+      ? 'a mating line'
+      : engBest.cpLoss >= 10
+        ? `+${(engBest.cpLoss / 100).toFixed(1)}`
+        : 'about equal'
     : ''
+  const gfxToggle = (on: boolean, show: () => void, what: string) => (
+    <button
+      className={'gfx-btn icon-only' + (on ? ' on' : '')}
+      aria-pressed={on}
+      aria-label={on ? `Hide ${what} from the board` : `Show ${what} on the board`}
+      title={on ? `Hide ${what} from the board` : `Show ${what} on the board`}
+      onClick={() => (on ? onGfx({ kind: 'off' }) : show())}
+    >
+      <Icon name="board" size={13} />
+    </button>
+  )
 
   return (
     <div className="analysis">
-      {head}
+      <div className="analysis-top">
+        {head}
+        {snd || eng ? (
+          <div className="verdicts">
+            {snd ? (
+              <span
+                className={'soundness ' + snd.cls}
+                title={`${snd.desc} (A heuristic judgment, not an engine score.)`}
+              >
+                <span className="snd-badge">
+                  {snd.icon} {snd.label}
+                </span>
+              </span>
+            ) : null}
+            {eng ? (
+              <span
+                className={
+                  'badge eng-badge ' +
+                  (eng.isBest || eng.cpLoss < ENGINE_APPROVED_CP
+                    ? 'st-follows'
+                    : eng.cpLoss >= 150
+                      ? 'st-violates'
+                      : eng.cpLoss >= 60
+                        ? 'st-partial'
+                        : 'st-relevant')
+                }
+                title={`Stockfish, depth ${eng.depth}. Best move: ${eng.bestSan}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
+              >
+                <Icon name="cpu" size={13} />
+                {engineLabel(eng.isBest, eng.cpLoss)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       {loading ? (
         // Re-analysing an already-analysed move: keep the old result visible
         // but SAY that work is happening (the button used to look dead).
@@ -88,172 +163,113 @@ export default function MoveAnalysis({
           Re-analysing this move…
         </div>
       ) : null}
-      {snd || eng ? (
-        <div className="verdicts">
-          {snd ? (
-            <span className={'soundness ' + snd.cls} title={snd.desc}>
-              <span className="snd-badge">
-                {snd.icon} {snd.label} move
-              </span>
-              <span className="snd-hint">heuristic</span>
-            </span>
-          ) : null}
-          {eng ? (
-            <span
-              className={
-                'badge eng-badge ' +
-                (eng.isBest || eng.cpLoss < 30
-                  ? 'st-follows'
-                  : eng.cpLoss >= 150
-                    ? 'st-violates'
-                    : eng.cpLoss >= 60
-                      ? 'st-partial'
-                      : 'st-relevant')
-              }
-              title={`Stockfish, depth ${eng.depth}. Best move: ${eng.bestSan}. Eval after best play: ${(eng.evalBest / 100).toFixed(2)}; after the played move: ${(eng.evalPlayed / 100).toFixed(2)} (from the mover's side).`}
-            >
-              {/* short labels so the badge row stays one line on phones;
-                  the tooltip above carries the full detail. The chip icon
-                  marks ENGINE verdicts (the ⚙ gear is Settings). */}
-              <Icon name="cpu" size={13} />
-              {eng.isBest
-                ? 'Engine’s top'
-                : eng.cpLoss < 30
-                  ? 'Engine-approved'
-                  : `Better: ${eng.bestSan} (−${(eng.cpLoss / 100).toFixed(1)})`}
-            </span>
-          ) : null}
-        </div>
+
+      {paragraph ? (
+        <p className="comment">
+          <RuleText text={paragraph} onOpenRule={onOpenRule} />
+        </p>
+      ) : rules.length === 0 ? (
+        // an empty shell (the model skipped this ply and no retry recovered
+        // it) — offer the repair instead of pretending it was analysed
+        <p className="note">
+          The analysis for this move came back empty.{' '}
+          <button className="linkbtn" onClick={onReanalyze} disabled={loading}>
+            <Icon name="refresh" size={12} /> Re-analyse this move
+          </button>
+        </p>
       ) : null}
 
-      {result.lesson ? (
-        <div className="lesson">
-          <p>
-            <RuleText text={result.lesson} onOpenRule={onOpenRule} />
-          </p>
-        </div>
+      {keyLesson ? (
+        <p className="key-lesson">
+          <Icon name="bulb" size={15} />
+          <span>
+            <RuleText text={keyLesson} onOpenRule={onOpenRule} />
+          </span>
+        </p>
       ) : null}
 
-      <div className="findings">
-        <h3>Relevant rules of thumb</h3>
-        {result.rules.length === 0 && !result.lesson ? (
-          // an empty shell (the model skipped this ply and no retry recovered
-          // it) — offer the repair instead of pretending it was analysed
-          <p className="note">
-            The analysis for this move came back empty.{' '}
-            <button className="linkbtn" onClick={onReanalyze} disabled={loading}>
-              <Icon name="refresh" size={12} /> Re-analyse this move
-            </button>
-          </p>
-        ) : result.rules.length === 0 ? (
-          <p className="note">
-            A quiet move — no rule of thumb argues for or against it here. The takeaway above is
-            the whole story.
-          </p>
-        ) : (
-          [...result.rules]
-            // most important first (server pre-sorts; this also covers older saved results)
-            .sort((a, b) => (b.relevance ?? 3) - (a.relevance ?? 3))
-            .map((hit) => {
-              const meta = statusMeta(hit.status)
-              const shown = ruleShown(hit.id)
-              return (
-                <div className="finding" key={hit.id}>
-                  <div className="finding-top">
-                    <span className={'badge ' + meta.cls} title={meta.desc}>
-                      {meta.icon} {meta.label}
-                    </span>
-                    <button className="rule-link" onClick={() => onOpenRule(hit.id)}>
-                      <span className="rule-num">#{hit.id}</span>{' '}
-                      {RULES_BY_ID[hit.id]?.title ?? 'Rule ' + hit.id}
-                    </button>
-                    {(hit.relevance ?? 0) >= 5 ? (
-                      <span className="key-rule" title="The key idea of this move">
-                        <Icon name="star" size={11} /> key
-                      </span>
-                    ) : null}
-                    {hasGraphics(hit) ? (
-                      <button
-                        className={'gfx-btn' + (shown ? ' on' : '')}
-                        aria-pressed={shown}
-                        title={shown ? 'Hide these marks from the board' : 'Show this idea on the board'}
-                        onClick={() => onGfx(shown ? { kind: 'off' } : { kind: 'rule', id: hit.id })}
-                      >
-                        <Icon name="board" size={12} /> board
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="why">
-                    <RuleText text={hit.why} onOpenRule={onOpenRule} />
-                  </p>
-                </div>
-              )
-            })
-        )}
-      </div>
+      {rules.length > 0 ? (
+        <ul className="rule-chips" aria-label="Rules of thumb in play">
+          {rules.map((hit) => {
+            const meta = statusMeta(hit.status)
+            const shown = ruleShown(hit.id)
+            const title = RULES_BY_ID[hit.id]?.title ?? 'Rule ' + hit.id
+            return (
+              <li className={'rule-chip ' + meta.cls + (shown ? ' on' : '')} key={hit.id}>
+                <button
+                  className="rule-chip-main"
+                  onClick={() => onOpenRule(hit.id)}
+                  title={`${meta.label}: rule ${hit.id} — ${title}`}
+                >
+                  <span className="rule-chip-icon" aria-label={meta.label}>
+                    {meta.icon}
+                  </span>
+                  <span className="rule-chip-num">#{hit.id}</span>
+                  <span className="rule-chip-title">{title}</span>
+                </button>
+                {hasGraphics(hit)
+                  ? gfxToggle(shown, () => onGfx({ kind: 'rule', id: hit.id }), 'this idea')
+                  : null}
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
 
       {alt || engBest ? (
-        <div className="alt">
-          <div className="alt-head">
-            <span className="alt-label">Cleaner here</span>
-          </div>
+        <div className="better">
+          <span className="better-label">{alt && !engBest && eng ? 'Also playable' : 'Better'}</span>
           {alt ? (
-            <div className="alt-line">
-              <p>
-                <strong>{alt.move}</strong> —{' '}
-                <RuleText text={alt.why} onOpenRule={onOpenRule} />
-                {engSameAsAlt ? (
-                  <span className="eng-note">
-                    {' '}
-                    <Icon name="cpu" size={13} /> Also Stockfish’s top move ({engGain}).
-                  </span>
-                ) : null}
-              </p>
-              {altArrow ? (
-                <button
-                  className={'gfx-btn' + (altShown ? ' on' : '')}
-                  aria-pressed={altShown}
-                  title={altShown ? 'Hide the arrow' : 'Show this move as an arrow on the board'}
-                  onClick={() => onGfx(altShown ? { kind: 'off' } : { kind: 'alt' })}
-                >
-                  <Icon name="board" size={12} /> board
-                </button>
+            <span className="better-move">
+              <strong>{alt.move}</strong>
+              {engSameAsAlt ? (
+                <span className="eng-note" title="Stockfish's top move too">
+                  <Icon name="cpu" size={12} /> {engGain}
+                </span>
               ) : null}
-            </div>
+              {altArrow ? gfxToggle(altShown, () => onGfx({ kind: 'alt' }), 'this move') : null}
+            </span>
           ) : null}
           {engBest && !engSameAsAlt ? (
-            <div className="alt-line">
-              <p>
-                <strong>{engBest.bestSan}</strong> —{' '}
-                <span className="eng-note">
-                  <Icon name="cpu" size={13} /> Stockfish’s top move here ({engGain}, depth{' '}
-                  {engBest.depth}).
-                </span>
-              </p>
-              {engineArrow ? (
-                <button
-                  className={'gfx-btn' + (engShown ? ' on' : '')}
-                  aria-pressed={engShown}
-                  title={engShown ? 'Hide the arrow' : 'Show Stockfish’s move as an arrow on the board'}
-                  onClick={() => onGfx(engShown ? { kind: 'off' } : { kind: 'engine' })}
-                >
-                  <Icon name="board" size={12} /> board
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {alt && eng && !engBest ? (
-            <p className="eng-note eng-note-block">
-              <Icon name="cpu" size={13} /> Stockfish’s top choice was the move actually played —
-              read this suggestion as style, not a fix.
-            </p>
+            <span className="better-move" title={`Stockfish's top move (depth ${engBest.depth})`}>
+              <Icon name="cpu" size={12} />
+              <strong>{engBest.bestSan}</strong>
+              <span className="eng-note">{engGain}</span>
+              {engineArrow
+                ? gfxToggle(engShown, () => onGfx({ kind: 'engine' }), 'Stockfish’s move')
+                : null}
+            </span>
           ) : null}
         </div>
       ) : null}
 
-      <button className="btn ghost reanalyze" onClick={onReanalyze} disabled={loading}>
-        {loading ? 'Re-analysing…' : 'Re-analyse'}
-      </button>
+      {legacyNotes.length > 0 || legacyAltWhy ? (
+        // Older analyses explained every rule in its own sentence — kept,
+        // but folded away: they mostly restate the paragraph above.
+        <details className="rule-notes" open={!paragraph}>
+          <summary>Rule notes</summary>
+          <ul>
+            {legacyNotes.map((h) => (
+              <li key={h.id}>
+                <span className={'rn-num ' + statusMeta(h.status).cls}>#{h.id}</span>{' '}
+                <RuleText text={h.why ?? ''} onOpenRule={onOpenRule} />
+              </li>
+            ))}
+            {legacyAltWhy && alt ? (
+              <li>
+                <strong className="rn-move">{alt.move}</strong> —{' '}
+                <RuleText text={legacyAltWhy} onOpenRule={onOpenRule} />
+              </li>
+            ) : null}
+          </ul>
+        </details>
+      ) : null}
+
+      <div className="analysis-foot">
+        <button className="linkbtn" onClick={onReanalyze} disabled={loading}>
+          <Icon name="refresh" size={12} /> {loading ? 'Re-analysing…' : 'Re-analyse'}
+        </button>
+      </div>
     </div>
   )
 }

@@ -34,6 +34,9 @@ interface Props {
 }
 
 const OPEN_STORAGE = 'decodepgn.overviewOpen'
+// Summaries longer than this (the multi-paragraph ones written before the
+// concise format) start clamped to a few lines, with a toggle to read on.
+const LONG_SUMMARY = 420
 
 // The coach's opening word on the whole game: what decided it, the trend, and
 // clickable key moments. Shown at the top of the Study tab; collapsible.
@@ -57,7 +60,9 @@ export default function GameOverviewCard({
   onOpenRule,
 }: Props) {
   const [open, setOpen] = useState<boolean>(() => localStorage.getItem(OPEN_STORAGE) !== '0')
+  const [fullSummary, setFullSummary] = useState(false)
   if (!overview && !loading && !waiting && !error) return null
+  const clamp = !!overview && overview.summary.length > LONG_SUMMARY && !fullSummary
 
   const toggle = () => {
     setOpen((v) => {
@@ -69,7 +74,10 @@ export default function GameOverviewCard({
   return (
     <div className="overview">
       <button className="overview-head" onClick={toggle} aria-expanded={open}>
-        <span className="overview-label">Game overview</span>
+        <span className="overview-label">
+          <span className="tab-long">Game overview</span>
+          <span className="tab-short">Overview</span>
+        </span>
         {accuracy && accuracy.length > 0 ? (
           <span
             className="overview-acc"
@@ -121,18 +129,13 @@ export default function GameOverviewCard({
         </>
       ) : overview ? (
         <>
-          <p className="overview-summary">
+          <p className={'overview-summary' + (clamp ? ' clamped' : '')}>
             <MoveText text={overview.summary} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
           </p>
-          {overview.trend ? (
-            <p className="overview-trend">
-              <MoveText text={overview.trend} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
-            </p>
-          ) : null}
-          {overview.phases ? (
-            <p className="overview-phases">
-              <MoveText text={overview.phases} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
-            </p>
+          {clamp ? (
+            <button className="linkbtn summary-more" onClick={() => setFullSummary(true)}>
+              Read the full overview
+            </button>
           ) : null}
           {overview.keyMoments.length > 0 ? (
             <div className="overview-moments">
@@ -153,13 +156,23 @@ export default function GameOverviewCard({
               })}
             </div>
           ) : null}
-          <button
-            className="linkbtn overview-regen"
-            onClick={onRetry}
-            title="Rewrite this overview from the latest analysis and engine data"
-          >
-            <Icon name="refresh" size={12} /> Regenerate this overview
-          </button>
+          {overview.trend || overview.phases ? (
+            // The momentum story (and, on older overviews, the phase-by-phase
+            // essay) is supporting detail — folded so the card stays short.
+            <details className="overview-more">
+              <summary>How the game went</summary>
+              {overview.trend ? (
+                <p className="overview-trend">
+                  <MoveText text={overview.trend} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
+                </p>
+              ) : null}
+              {overview.phases ? (
+                <p className="overview-phases">
+                  <MoveText text={overview.phases} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
+                </p>
+              ) : null}
+            </details>
+          ) : null}
         </>
       ) : null}
       {/* Stays mounted while collapsed so the thread (and an in-flight
@@ -173,7 +186,17 @@ export default function GameOverviewCard({
           label="Ask about the game"
           placeholder="e.g. where did I lose the thread?"
           onOpenRule={onOpenRule}
+          collapsible
         />
+        {overview && !loading && !waiting && !error ? (
+          <button
+            className="linkbtn overview-regen"
+            onClick={onRetry}
+            title="Rewrite this overview from the latest analysis and engine data"
+          >
+            <Icon name="refresh" size={12} /> Regenerate
+          </button>
+        ) : null}
       </div>
     </div>
   )

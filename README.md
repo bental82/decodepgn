@@ -3,8 +3,9 @@
 Paste a chess game, pick a side, and for **each of your moves** Claude points out
 which of **120 classic strategic “rules of thumb”** are relevant right then —
 development, trades, pawn breaks, tension, king safety, sacrifices, endgames and
-more — whether the move **follows, partly follows, or goes against** each one,
-with a one-line reason and a short lesson.
+more — whether the move **follows, partly follows, or goes against** each one —
+in **one short paragraph per move**, aimed at what to improve, plus the key
+habit to keep when the move teaches one.
 
 It’s a study aid for club players: the point isn’t an engine score, it’s learning
 to *recognise which ideas are in the position*. A local **Stockfish** check keeps
@@ -14,14 +15,15 @@ objectively best moves don’t get scolded for “breaking” a rule of thumb.
 - **Study** — every analysis opens with a **game overview**: what decided the
   game, the momentum arc, and 2-4 clickable key moments that jump to the board.
   Then step through your moves on a single board; beside each move you get
-  a heuristic **soundness** tag (sound / speculative / dubious), a short decisive
-  lesson, and the relevant rules clearly labelled **Followed / Mixed / Broke / In
-  play** (with a legend). When a move breaks a principle it also suggests a
-  cleaner alternative. The coach **draws on the board**: each rule can come with
-  tinted squares and arrows (green = good, red = danger, yellow = watch, blue =
-  plan) shown on the sticky board — toggle any rule's graphics with its
-  **◈ board** button, and show the suggested alternative as an arrow on the
-  position where it applied. A progress strip shows which of your moves are
+  a heuristic **soundness** tag (sound / speculative / dubious), **one short
+  coaching paragraph** (routine moves get a sentence; mistakes get the better
+  move and why), a **key lesson** line when the move teaches a habit, and the
+  1-2 rules in play as chips labelled **Followed / Mixed / Broke / In play**.
+  Rules already explained earlier in the game are named, not re-explained. The
+  coach **draws on the board**: tinted squares and arrows (green = good, red =
+  danger, yellow = watch, blue = plan; knight moves drawn as an L) shown on the
+  sticky board — toggle a rule's graphics with its **◈** button, and show the
+  better move as an arrow on the position where it applied. A progress strip shows which of your moves are
   analysed, and an **Ask** box answers free-form questions about the current
   move — answers can point at the board too, on a mini board in the thread.
 - **Quiz** — two kinds. A **rules quiz**: multiple-choice questions generated
@@ -56,10 +58,11 @@ moves and Haiku 5.5 for the opponent's) through a small serverless function; the
 3. The app POSTs the game (for context), the target position, and the engine
    check to `/api/analyze`. That function calls Claude with the 120 rules and a
    **tool to answer through** (retried once if the reply comes back as prose),
-   so the model returns structured JSON that the server validates: relevant
-   rule numbers, a status (`follows` / `partially` / `violates` / `relevant`),
-   a one-line reason, a soundness verdict **calibrated against the engine check**
-   (a top-engine move is never labelled dubious), and a short lesson.
+   so the model returns structured JSON that the server validates: a one-paragraph
+   comment, an optional one-line lesson, the 1-2 relevant rule numbers with a
+   status (`follows` / `partially` / `violates` / `relevant`), and a soundness
+   verdict **calibrated against the engine check** (a top-engine move is never
+   labelled dubious). The server clips any overlong text at a sentence end.
 4. Results are cached in the page, pivoted into the per-move and by-rule views,
    and **saved to localStorage per game** (keyed by the move sequence + studied
    side) — reloading, or re-pasting the same PGN, restores every analysed move

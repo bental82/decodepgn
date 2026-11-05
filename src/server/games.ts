@@ -217,12 +217,13 @@ export async function putCloudGame(
     // may add and update moves, but it can't DROP plies it doesn't know
     // about, and it can't replace a real analysis with a BLANK one.
     if (existing?.results && typeof existing.results === 'object') {
-      const incoming = (toStore.results ?? {}) as Record<string, { rules?: unknown[]; lesson?: unknown }>
-      const isBlank = (r: { rules?: unknown[]; lesson?: unknown } | undefined) =>
-        !r || (!(Array.isArray(r.rules) && r.rules.length > 0) && !r.lesson)
+      type Card = { rules?: unknown[]; lesson?: unknown; comment?: unknown }
+      const incoming = (toStore.results ?? {}) as Record<string, Card>
+      const isBlank = (r: Card | undefined) =>
+        !r || (!(Array.isArray(r.rules) && r.rules.length > 0) && !r.lesson && !r.comment)
       const merged: Record<string, unknown> = { ...existing.results }
       for (const [ply, r] of Object.entries(incoming)) {
-        const prev = existing.results[ply] as { rules?: unknown[]; lesson?: unknown } | undefined
+        const prev = existing.results[ply] as Card | undefined
         if (!isBlank(r) || isBlank(prev)) merged[ply] = r
       }
       toStore = {

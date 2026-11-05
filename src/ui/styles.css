@@ -461,6 +461,40 @@ select { border: 1px solid var(--line); }
 }
 .lesson { background: var(--panel-2); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 15px; margin-bottom: 16px; }
 .lesson p { margin: 0; font-size: 14.5px; }
+
+/* concise move card: the move + verdicts on one line, ONE paragraph, the
+   habit to keep (when there is one), rule chips, the better move */
+.analysis-top { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.analysis-top .analysis-head { margin-bottom: 0; }
+.analysis-top .verdicts { margin-bottom: 0; gap: 6px; }
+.comment { margin: 0 0 10px; font-size: 15px; line-height: 1.55; text-wrap: pretty; overflow-wrap: break-word; }
+.key-lesson { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 9px; background: var(--accent-weak); font-size: 14px; font-weight: 500; text-wrap: pretty; }
+.key-lesson .icon { color: var(--accent); margin-top: 2px; }
+.rule-chips { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-chip { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; border-radius: 999px; border: 1px solid transparent; transition: border-color 0.15s ease; }
+.rule-chip.on { border-color: currentColor; }
+.rule-chip-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; background: none; border: none; padding: 4px 11px 4px 10px; color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }
+.rule-chip-main + .gfx-btn { margin-left: -6px; }
+.rule-chip-icon { font-weight: 700; }
+.rule-chip-num { font-family: var(--font-mono); font-weight: 600; font-size: 11.5px; }
+.rule-chip-title { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34ch; }
+.rule-chip-main:hover .rule-chip-title { color: var(--accent); }
+.rule-chip .gfx-btn { border-color: transparent; background: none; margin-right: 3px; }
+.rule-chip .gfx-btn.on { color: inherit; }
+.gfx-btn.icon-only { padding: 3px 7px; margin-left: 0; }
+.better { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; font-size: 14px; }
+.better-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; }
+.better-move { display: inline-flex; align-items: center; gap: 6px; }
+.better-move strong { font-family: var(--font-mono); color: var(--accent); }
+.better-move .eng-note { font-size: 12.5px; }
+.rule-notes { margin: 2px 0 6px; font-size: 13.5px; color: var(--muted); }
+.rule-notes summary { cursor: pointer; width: fit-content; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; padding: 4px 0; }
+.rule-notes ul { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.rn-num { font-family: var(--font-mono); font-weight: 600; font-size: 11px; padding: 1px 6px; border-radius: 6px; }
+.rn-move { font-family: var(--font-mono); color: var(--accent); }
+.analysis-foot { display: flex; justify-content: flex-end; }
+.analysis-foot .linkbtn { color: var(--faint); text-decoration: none; font-size: 12px; }
+.analysis-foot .linkbtn:hover { color: var(--accent); }
 .findings h3 {
   font-family: var(--font-mono); font-size: 10.5px; color: var(--copper);
   text-transform: uppercase; letter-spacing: 0.18em; font-weight: 600;
@@ -607,10 +641,19 @@ select { border: 1px solid var(--line); }
 .overview-summary { margin: 0 0 8px; font-size: 15px; text-wrap: pretty; }
 .overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); text-wrap: pretty; }
 .overview-phases { margin: 6px 0 4px; font-size: 13.5px; }
-.overview-regen { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.overview-more { margin-top: 10px; }
+.overview-more summary { cursor: pointer; width: fit-content; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; padding: 2px 0; }
+.overview-more[open] summary { margin-bottom: 6px; }
+/* the card's foot: the (collapsed) Ask button, Regenerate tucked to the right */
+.overview-ask { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 12px; }
 .overview-ask[hidden] { display: none; }
-.overview-ask .askbox { margin-top: 14px; padding-top: 13px; }
+.overview-ask .askbox { flex: 1 1 100%; margin-top: 0; padding-top: 12px; }
+.overview-ask .askbox-closed { flex: 0 1 auto; padding-top: 0; border-top: 0; }
+.linkbtn.overview-regen { margin-left: auto; color: var(--faint); text-decoration: none; font-size: 12px; }
+.linkbtn.overview-regen:hover { color: var(--accent); }
+.overview-summary.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.summary-more { margin: -4px 0 4px; font-size: 12.5px; }
 .moment { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 999px; padding: 5px 13px; font-size: 12.5px; cursor: pointer; font: inherit; white-space: nowrap; transition: border-color 0.15s ease; }
 .moment:hover { border-color: var(--accent); }
 .moment-move { font-family: var(--font-mono); font-weight: 600; color: var(--accent); }
@@ -645,6 +688,9 @@ select { border: 1px solid var(--line); }
 
 /* ask-a-question thread */
 .askbox { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
+.askbox-closed { margin-top: 10px; padding-top: 10px; }
+.ask-open { display: inline-flex; align-items: center; gap: 7px; background: none; border: 1px dashed var(--line); color: var(--muted); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; }
+.ask-open:hover { color: var(--accent); border-color: var(--accent); }
 .ask-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .ask-label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--copper); font-weight: 600; }
 .ask-row { display: flex; gap: 8px; }
@@ -777,10 +823,43 @@ select { border: 1px solid var(--line); }
   .board-sticky.mini { padding-bottom: 6px; }
   .explain-panel { margin-top: 12px; }
 
-  .explain-panel { padding: 14px 16px; min-height: 0; }
+  /* the column aligns items to the start, so without an explicit width the
+     panel would size to its content — and a one-line chip row would then
+     push the whole card past the screen edge */
+  .explain-panel { padding: 14px 16px; min-height: 0; width: 100%; min-width: 0; }
   .analysis-head { font-size: 18px; margin-bottom: 6px; }
   .verdicts { margin-bottom: 10px; }
   .lesson { margin-bottom: 12px; }
+  /* the concise card under the pinned board: tighter type, chips that
+     truncate rather than wrap into a second line each */
+  .comment { font-size: 14.5px; line-height: 1.5; }
+  .key-lesson { font-size: 13.5px; padding: 7px 11px; }
+  /* the old-analysis banner: one tight block, not a second card */
+  .regen-banner { padding: 10px 12px; gap: 8px 10px; font-size: 13px; }
+  .regen-banner span { min-width: 0; flex-basis: 100%; }
+  .regen-banner .btn { padding: 6px 13px; font-size: 13px; }
+  .rule-chip-title { max-width: 22ch; }
+  .snd-badge { font-size: 11px; padding: 3px 10px; }
+  .eng-badge { font-size: 11px; padding: 3px 10px; }
+
+  /* overview: key moments ride one swipeable row instead of a wrapped
+     block, so the board is reached sooner */
+  .overview { padding: 14px 16px; }
+  .overview-summary { font-size: 14.5px; }
+  .overview-moments {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin: 10px -16px 0; padding: 0 16px 2px; scroll-snap-type: x proximity;
+  }
+  .overview-moments::-webkit-scrollbar { display: none; }
+  .moment { scroll-snap-align: start; flex: none; }
+  /* rule chips: one swipeable row, however many rules and however long
+     their titles — never a stack of full-width pills */
+  .rule-chips {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin-left: -16px; margin-right: -16px; padding: 0 16px;
+  }
+  .rule-chips::-webkit-scrollbar { display: none; }
+  .rule-chip { flex: none; }
 
   /* stack the summary columns */
   .summary { padding: 16px; }

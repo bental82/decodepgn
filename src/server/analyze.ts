@@ -112,6 +112,21 @@ const intOr = (v: unknown, d: number) => (Number.isFinite(v) ? Math.trunc(v as n
 /** Every model-written prose field goes through this: leak-strip, then clip. */
 const cleanClip = (s: unknown, n: number) => clip(stripToolLeak(s), n)
 
+/** Clip prose to `max` chars at a sentence end when one is near — a hard cut
+    mid-word reads as a glitch. The concise format's length guard. */
+function clipSentences(s: string, max: number): string {
+  const t = s.trim()
+  if (t.length <= max) return t
+  const cut = t.slice(0, max)
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+  if (end > max * 0.5) return cut.slice(0, end + 1)
+  const space = cut.lastIndexOf(' ')
+  return (space > 0 ? cut.slice(0, space) : cut).replace(/[,;:\s]+$/, '') + '…'
+}
+const cleanSentences = (s: unknown, max: number) => clipSentences(stripToolLeak(s), max)
+/** comparison key for spotting a lesson that merely repeats the comment */
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
 /**
  * When tool-call syntax leaks into a prose field, the graphics the model meant
  * to attach often ride along as literal JSON ("…<parameter name=\"graphics\">
@@ -451,7 +466,7 @@ function sanitizeGraphics(g: unknown): BoardAnnotations | undefined {
 
 const OUTPUT_TOOL = {
   name: 'report_relevance',
-  description: 'Report which rules of thumb are relevant for each requested move.',
+  description: 'Report the coaching for each requested move.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -464,9 +479,20 @@ const OUTPUT_TOOL = {
           additionalProperties: false,
           properties: {
             ply: { type: 'integer', description: 'The ply of the move being analysed.' },
+            comment: {
+              type: 'string',
+              description:
+                'THE coaching for this move, as ONE short paragraph (1-3 sentences, at most 50 words): what the move did and, when it could be improved, the better idea and the concrete reason. Specific to this position — never a rule restated in general terms.',
+            },
+            lesson: {
+              type: 'string',
+              description:
+                'The habit to take away, ONLY when this move teaches one (a mistake, a missed chance, an instructive strong move): one imperative sentence, at most 15 words. Empty for routine moves. Never a paraphrase of the comment.',
+            },
             rules: {
               type: 'array',
-              description: 'Rules that are genuinely relevant to this move (usually 1-4).',
+              description:
+                'The 1-2 rules that best explain this move (3 only if truly needed), most important first; empty for routine or book moves. No explanation per rule — the comment carries it.',
               items: {
                 type: 'object',
                 additionalProperties: false,
@@ -476,28 +502,18 @@ const OUTPUT_TOOL = {
                     type: 'string',
                     enum: ['follows', 'partially', 'violates', 'relevant'],
                     description:
-                      'How the move relates to the rule. Use "follows" when it clearly upholds it, "partially" when it partly does, and "violates" whenever the move goes AGAINST the rule — do NOT soft-label a violation as "relevant". Reserve "relevant" for when the rule is genuinely in play but the move is neutral toward it (neither clearly following nor breaking it).',
-                  },
-                  why: {
-                    type: 'string',
-                    description: 'One plain-language sentence explaining the relevance for a club player.',
+                      'How the move relates to the rule. "follows" = clearly upholds it; "partially" = partly, with a trade-off; "violates" = goes AGAINST it (never soften a violation to "relevant"); "relevant" = in play while the move is neutral toward it.',
                   },
                   relevance: {
                     type: 'integer',
-                    description:
-                      'How central this rule is to THIS move, 1-5: 5 = the key idea of the move, 3 = clearly in play, 1 = worth a passing mention.',
+                    description: 'How central this rule is to THIS move, 1-5 (5 = the key idea).',
                   },
                   graphics: graphicsSchema(
-                    "OPTIONAL board graphics that SHOW this rule's point in the resulting position: tint the weak square, arrow the open file, mark the exposed king. Only when it genuinely illustrates the idea — accuracy over decoration.",
+                    "OPTIONAL board marks that SHOW the comment's point in the resulting position — on the first rule only, and only when they genuinely illustrate it.",
                   ),
                 },
-                required: ['id', 'status', 'why', 'relevance'],
+                required: ['id', 'status', 'relevance'],
               },
-            },
-            lesson: {
-              type: 'string',
-              description:
-                'One decisive practical lesson for this move (1-2 sentences). Be direct and concrete.',
             },
             soundness: {
               type: 'string',
@@ -509,15 +525,14 @@ const OUTPUT_TOOL = {
               type: 'object',
               additionalProperties: false,
               properties: {
-                move: { type: 'string', description: 'A concrete alternative move in SAN, e.g. "Nf3".' },
-                why: { type: 'string', description: 'One short line on why it follows the principle more cleanly.' },
+                move: { type: 'string', description: 'The better move in SAN, e.g. "Nf3".' },
               },
-              required: ['move', 'why'],
+              required: ['move'],
               description:
-                'ONLY when the played move breaks or only partly follows a key principle: one cleaner alternative move for the same side. Omit entirely if the move is already good.',
+                'ONLY when the played move could be clearly improved: the better move for the same side (the comment says why). Omit when the move is good.',
             },
           },
-          required: ['ply', 'rules', 'lesson', 'soundness'],
+          required: ['ply', 'comment', 'rules', 'soundness'],
         },
       },
     },
@@ -601,27 +616,44 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
       })
       .join('\n')
 
-  const system = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. ${
+  // Rules already explained on other moves of this game: named, not
+  // re-explained — the repetition across a game's moves was the loudest
+  // complaint about the long format.
+  const covered = (Array.isArray(input.covered) ? input.covered : [])
+    .filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= RULE_COUNT)
+    .filter((id, i, all) => all.indexOf(id) === i)
+    .slice(0, 8)
+  const coveredLine = covered.length
+    ? `\nAlready explained on other moves of this game — the reader knows these, so do NOT explain them again (list one in "rules" if it is the point of a move, and spend the comment on what is specific to THIS position): ${covered
+        .map((id) => `#${id} "${RULES_BY_ID[id]?.title ?? ''}"`)
+        .join('; ')}.`
+    : ''
+
+  const system = systemWith(`Coach the requested move(s) using the report_relevance tool. ${
     both
-      ? 'Both sides are under study: analyse EACH move strictly from the perspective of the side that played it.'
-      : `Analyse strictly from ${sideName}'s perspective — the reader IS the ${sideName} player, so address them as "you".`
+      ? 'Both sides are under study: coach EACH move strictly from the perspective of the side that played it.'
+      : `Coach strictly from ${sideName}'s perspective — the reader IS the ${sideName} player, so address them as "you".`
   }
 
-Return one result object for EVERY ply listed — never skip a move. When genuinely no rule stands out for a quiet move, return an empty "rules" array but STILL write a real "lesson": one concrete observation about what the move does, keeps flexible, or should keep an eye on. An empty lesson is never acceptable.
-For each move, decide which rules are genuinely relevant (usually 1-4; do not force irrelevant ones) and pick rules that fit this move and phase of the game (opening/development rules early, endgame rules once queens or most pieces are gone).
-Set each rule's status honestly:
-- "follows": clearly upholds the rule.
-- "partially": partly upholds it, with a trade-off.
-- "violates": goes AGAINST the rule — use this whenever the move breaks the principle; do NOT soft-label a violation as "relevant".
-- "relevant": the rule is in play but the move is genuinely neutral toward it.
-Give one clear sentence per rule, and score each rule's "relevance" 1-5 (5 = the key idea of this move, 1 = passing mention) — the app sorts by it, so the score should reflect how much this rule explains THE move.
-When a rule's point can be SHOWN on the board, add "graphics" to that rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} Point at concrete things: the hole a pawn move created, the file a rook now owns, the piece left hanging, the manoeuvre the move starts. Use several arrows when the explanation warrants it (a knight's route, converging attackers). Derive every square from the FEN — a wrong square is worse than no graphics — and omit "graphics" when nothing visual would help. Also judge the MOVE ITSELF with a heuristic "soundness" (sound / speculative / dubious) — do not pretend a risky sacrifice is simply sound. When the move breaks or only partly follows a key principle, add one "alternative" (a cleaner SAN move + one-line why); omit it when the move is already good. Give one "lesson" (1-2 sentences) the player can carry into the next game — the takeaway habit, not a verdict; the app carries the not-gospel disclaimer, so be clear without hedging.
+The player wants SHORT coaching aimed at improvement: one paragraph per move, never the same point twice. Return one result for EVERY ply listed — never skip a move:
+- "comment": ONE short paragraph — the coaching itself. What the move did and, when it could be improved, the better move and the concrete reason (what it wins, prevents or keeps). Name squares and pieces. Never restate a rule in general terms (the rule chips show it), never open by repeating the move, no filler, no hedging.
+- "lesson": the one habit to carry into the next game, ONLY when the move teaches something — a mistake, a missed chance, an instructive strong move. One imperative sentence, at most 15 words. Leave it empty for routine moves, and never paraphrase the comment: the comment is about this position, the lesson is the habit.
+- "rules": the 1-2 rules that best explain the move (3 only if truly needed), most important first; an empty array for routine or book moves. Set each status honestly — "violates" whenever the move goes against the rule, never softened to "relevant" — and score "relevance" 1-5 (5 = the key idea).
+- "soundness": a heuristic judgment of the move itself — don't pretend a risky sacrifice is simply sound.
+- "alternative": the better move in SAN, only when the played move could be clearly improved.
 
-Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY and calibrate accordingly:
-- If the played move is the engine's top choice or within ~0.3 pawns of best, its soundness is "sound" (or "speculative" only if it is a genuine sacrifice) — do NOT call it dubious, and do not scold it for breaking a rule of thumb; instead explain why the concrete move justifies the exception.
-- If the engine shows a loss of ~1.5 pawns or more, be honest that the move was an error even if it looks principled, and prefer the engine's best move as your "alternative" when it also fits the principle you cite.
-- Rule statuses (follows/violates) still describe the PRINCIPLE, which is fine — a best move can still "violate" a rule of thumb; the lesson should then teach when the exception applies.
-- GROUND every square-level claim in the FEN: before saying a square is protected, safe, or controlled, verify from the FEN which pieces actually attack and defend it. If the engine's best move can simply be captured, it is a SACRIFICE line — say so and name the concrete follow-up (check the position!) instead of inventing positional cover for it; if you cannot see the compensation, give your own principled alternative and mention the engine move only as "the engine's tactical suggestion". A confidently wrong claim about the board is the worst mistake you can make.`)
+Size each move by how much it matters:
+- routine, book or engine-approved moves: ONE sentence of at most ~15 words, no lesson, at most one rule.
+- inaccuracies: two sentences.
+- mistakes, missed chances and turning points: up to three sentences (50 words at most) plus the lesson.
+When several moves in this request share a theme, make the point once, on the move where it matters most.${coveredLine}
+
+When the comment's point can be SHOWN on the board, add "graphics" to the first rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} One or two marks that make the point: the loose piece, the hole, the open file, the threat. Derive every square from the FEN — a wrong square is worse than none.
+
+Some moves come with an "Engine check" (Stockfish evaluation). Treat it as ground truth for move QUALITY:
+- If the played move is the engine's top choice or within ~0.3 pawns of best, it is "sound" (or "speculative" only for a genuine sacrifice) — never dubious, and don't scold it for breaking a rule of thumb: say in a few words why the concrete position justifies the exception.
+- If the engine shows a loss of ~1.5 pawns or more, say plainly that the move was an error even if it looks principled, and prefer the engine's best move as the "alternative" when it fits.
+- GROUND every square-level claim in the FEN: before saying a square is protected, safe or controlled, verify which pieces attack and defend it. If the engine's best move can simply be captured, it is a SACRIFICE — say so and name the concrete follow-up instead of inventing positional cover; if you cannot see the compensation, give your own principled alternative. A confidently wrong claim about the board is the worst mistake you can make.`)
 
   const userOf = (ts: typeof targets, label = `${sideName} `) => `Full game in SAN:
 ${moveText}
@@ -649,7 +681,7 @@ ${targetLinesOf(ts)}`
     { targets: claudeTargets.filter((t) => !isKey(t)), model: MODEL_FAST },
   ].filter((g) => g.targets.length > 0)
 
-  const liteSystem = systemWith(`Analyse the requested move(s) and report using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}. For each move explain its IDEA plainly: what it does, threatens or concedes, which rules it relates to, and what the ${sideName} player should notice or answer. Address the reader as "you" (the ${sideName} player) — e.g. "this pins your knight". Keep it brief: 1-3 genuinely relevant rules with one clear sentence each and a relevance score, an honest "soundness" for the move, and a one-line "lesson" about what the reader should watch for. Return one result for EVERY ply listed — a quiet move still gets a real lesson (never empty), with an empty rules array if nothing stands out. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless a single arrow or square makes the idea obvious.`)
+  const liteSystem = systemWith(`Coach the requested move(s) using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}, so address them as "you". For EVERY ply listed (never skip one): "comment" is ONE sentence of at most ~25 words — what the move threatens, wants or concedes, and what you should notice or answer (e.g. "This pins your knight to the queen; break the pin with Be2 before castling."). "rules": at most one, often none. "soundness": honest. Leave "lesson" empty unless the move sets up something you must remember. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless one arrow or square makes a threat obvious.`)
 
   // The model sometimes DOUBLE-ENCODES the tool input: "results" arrives as a
   // JSON string instead of an array — sometimes with trailing junk after the
@@ -721,23 +753,26 @@ ${targetLinesOf(ts)}`
               return Array.isArray(p) ? (p as RuleHit[]) : []
             })()
           : []
+      const comment = cleanSentences((r as { comment?: unknown }).comment, 520)
+      let lesson = cleanSentences(r.lesson, 220)
+      // a lesson that just repeats the comment is the repetition we're cutting
+      if (lesson && comment && squash(comment).includes(squash(lesson))) lesson = ''
       const out: MoveResult = {
         ply: r.ply,
-        lesson: stripToolLeak(r.lesson),
+        ...(comment ? { comment } : {}),
+        lesson,
         rules: ruleArr
           .filter(
             (h: RuleHit) =>
               Number.isInteger(h.id) &&
               h.id >= 1 &&
               h.id <= RULE_COUNT &&
-              typeof h.why === 'string' &&
               validStatuses.has(h.status),
           )
           .map((h: RuleHit) => {
             const hit: RuleHit = {
               id: h.id,
               status: h.status,
-              why: stripToolLeak(h.why),
               relevance: Math.min(5, Math.max(1, intOr(h.relevance, 3))),
             }
             // graphics may arrive structured, or embedded in a why-leak
@@ -748,14 +783,15 @@ ${targetLinesOf(ts)}`
             return hit
           })
           // most important first (stable, so the model's order breaks ties)
-          .sort((a: RuleHit, b: RuleHit) => (b.relevance ?? 3) - (a.relevance ?? 3)),
+          .sort((a: RuleHit, b: RuleHit) => (b.relevance ?? 3) - (a.relevance ?? 3))
+          .slice(0, 3),
       }
       if (typeof r.soundness === 'string' && validSoundness.has(r.soundness)) {
         out.soundness = r.soundness as Soundness
       }
       const alt = r.alternative as MoveAlternative | undefined
-      if (alt && typeof alt.move === 'string' && alt.move.trim() && typeof alt.why === 'string') {
-        out.alternative = { move: clip(alt.move, 16), why: cleanClip(alt.why, 240) }
+      if (alt && typeof alt.move === 'string' && alt.move.trim()) {
+        out.alternative = { move: clip(alt.move.trim(), 16) }
       }
       return out
     })
@@ -923,7 +959,7 @@ Explain it.`
 
 const OVERVIEW_TOOL = {
   name: 'report_overview',
-  description: 'Report a substantial overview of the whole game.',
+  description: 'Report a short overview of the whole game.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -931,34 +967,29 @@ const OVERVIEW_TOOL = {
       summary: {
         type: 'string',
         description:
-          "4-6 decisive sentences on what decided the game from the studied side's perspective: the concrete cause (name the moves), the turning point, what the player did well, and the one skill to practise.",
+          "2-3 sentences, at most 60 words, from the studied side's perspective: what decided the game (name the moves) and the one skill to practise.",
       },
       trend: {
         type: 'string',
         description:
-          '2-4 sentences on the arc of the game: who stood better in which phase, where the momentum shifted and WHY — anchored to the eval trajectory when one is provided.',
-      },
-      phases: {
-        type: 'string',
-        description:
-          '3-5 sentences reading the game phase by phase: how the OPENING went (name it if you recognise it, and where theory was left), what the MIDDLEGAME hinged on (plans, pawn structure, king safety), and how the ENDGAME (or the finish) was handled. Cite concrete moves.',
+          '1-2 sentences, at most 35 words: where the momentum shifted and why — anchored to the eval trajectory when one is provided.',
       },
       keyMoments: {
         type: 'array',
-        description: '3-6 pivotal moments, in game order — prefer the real eval swings when a trajectory is provided.',
+        description: '2-4 pivotal moments, in game order — prefer the real eval swings when a trajectory is provided.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
             ply: { type: 'integer', description: 'The ply of the pivotal move.' },
             title: { type: 'string', description: 'A 2-5 word label, e.g. "The decisive sacrifice".' },
-            why: { type: 'string', description: '1-2 lines on why this moment mattered and what should have happened.' },
+            why: { type: 'string', description: 'One line, at most 15 words: why it mattered.' },
           },
           required: ['ply', 'title', 'why'],
         },
       },
     },
-    required: ['summary', 'trend', 'phases', 'keyMoments'],
+    required: ['summary', 'trend', 'keyMoments'],
   },
 }
 
@@ -1045,11 +1076,10 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
           .join(', ')}.`
       : ''
 
-  const system = systemWith(`Write a substantial OVERVIEW of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. Concrete and instructive — this is the opening word a coach gives before going move by move, and it sets the tone for the whole review. It must feel like the coach actually studied the game: name moves, name squares, name plans.
-- "summary": what decided the game and the lesson in it (4-6 sentences). Name the concrete cause (e.g. a loose piece, a king left in the centre, a winning attack), what the player did WELL, and the skill to practise, citing rule numbers where natural. Remember your voice: diagnose decisions, no scolding words.
-- "trend": the arc of the game — who stood better in which phase and where the momentum shifted, and why (2-4 sentences). When an eval trajectory is provided, follow it exactly.
-- "phases": the game phase by phase (3-5 sentences): the opening (name it if recognisable, where the game left known paths), the middlegame battle (plans, structure, king safety), and the endgame or finish.
-- "keyMoments": 3-6 pivotal plies in game order, each with a short title and 1-2 lines on why it mattered and what should have happened. When an eval trajectory is provided, pick the real swings. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
+  const system = systemWith(`Write a SHORT overview of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. The player wants concise, improvement-focused coaching: name the concrete moves and squares, say each point once, no filler.
+- "summary": 2-3 sentences (at most 60 words): what decided the game — the concrete cause, e.g. a loose piece, a king left in the centre, a winning attack — and the ONE skill to practise, citing a rule number where natural. Diagnose decisions, no scolding words.
+- "trend": 1-2 sentences (at most 35 words): where the momentum shifted and why. When an eval trajectory is provided, follow it exactly.
+- "keyMoments": 2-4 pivotal plies in game order, each with a 2-5 word title and one line on why it mattered. When an eval trajectory is provided, pick the real swings. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
 
   const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The side under study: ${sideName}.
 Moves (SAN):
@@ -1061,7 +1091,7 @@ Give the overview.`
     maxTokens: 2500,
     tool: OVERVIEW_TOOL,
     toolName: 'report_overview',
-  })) as { summary?: unknown; trend?: unknown; phases?: unknown; keyMoments?: unknown }
+  })) as { summary?: unknown; trend?: unknown; keyMoments?: unknown }
 
   const rawMoments = Array.isArray(data.keyMoments) ? data.keyMoments : []
   const keyMoments = rawMoments
@@ -1073,20 +1103,18 @@ Give the overview.`
         typeof m.title === 'string' &&
         typeof m.why === 'string',
     )
-    .slice(0, 6)
+    .slice(0, 4)
     .map((m: { ply: number; title: string; why: string }) => ({
       ply: m.ply,
       title: cleanClip(m.title, 60),
-      why: cleanClip(m.why, 300),
+      why: cleanSentences(m.why, 160),
     }))
 
   const overview: GameOverview = {
-    summary: cleanClip(data.summary, 1400),
-    trend: cleanClip(data.trend, 700),
+    summary: cleanSentences(data.summary, 600),
+    trend: cleanSentences(data.trend, 320),
     keyMoments,
   }
-  const phases = cleanClip(data.phases, 900)
-  if (phases) overview.phases = phases
   if (!overview.summary) throw new AnalyzeError('Claude did not return an overview.', 502)
   return { overview }
 }
@@ -1173,6 +1201,9 @@ export async function runAsk(input: AskRequest): Promise<AskResponse> {
       bits.push(
         `rules cited: ${hits.map((h) => `#${h.id} ${RULES_BY_ID[h.id]?.title ?? ''} (${h.status})`).join('; ')}`,
       )
+    }
+    if (typeof shown.comment === 'string' && shown.comment.trim()) {
+      bits.push(`coaching shown: "${cleanClip(shown.comment, 600)}"`)
     }
     if (typeof shown.lesson === 'string' && shown.lesson.trim()) {
       bits.push(`lesson shown: "${cleanClip(shown.lesson, 300)}"`)

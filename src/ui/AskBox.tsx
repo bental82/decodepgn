@@ -3,12 +3,22 @@ import { ask as fetchAsk } from '../lib/api'
 import type { AskExchange } from '../shared/types'
 import type { AskBoxProps } from './contract'
 import Board from './Board'
+import Icon from './Icon'
 import RuleText from './RuleText'
 
 // A small "ask a question" thread. Answers are grounded in the rule set (and
 // any context passed in — the current move/position or a specific rule), and
 // follow-up questions continue the same conversation.
-export default function AskBox({ context, apiKey, onNeedKey, placeholder, label, onOpenRule }: AskBoxProps) {
+export default function AskBox({
+  context,
+  apiKey,
+  onNeedKey,
+  placeholder,
+  label,
+  onOpenRule,
+  collapsible,
+}: AskBoxProps) {
+  const [open, setOpen] = useState(!collapsible)
   const [q, setQ] = useState('')
   const [thread, setThread] = useState<AskExchange[]>([])
   const [loading, setLoading] = useState(false)
@@ -39,6 +49,16 @@ export default function AskBox({ context, apiKey, onNeedKey, placeholder, label,
     } finally {
       setLoading(false)
     }
+  }
+
+  if (!open) {
+    return (
+      <div className="askbox askbox-closed">
+        <button className="ask-open" onClick={() => setOpen(true)}>
+          <Icon name="message" size={14} /> {label ?? 'Ask a question'}
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -90,6 +110,8 @@ export default function AskBox({ context, apiKey, onNeedKey, placeholder, label,
           }}
           maxLength={500}
           aria-label="Ask a chess question"
+          // opened by a tap on the collapsed button: the reader wants to type
+          autoFocus={collapsible}
         />
         <button className="btn primary" onClick={submit} disabled={loading || !q.trim()}>
           {loading ? '…' : thread.length ? 'Follow up' : 'Ask'}
