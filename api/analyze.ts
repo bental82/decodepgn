@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(200).json({
         serverRuns,
         ok: true,
-        build: 'quiz-2', // bump on deploys to confirm the live version (shown in Settings)
+        build: 'import-1', // bump on deploys to confirm the live version (shown in Settings)
         hasServerKey: !!process.env.ANTHROPIC_API_KEY,
         model: process.env.ANTHROPIC_MODEL || 'claude-opus-5-5',
         modelFast: process.env.ANTHROPIC_MODEL_FAST || 'claude-sonnet-5-5',
