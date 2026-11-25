@@ -43,6 +43,9 @@ export interface AnalysisJob {
       so a racing double-kick can't double-analyse batches */
   runnerId?: string
   error?: string
+  /** queued by a batch import: it waits behind games the player asked for
+      directly, and only MAX_BULK_RUNNING such jobs run at once */
+  bulk?: boolean
 }
 
 interface GameData {
@@ -115,6 +118,11 @@ const BATCH = 4
 export const STALE_MS = 3 * 60_000
 // give up on a job after this many LLM batches failing in a row
 const MAX_CONSECUTIVE_FAILURES = 3
+// A batch import queues many games at once. Every enqueue (and the minute
+// cron) kicks a worker, and each worker claims a different game — left alone,
+// twenty imported games would run twenty-wide and trip the model's rate
+// limits. Imported games run this many at a time; the rest wait their turn.
+const MAX_BULK_RUNNING = 2
 
 const now = () => Date.now()
 
@@ -148,7 +156,7 @@ function targetPlies(moves: ParsedMove[], data: GameData, job: AnalysisJob): num
     that has no cloud row yet be enqueued — the row is created from it. */
 export async function enqueueJob(
   key: string,
-  opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean },
+  opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean; bulk?: boolean },
   shell?: unknown,
 ): Promise<AnalysisJob> {
   const existing = (await getCloudGame(key)) as GameData | null
@@ -157,7 +165,17 @@ export async function enqueueJob(
     throw new GamesError('No such game to analyse.', 404)
   const prior = base.job
   // an active, fresh job already covers this request — don't reset its work
-  if (jobActive(prior) && now() - prior.heartbeat < STALE_MS && !opts.force) return prior
+  if (jobActive(prior) && now() - prior.heartbeat < STALE_MS && !opts.force) {
+    // ...but a game the player opens while it still waits in an import's
+    // queue is wanted NOW: it moves to the front, off the bulk lane
+    if (prior.bulk && !opts.bulk && prior.status === 'queued') {
+      const promoted: AnalysisJob = { ...prior }
+      delete promoted.bulk
+      await putCloudGame({ ...base, key, job: promoted }, { fromRunner: true })
+      return promoted
+    }
+    return prior
+  }
   const job: AnalysisJob = {
     status: 'queued',
     force: opts.force === true,
@@ -165,6 +183,7 @@ export async function enqueueJob(
     repairEmpty: opts.repairEmpty === true,
     queuedAt: now(),
     heartbeat: now(),
+    ...(opts.bulk === true ? { bulk: true } : {}),
   }
   await putCloudGame({ ...base, key, job }, { fromRunner: true })
   return job
@@ -188,16 +207,31 @@ export async function workWaiting(): Promise<boolean> {
   })
 }
 
-/** Claim the next workable job: queued first (oldest tap), then stale
-    running jobs (their chain died). Returns null when there is nothing. */
+/** The jobs a worker may claim, in claim order: queued or stale-running (its
+    chain died); games the player asked for directly before batch imports,
+    oldest tap first; and imported games only while fewer than
+    MAX_BULK_RUNNING of them run. */
+export function claimCandidates(
+  rows: Array<{ key: string; job: unknown }>,
+  at = now(),
+): Array<{ key: string; job: AnalysisJob }> {
+  const active = rows.filter((r): r is { key: string; job: AnalysisJob } => jobActive(r.job))
+  const live = (j: AnalysisJob) => j.status === 'running' && at - j.heartbeat <= STALE_MS
+  const bulkFull = active.filter((r) => r.job.bulk === true && live(r.job)).length >= MAX_BULK_RUNNING
+  return active
+    .filter((r) => !live(r.job) && !(bulkFull && r.job.bulk === true))
+    .sort(
+      (a, b) =>
+        (a.job.bulk === true ? 1 : 0) - (b.job.bulk === true ? 1 : 0) ||
+        a.job.queuedAt - b.job.queuedAt,
+    )
+}
+
+/** Claim the next workable job (see claimCandidates). Returns null when
+    there is nothing. */
 async function claimNext(runnerId: string): Promise<GameData | null> {
   const rows = await listActiveJobRows()
-  const claimable = rows
-    .map((r) => ({ key: r.key, job: r.job as AnalysisJob | null }))
-    .filter((r): r is { key: string; job: AnalysisJob } => jobActive(r.job))
-    .filter((r) => r.job.status === 'queued' || now() - r.job.heartbeat > STALE_MS)
-    .sort((a, b) => a.job.queuedAt - b.job.queuedAt)
-  for (const c of claimable) {
+  for (const c of claimCandidates(rows)) {
     const data = (await getCloudGame(c.key)) as GameData | null
     if (!data || !jobActive(data.job)) continue // changed since the listing
     if (data.job.status === 'running' && now() - data.job.heartbeat <= STALE_MS) continue

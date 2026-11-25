@@ -215,6 +215,9 @@ export interface GameOverview {
   trend: string
   /** phase-by-phase read: opening, middlegame, endgame (absent on old saves) */
   phases?: string
+  /** what to work on: 2-3 concrete habits, each tied to a move of this game
+      (absent on overviews written before it existed) */
+  practice?: string[]
   keyMoments: KeyMoment[]
 }
 

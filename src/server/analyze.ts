@@ -482,12 +482,12 @@ const OUTPUT_TOOL = {
             comment: {
               type: 'string',
               description:
-                'THE coaching for this move, as ONE short paragraph (1-3 sentences, at most 50 words): what the move did and, when it could be improved, the better idea and the concrete reason. Specific to this position — never a rule restated in general terms.',
+                'THE coaching for this move, as ONE paragraph sized to how much the move matters (1-2 sentences for a routine move, up to 5 sentences / ~100 words for a mistake): what the move did or missed, the better move and the concrete idea behind it when it could be improved, and ALWAYS the direction — what to aim for next, or the cue that would have found the better move. Specific to this position — never a rule restated in general terms.',
             },
             lesson: {
               type: 'string',
               description:
-                'The habit to take away, ONLY when this move teaches one (a mistake, a missed chance, an instructive strong move): one imperative sentence, at most 15 words. Empty for routine moves. Never a paraphrase of the comment.',
+                'The habit to take away, for every inaccuracy, mistake or missed chance and for a strong move worth repeating: the thinking step to repeat at the board (a check to make, a question to ask, a plan to follow), 1-2 sentences, at most 35 words, anchored to this game where it helps ("here the d2 bishop was guarding e1"). Empty only for routine moves. Never a paraphrase of the comment.',
             },
             rules: {
               type: 'array',
@@ -635,17 +635,17 @@ export async function runAnalyze(input: AnalyzeRequest): Promise<AnalyzeResponse
       : `Coach strictly from ${sideName}'s perspective — the reader IS the ${sideName} player, so address them as "you".`
   }
 
-The player wants SHORT coaching aimed at improvement: one paragraph per move, never the same point twice. Return one result for EVERY ply listed — never skip a move:
-- "comment": ONE short paragraph — the coaching itself. What the move did and, when it could be improved, the better move and the concrete reason (what it wins, prevents or keeps). Name squares and pieces. Never restate a rule in general terms (the rule chips show it), never open by repeating the move, no filler, no hedging.
-- "lesson": the one habit to carry into the next game, ONLY when the move teaches something — a mistake, a missed chance, an instructive strong move. One imperative sentence, at most 15 words. Leave it empty for routine moves, and never paraphrase the comment: the comment is about this position, the lesson is the habit.
+The player wants focused coaching that points the way to improvement: one paragraph per move, never the same point twice — but never so bare that the direction is lost. After reading a move, the player must know what to look for and what to aim for. Return one result for EVERY ply listed — never skip a move:
+- "comment": ONE paragraph — the coaching itself, in up to three beats (flowing prose, no labels): (1) what the move did or missed, concretely — name squares and pieces; (2) when it could be improved, the better move and WHY it works (what it wins, prevents or keeps); (3) the direction: for a good move, the plan from here ("next, bring the rook to e1 and press on e6"); for an error, the cue in the position that should have triggered the better move ("the undefended bishop on c4 was the signal to look for a fork"). Never restate a rule in general terms (the rule chips show it), never open by repeating the move, no filler, no hedging.
+- "lesson": the habit to carry into the next game — the thinking step, phrased as a check or question to repeat at the board ("Before every recapture, ask what the recapturing piece stops guarding — here the d2 bishop was holding e1."). 1-2 sentences, at most 35 words. Give one for EVERY inaccuracy, mistake or missed chance, and for a strong move worth repeating; leave it empty for routine moves. Never paraphrase the comment: the comment is about this position, the lesson is the habit that transfers to the next game.
 - "rules": the 1-2 rules that best explain the move (3 only if truly needed), most important first; an empty array for routine or book moves. Set each status honestly — "violates" whenever the move goes against the rule, never softened to "relevant" — and score "relevance" 1-5 (5 = the key idea).
 - "soundness": a heuristic judgment of the move itself — don't pretend a risky sacrifice is simply sound.
 - "alternative": the better move in SAN, only when the played move could be clearly improved.
 
 Size each move by how much it matters:
-- routine, book or engine-approved moves: ONE sentence of at most ~15 words, no lesson, at most one rule.
-- inaccuracies: two sentences.
-- mistakes, missed chances and turning points: up to three sentences (50 words at most) plus the lesson.
+- routine, book or engine-approved moves: 1-2 sentences (at most ~30 words) — what the move does and what it prepares or what to aim for next. No lesson, at most one rule.
+- inaccuracies: 2-3 sentences (at most ~60 words) plus the lesson.
+- mistakes, missed chances and turning points: 3-5 sentences (at most ~100 words) plus the lesson — what went wrong concretely, the better move and its point, and the cue that would have caught it.
 When several moves in this request share a theme, make the point once, on the move where it matters most.${coveredLine}
 
 When the comment's point can be SHOWN on the board, add "graphics" to the first rule — tinted squares and arrows in the RESULTING position (the FEN given). ${GRAPHICS_LEGEND} One or two marks that make the point: the loose piece, the hole, the open file, the threat. Derive every square from the FEN — a wrong square is worse than none.
@@ -681,7 +681,7 @@ ${targetLinesOf(ts)}`
     { targets: claudeTargets.filter((t) => !isKey(t)), model: MODEL_FAST },
   ].filter((g) => g.targets.length > 0)
 
-  const liteSystem = systemWith(`Coach the requested move(s) using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}, so address them as "you". For EVERY ply listed (never skip one): "comment" is ONE sentence of at most ~25 words — what the move threatens, wants or concedes, and what you should notice or answer (e.g. "This pins your knight to the queen; break the pin with Be2 before castling."). "rules": at most one, often none. "soundness": honest. Leave "lesson" empty unless the move sets up something you must remember. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless one arrow or square makes a threat obvious.`)
+  const liteSystem = systemWith(`Coach the requested move(s) using the report_relevance tool. These are moves by the reader's OPPONENT — the reader plays ${sideName}, so address them as "you". For EVERY ply listed (never skip one): "comment" is 1-2 sentences, at most ~35 words — what the move threatens, wants or concedes, and how you should answer it or use it (e.g. "This pins your knight to the queen; break the pin with Be2 before castling, or the knight on f3 stays frozen."). "rules": at most one, often none. "soundness": honest. Leave "lesson" empty unless the move sets up something you must remember. Add an "alternative" only when the opponent clearly missed something instructive. Ground every square-level claim in the given FEN; skip "graphics" unless one arrow or square makes a threat obvious.`)
 
   // The model sometimes DOUBLE-ENCODES the tool input: "results" arrives as a
   // JSON string instead of an array — sometimes with trailing junk after the
@@ -753,8 +753,8 @@ ${targetLinesOf(ts)}`
               return Array.isArray(p) ? (p as RuleHit[]) : []
             })()
           : []
-      const comment = cleanSentences((r as { comment?: unknown }).comment, 520)
-      let lesson = cleanSentences(r.lesson, 220)
+      const comment = cleanSentences((r as { comment?: unknown }).comment, 820)
+      let lesson = cleanSentences(r.lesson, 300)
       // a lesson that just repeats the comment is the repetition we're cutting
       if (lesson && comment && squash(comment).includes(squash(lesson))) lesson = ''
       const out: MoveResult = {
@@ -959,7 +959,7 @@ Explain it.`
 
 const OVERVIEW_TOOL = {
   name: 'report_overview',
-  description: 'Report a short overview of the whole game.',
+  description: 'Report a focused coaching overview of the whole game.',
   input_schema: {
     type: 'object',
     additionalProperties: false,
@@ -967,12 +967,18 @@ const OVERVIEW_TOOL = {
       summary: {
         type: 'string',
         description:
-          "2-3 sentences, at most 60 words, from the studied side's perspective: what decided the game (name the moves) and the one skill to practise.",
+          "3-5 sentences, at most ~110 words, from the studied side's perspective: what decided the game (the concrete cause, naming the moves), what went well and is worth repeating, and where the game could have gone the other way. The practice points go in \"practice\", not here.",
       },
       trend: {
         type: 'string',
         description:
-          '1-2 sentences, at most 35 words: where the momentum shifted and why — anchored to the eval trajectory when one is provided.',
+          '1-2 sentences, at most 45 words: where the momentum shifted and why — anchored to the eval trajectory when one is provided.',
+      },
+      practice: {
+        type: 'array',
+        description:
+          'What to work on: 2-3 concrete habits, most important first. Each ONE sentence of at most 30 words: the habit or check, when to apply it, and the move in THIS game where it would have changed things — citing a rule number where natural.',
+        items: { type: 'string' },
       },
       keyMoments: {
         type: 'array',
@@ -983,13 +989,13 @@ const OVERVIEW_TOOL = {
           properties: {
             ply: { type: 'integer', description: 'The ply of the pivotal move.' },
             title: { type: 'string', description: 'A 2-5 word label, e.g. "The decisive sacrifice".' },
-            why: { type: 'string', description: 'One line, at most 15 words: why it mattered.' },
+            why: { type: 'string', description: 'One line, at most 20 words: why it mattered — and, for an error, what was better.' },
           },
           required: ['ply', 'title', 'why'],
         },
       },
     },
-    required: ['summary', 'trend', 'keyMoments'],
+    required: ['summary', 'trend', 'practice', 'keyMoments'],
   },
 }
 
@@ -1076,10 +1082,11 @@ export async function runOverview(input: OverviewRequest): Promise<OverviewRespo
           .join(', ')}.`
       : ''
 
-  const system = systemWith(`Write a SHORT overview of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. The player wants concise, improvement-focused coaching: name the concrete moves and squares, say each point once, no filler.
-- "summary": 2-3 sentences (at most 60 words): what decided the game — the concrete cause, e.g. a loose piece, a king left in the centre, a winning attack — and the ONE skill to practise, citing a rule number where natural. Diagnose decisions, no scolding words.
-- "trend": 1-2 sentences (at most 35 words): where the momentum shifted and why. When an eval trajectory is provided, follow it exactly.
-- "keyMoments": 2-4 pivotal plies in game order, each with a 2-5 word title and one line on why it mattered. When an eval trajectory is provided, pick the real swings. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
+  const system = systemWith(`Write a coaching overview of the whole game ${sideName === 'both sides' ? 'as a coach reviewing both sides' : `for the player who had ${sideName} — address them as "you"`}, using the report_overview tool. The player wants focused, improvement-driven coaching that gives clear direction: name the concrete moves and squares, say each point once, no filler — and after reading, they must know exactly what to work on before the next game.
+- "summary": 3-5 sentences (at most ~110 words): what decided the game — the concrete cause, e.g. a loose piece, a king left in the centre, a winning attack — what went well and is worth repeating (name it), and where the game could have turned. Diagnose decisions, no scolding words. Leave the practice points to "practice".
+- "practice": 2-3 things to work on, most important first, each ONE sentence (at most 30 words): the habit or check, when to apply it, and the move in THIS game where it would have changed things, citing a rule number where natural (e.g. "Before recapturing, check what the recapturing piece stops guarding — 21.Bxd2 left e2 to Black's rooks (rule 107)."). Habits the player can repeat at the board, not general advice like "calculate more".
+- "trend": 1-2 sentences (at most 45 words): where the momentum shifted and why. When an eval trajectory is provided, follow it exactly.
+- "keyMoments": 2-4 pivotal plies in game order, each with a 2-5 word title and one line on why it mattered (for an error, what was better). When an eval trajectory is provided, pick the real swings. Use the ply numbers as given (White's first move is ply 0, Black's reply is ply 1, and so on).`)
 
   const user = `Game: ${white} vs ${black}${result ? ` (result ${result})` : ''}. The side under study: ${sideName}.
 Moves (SAN):
@@ -1091,7 +1098,7 @@ Give the overview.`
     maxTokens: 2500,
     tool: OVERVIEW_TOOL,
     toolName: 'report_overview',
-  })) as { summary?: unknown; trend?: unknown; keyMoments?: unknown }
+  })) as { summary?: unknown; trend?: unknown; practice?: unknown; keyMoments?: unknown }
 
   const rawMoments = Array.isArray(data.keyMoments) ? data.keyMoments : []
   const keyMoments = rawMoments
@@ -1107,12 +1114,21 @@ Give the overview.`
     .map((m: { ply: number; title: string; why: string }) => ({
       ply: m.ply,
       title: cleanClip(m.title, 60),
-      why: cleanSentences(m.why, 160),
+      why: cleanSentences(m.why, 200),
     }))
 
+  // The practice list may arrive double-encoded (a JSON string) like other
+  // arrays — recover it rather than dropping the guidance.
+  const rawPractice: unknown = typeof data.practice === 'string' ? parseJsonPrefix(data.practice) ?? data.practice : data.practice
+  const practice = (Array.isArray(rawPractice) ? rawPractice : typeof rawPractice === 'string' ? [rawPractice] : [])
+    .map((p) => cleanSentences(p, 260))
+    .filter((p, i, all) => p && all.findIndex((q) => squash(q) === squash(p)) === i)
+    .slice(0, 3)
+
   const overview: GameOverview = {
-    summary: cleanSentences(data.summary, 600),
-    trend: cleanSentences(data.trend, 320),
+    summary: cleanSentences(data.summary, 900),
+    trend: cleanSentences(data.trend, 360),
+    ...(practice.length ? { practice } : {}),
     keyMoments,
   }
   if (!overview.summary) throw new AnalyzeError('Claude did not return an overview.', 502)

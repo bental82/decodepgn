@@ -220,6 +220,21 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
 .cc-res.r-draw { background: var(--warn-bg); color: var(--warn); }
 .cc-players { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-meta { font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* batch import: a tick box beside each game, select-all + go above the list */
+.cc-hint { margin: 12px 0 6px; }
+.cc-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.cc-all { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cc-all.disabled { color: var(--muted); cursor: default; }
+.cc-go { margin-left: auto; }
+.cc-item { display: flex; align-items: stretch; gap: 6px; }
+.cc-item .cc-game { flex: 1; min-width: 0; }
+.cc-pick { flex: none; display: grid; place-items: center; width: 38px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); cursor: pointer; }
+.cc-pick.disabled { cursor: default; opacity: 0.6; }
+.cc-toolbar input[type='checkbox'], .cc-pick input[type='checkbox'] { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: inherit; }
+.cc-item.in-lib .cc-game { opacity: 0.72; }
+.cc-saved { color: var(--accent); }
+.cc-more { width: 100%; margin: 0 0 6px; }
+.cc-toolbar + .import-note { margin: 0 0 8px; }
 
 /* history of analysed games */
 .history { grid-column: 1 / -1; padding: 16px 18px; }
@@ -297,6 +312,13 @@ select { border: 1px solid var(--line); }
 .color-select label.active { border-color: var(--accent); background: rgba(230, 177, 70, 0.1); }
 .color-select input[type='radio'] { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 .side-ico { width: 20px; height: 20px; display: inline-block; flex: none; }
+/* a multi-game PGN: "as <player>" spans the row above the colour choices */
+.color-select.with-player { flex-wrap: wrap; }
+.color-select.with-player label:first-child { flex-basis: 100%; }
+.color-select label .icon { color: var(--accent); flex: none; }
+.side-player { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pgn-multi { margin: 0 0 10px; }
+.note.import-note { margin: 10px 0 0; padding: 9px 12px; border-radius: 9px; background: var(--accent-weak); color: var(--ink); font-size: 13.5px; text-wrap: pretty; }
 .side-ico + .side-ico { margin-left: -10px; }
 .error { background: var(--bad-bg); color: var(--bad); padding: 10px 12px; border-radius: var(--radius-sm); margin: 12px 0; font-size: 14px; border: 1px solid rgba(202, 106, 87, 0.3); }
 .settings-link { background: none; border: none; color: var(--link); cursor: pointer; font-size: 13px; padding: 0; font-family: inherit; }
@@ -642,6 +664,11 @@ select { border: 1px solid var(--line); }
 .overview-trend { margin: 0 0 4px; font-size: 13.5px; color: var(--muted); text-wrap: pretty; }
 .overview-phases { margin: 6px 0 4px; font-size: 13.5px; }
 .overview-moments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* the direction: what to work on before the next game */
+.overview-practice { margin: 10px 0 4px; padding: 9px 13px 10px; border-radius: 10px; background: var(--accent-weak); }
+.overview-practice h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 5px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.overview-practice ul { margin: 0; padding-left: 18px; }
+.overview-practice li { margin: 3px 0; font-size: 14px; line-height: 1.45; text-wrap: pretty; }
 .overview-more { margin-top: 10px; }
 .overview-more summary { cursor: pointer; width: fit-content; font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--copper); font-weight: 600; padding: 2px 0; }
 .overview-more[open] summary { margin-bottom: 6px; }
@@ -862,6 +889,8 @@ select { border: 1px solid var(--line); }
      block, so the board is reached sooner */
   .overview { padding: 14px 16px; }
   .overview-summary { font-size: 14.5px; }
+  .overview-practice { padding: 8px 11px 9px; }
+  .overview-practice li { font-size: 13.5px; }
   .overview-moments {
     flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
     margin: 10px -16px 0; padding: 0 16px 2px; scroll-snap-type: x proximity;
@@ -889,6 +918,10 @@ select { border: 1px solid var(--line); }
 
   /* history rows stack their meta on phones */
   .history-row { flex-direction: column; align-items: flex-start; gap: 2px; }
+  /* import list: names get the full line, the date/colour line sits below */
+  .cc-game { flex-wrap: wrap; row-gap: 2px; }
+  .cc-meta { flex-basis: 100%; padding-left: 32px; white-space: normal; }
+  .cc-pick { width: 36px; }
   .history-meta { white-space: normal; }
 
   /* side picker stays usable on narrow phones */

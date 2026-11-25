@@ -26,6 +26,7 @@ import {
   gameKey,
   listGames,
   loadGame,
+  MAX_LOCAL_GAMES,
   removeGame,
   sanitizeQuiz,
   saveGame,
@@ -49,7 +50,7 @@ import type {
   QuizExplanation,
 } from '../shared/types'
 import { colorName, ENGINE_APPROVED_CP } from './contract'
-import type { GfxSelection } from './contract'
+import type { GfxSelection, ImportItem, ImportOutcome } from './contract'
 import AskBox from './AskBox'
 import Board from './Board'
 import ConfirmModal from './ConfirmModal'
@@ -1544,6 +1545,142 @@ export default function App() {
       (a, b) => recency(b) - recency(a) || b.sortKey - a.sortKey || (a.key < b.key ? -1 : 1),
     )
   }, [history, cloudGames, syncedKeys, allSummaries])
+  const libraryKeys = useMemo(() => new Set(historyItems.map((h) => h.key)), [historyItems])
+
+  // Batch import: several games at once (ticked in the username list, or a
+  // multi-game PGN). Each new game is added to the library and its analysis
+  // queued — in the cloud when server runs are on (imported games run two at
+  // a time there, behind any game opened directly), else on this device's
+  // one-at-a-time queue. Games already in the library are skipped, so
+  // importing the same file again picks up only what is new.
+  const importGames = async (
+    items: ImportItem[],
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<ImportOutcome> => {
+    const BULK_MAX = 50
+    const known = new Set(libraryKeys)
+    for (const q of queueRef.current) known.add(q.key)
+    const fresh: Array<QueuedAnalysis & { me?: Color }> = []
+    let dup = 0
+    let bad = 0
+    for (const it of items) {
+      try {
+        const g = parsePgn(it.pgn)
+        const key = gameKey(g.moves, it.focus)
+        if (known.has(key)) {
+          dup++
+          continue
+        }
+        known.add(key)
+        fresh.push({
+          key,
+          pgn: it.pgn.trim(),
+          headers: g.headers,
+          moves: g.moves,
+          focus: it.focus,
+          force: false,
+          repairEmpty: false,
+          includeLite: true,
+          ...(it.focus !== 'both' ? { me: it.focus } : {}),
+        })
+      } catch {
+        bad++
+      }
+    }
+    const local = !serverRunsRef.current
+    // This browser keeps a limited number of games; a local batch must never
+    // push already-analysed games out of it.
+    const room = local ? Math.max(0, MAX_LOCAL_GAMES - listGames().length) : BULK_MAX
+    const batch = fresh.slice(0, Math.min(BULK_MAX, room))
+    const leftOver = fresh.length - batch.length
+    const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+    const notes: string[] = []
+    if (dup) notes.push(`${plural(dup, 'game')} already in your library ${dup === 1 ? 'was' : 'were'} skipped.`)
+    if (bad) notes.push(`${plural(bad, 'game')} could not be read.`)
+    if (leftOver)
+      notes.push(
+        local && room < BULK_MAX
+          ? `This browser keeps up to ${MAX_LOCAL_GAMES} games, so ${plural(leftOver, 'game')} ${leftOver === 1 ? 'was' : 'were'} left out — delete old ones to make room.`
+          : `${plural(leftOver, 'more game')} left — import again to add them (games already added are skipped).`,
+      )
+    if (batch.length === 0) {
+      return {
+        queued: 0,
+        keys: [],
+        error: dup === 0,
+        message: notes.join(' ') || 'No games to add.',
+      }
+    }
+    // List order: the newest game on top, the rest just below it.
+    const now = Date.now()
+    const stamp = (i: number) => now - i
+    const done: string[] = []
+    const failed: string[] = []
+    onProgress?.(0, batch.length)
+    if (!local) {
+      let next = 0
+      const worker = async () => {
+        while (next < batch.length) {
+          const i = next++
+          const f = batch[i]
+          const shell: SavedGame = {
+            key: f.key,
+            pgn: f.pgn,
+            focus: f.focus,
+            headers: f.headers,
+            savedAt: now,
+            addedAt: stamp(i),
+            results: {},
+            ...(f.me ? { me: f.me } : {}),
+          }
+          const job = await serverEnqueue(f.key, { includeLite: true, bulk: true }, shell).catch(() => null)
+          if (job) done.push(f.key)
+          else failed.push(f.key)
+          onProgress?.(done.length + failed.length, batch.length)
+        }
+      }
+      // a few at a time: each enqueue is a round trip that writes the row
+      await Promise.all(Array.from({ length: Math.min(3, batch.length) }, worker))
+      void cloudList().then((games) => {
+        if (games) setCloudGames(games)
+      })
+    } else {
+      batch.forEach((f, i) => {
+        saveGame({
+          key: f.key,
+          pgn: f.pgn,
+          focus: f.focus,
+          headers: f.headers,
+          savedAt: now,
+          addedAt: stamp(i),
+          results: {},
+          ...(f.me ? { me: f.me } : {}),
+        })
+        queueRef.current.push(f)
+        done.push(f.key)
+      })
+      setAnalysisQueue(queueRef.current.map((e) => e.key))
+      setHistory(listGames())
+      if (!activeRunRef.current) startNextQueued()
+      onProgress?.(batch.length, batch.length)
+    }
+    if (done.length) {
+      setHistOpen(true)
+      localStorage.setItem('decodepgn.historyOpen', '1')
+    }
+    if (failed.length) notes.push(`${plural(failed.length, 'game')} could not be queued — check your connection and import again.`)
+    const head = done.length
+      ? local
+        ? `Added ${plural(done.length, 'game')} — they are analysed one after another in this tab (keep it open); progress shows in “Your analysed games”.`
+        : `Added ${plural(done.length, 'game')} — they are analysed in the cloud, two at a time, and keep going even if you close the app. Progress shows in “Your analysed games”.`
+      : ''
+    return {
+      queued: done.length,
+      keys: done,
+      error: done.length === 0,
+      message: [head, ...notes].filter(Boolean).join(' '),
+    }
+  }
 
   // Every analysed move flagged dubious — or costing 1+ pawn by the engine —
   // becomes a practice position for the Drill screen, as long as we know a
@@ -2169,11 +2306,12 @@ export default function App() {
           </div>
           <PgnInput
             onSubmit={handleSubmit}
+            onImportMany={importGames}
             onOpenSettings={() => setShowSettings(true)}
             error={parseError}
             hasServerKey={hasServerKey}
           />
-          <GameImport onPick={handleSubmit} />
+          <GameImport onPick={handleSubmit} onImport={importGames} knownKeys={libraryKeys} />
           {drillItems.length > 0 ? (
             <div className="card drill-entry">
               <div>
@@ -2316,7 +2454,9 @@ export default function App() {
                         ) : null}
                         {bgAnalysing.has(g.key)
                           ? ' · analysing…'
-                          : g.job && (g.job.status === 'queued' || g.job.status === 'running')
+                          : analysisQueue.includes(g.key)
+                            ? ' · queued'
+                            : g.job && (g.job.status === 'queued' || g.job.status === 'running')
                             ? g.job.status === 'queued'
                               ? (
                                   <>

@@ -90,6 +90,77 @@ export function parsePgn(pgn: string): ParsedGame {
   return { headers: chess.getHeaders() as Record<string, string>, moves, evals }
 }
 
+const TAG_LINE_RE = /^\s*\[[A-Za-z0-9_]+\s+"/
+
+/**
+ * Split a PGN database — several games one after another, as chess.com and
+ * Lichess exports write them — into one text per game. A game starts at a tag
+ * line ([Name "value"]) that follows movetext; brace comments are tracked so a
+ * comment spanning lines can't be mistaken for a boundary. A single game
+ * (with or without tags) comes back as one entry; tag blocks without moves
+ * are dropped.
+ */
+export function splitPgnGames(text: string): string[] {
+  const games: string[] = []
+  let cur: string[] = []
+  let sawMoves = false
+  let inComment = false
+  const flush = () => {
+    const g = cur.join('\n').trim()
+    if (g && sawMoves) games.push(g)
+    cur = []
+    sawMoves = false
+  }
+  for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
+    const isTag = !inComment && TAG_LINE_RE.test(line)
+    if (isTag && sawMoves) flush()
+    cur.push(line)
+    if (isTag || !line.trim()) continue
+    sawMoves = true
+    for (const ch of line) {
+      if (ch === '{') inComment = true
+      else if (ch === '}') inComment = false
+    }
+  }
+  flush()
+  return games
+}
+
+/** A PGN tag's value read straight from the text (no full parse). */
+export function pgnTag(pgn: string, name: string): string {
+  const m = pgn.match(new RegExp(`^\\s*\\[${name}\\s+"((?:[^"\\\\]|\\\\.)*)"`, 'm'))
+  return m ? m[1].trim() : ''
+}
+
+/**
+ * The player who appears in EVERY game of a multi-game PGN — whoever
+ * exported their own games — or null. Matched case-insensitively; returned as
+ * first spelled. Needs at least two games.
+ */
+export function commonPlayer(games: string[]): string | null {
+  if (games.length < 2) return null
+  let candidates: Map<string, string> | null = null
+  for (const g of games) {
+    const names = new Map<string, string>()
+    for (const tag of ['White', 'Black']) {
+      const n = pgnTag(g, tag)
+      if (n && n !== '?') names.set(n.toLowerCase(), n)
+    }
+    if (candidates === null) candidates = names
+    else for (const k of [...candidates.keys()]) if (!names.has(k)) candidates.delete(k)
+    if (candidates.size === 0) return null
+  }
+  return candidates && candidates.size === 1 ? [...candidates.values()][0] : null
+}
+
+/** Which colour `player` had in a game (case-insensitive); null if neither. */
+export function sideOf(pgn: string, player: string): 'w' | 'b' | null {
+  const p = player.toLowerCase()
+  if (pgnTag(pgn, 'White').toLowerCase() === p) return 'w'
+  if (pgnTag(pgn, 'Black').toLowerCase() === p) return 'b'
+  return null
+}
+
 export function toGameMoves(moves: ParsedMove[]): GameMove[] {
   return moves.map((m) => ({ ply: m.ply, moveNumber: m.moveNumber, color: m.color, san: m.san }))
 }

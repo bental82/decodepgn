@@ -4,8 +4,8 @@ Paste a chess game, pick a side, and for **each of your moves** Claude points ou
 which of **120 classic strategic “rules of thumb”** are relevant right then —
 development, trades, pawn breaks, tension, king safety, sacrifices, endgames and
 more — whether the move **follows, partly follows, or goes against** each one —
-in **one short paragraph per move**, aimed at what to improve, plus the key
-habit to keep when the move teaches one.
+in **one paragraph per move**, aimed at what to improve and where to go next,
+plus the habit to take into the next game whenever a move cost something.
 
 It’s a study aid for club players: the point isn’t an engine score, it’s learning
 to *recognise which ideas are in the position*. A local **Stockfish** check keeps
@@ -13,11 +13,14 @@ the coaching honest: the AI sees the engine’s verdict for every analysed move,
 objectively best moves don’t get scolded for “breaking” a rule of thumb.
 
 - **Study** — every analysis opens with a **game overview**: what decided the
-  game, the momentum arc, and 2-4 clickable key moments that jump to the board.
+  game, **what to work on** (2-3 concrete habits, each tied to a move of the
+  game), the momentum arc, and 2-4 clickable key moments that jump to the board.
   Then step through your moves on a single board; beside each move you get
-  a heuristic **soundness** tag (sound / speculative / dubious), **one short
-  coaching paragraph** (routine moves get a sentence; mistakes get the better
-  move and why), a **key lesson** line when the move teaches a habit, and the
+  a heuristic **soundness** tag (sound / speculative / dubious), **one
+  coaching paragraph** (routine moves get a sentence or two on what to aim for
+  next; mistakes get the better move, why it works and the cue that would have
+  found it), a **key lesson** — the thinking step to repeat — on every move that
+  cost something, and the
   1-2 rules in play as chips labelled **Followed / Mixed / Broke / In play**.
   Rules already explained earlier in the game are named, not re-explained. The
   board tells each move's story the way the quiz does: when a move cost
@@ -47,11 +50,17 @@ moves and Haiku 5.5 for the opponent's) through a small serverless function; the
 
 ## How it works
 
-0. Paste a PGN — or **import a recent game by username** from chess.com or
+0. Paste a PGN — or **import your recent games by username** from chess.com or
    Lichess (their public APIs are key-less and CORS-enabled, so this runs
-   entirely in the browser; no account linking). Lichess exports include games
-   vs the Stockfish AI; chess.com bot games usually aren't in its public API —
-   download those as PGN from the site and paste them.
+   entirely in the browser; no account linking). Tap a game to study it now, or
+   **tick several (or "Select all new") and analyse them in one go**; "Load
+   older games" reaches further back. A pasted or uploaded PGN holding **several
+   games** (a chess.com / Lichess export) is imported the same way, studying the
+   player found in every game. Batch imports skip games already in the library
+   and queue the rest — in the cloud they run two at a time, behind any game you
+   open directly. Lichess exports include games vs the Stockfish AI; chess.com
+   bot games usually aren't in its public API — download those as PGN from the
+   site and paste them.
 1. The browser parses your PGN with [chess.js](https://github.com/jhlywa/chess.js)
    into a move list with the position before/after each move.
 2. **Stockfish 18 (lite, single-threaded WASM)** runs in a Web Worker and scores
@@ -62,7 +71,7 @@ moves and Haiku 5.5 for the opponent's) through a small serverless function; the
    check to `/api/analyze`. That function calls Claude with the 120 rules and a
    **tool to answer through** (retried once if the reply comes back as prose),
    so the model returns structured JSON that the server validates: a one-paragraph
-   comment, an optional one-line lesson, the 1-2 relevant rule numbers with a
+   comment, a short lesson on moves that cost something, the 1-2 relevant rule numbers with a
    status (`follows` / `partially` / `violates` / `relevant`), and a soundness
    verdict **calibrated against the engine check** (a top-engine move is never
    labelled dubious). The server clips any overlong text at a sentence end.

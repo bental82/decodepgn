@@ -34,9 +34,10 @@ interface Props {
 }
 
 const OPEN_STORAGE = 'decodepgn.overviewOpen'
-// Summaries longer than this (the multi-paragraph ones written before the
+// Summaries longer than this (the multi-paragraph essays written before the
 // concise format) start clamped to a few lines, with a toggle to read on.
-const LONG_SUMMARY = 420
+// Today's summaries (~110 words) stay whole.
+const LONG_SUMMARY = 820
 
 // The coach's opening word on the whole game: what decided it, the trend, and
 // clickable key moments. Shown at the top of the Study tab; collapsible.
@@ -136,6 +137,21 @@ export default function GameOverviewCard({
             <button className="linkbtn summary-more" onClick={() => setFullSummary(true)}>
               Read the full overview
             </button>
+          ) : null}
+          {overview.practice && overview.practice.length > 0 ? (
+            // The direction: what to work on before the next game.
+            <div className="overview-practice">
+              <h3>
+                <Icon name="bulb" size={15} /> What to work on
+              </h3>
+              <ul>
+                {overview.practice.map((p, i) => (
+                  <li key={i}>
+                    <MoveText text={p} moves={moves} onJump={onJump} onOpenRule={onOpenRule} />
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           {overview.keyMoments.length > 0 ? (
             <div className="overview-moments">

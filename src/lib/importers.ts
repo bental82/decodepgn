@@ -17,7 +17,10 @@ export interface ImportedGame {
   url: string
 }
 
-const MAX_GAMES = 20
+/** One page of the list; "Load more" asks for another page on top. */
+export const IMPORT_PAGE = 20
+/** The most games a list can grow to. */
+export const IMPORT_MAX = 200
 
 function validUsername(u: string): boolean {
   return /^[A-Za-z0-9_-]{1,50}$/.test(u)
@@ -42,11 +45,12 @@ async function getResponse(url: string, accept?: string): Promise<Response> {
 // ---- chess.com (Published-Data API) ----
 
 const CHESSCOM_API = 'https://api.chess.com/pub'
-const CHESSCOM_MAX_MONTHS = 6
+// the archive walk stops after this many months, however few games they held
+const CHESSCOM_MAX_MONTHS = 36
 const CC_WIN = new Set(['win'])
 const CC_DRAW = new Set(['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'])
 
-async function fetchChessCom(username: string): Promise<ImportedGame[]> {
+async function fetchChessCom(username: string, limit: number): Promise<ImportedGame[]> {
   const res = await getResponse(`${CHESSCOM_API}/player/${encodeURIComponent(username)}/games/archives`)
   const archData = (await res.json()) as { archives?: string[] }
   const archives = Array.isArray(archData.archives) ? archData.archives : []
@@ -87,10 +91,10 @@ async function fetchChessCom(username: string): Promise<ImportedGame[]> {
         url: typeof g.url === 'string' ? g.url : '',
       })
     }
-    if (games.length >= MAX_GAMES) break
+    if (games.length >= limit) break
   }
   games.sort((a, b) => b.endTime - a.endTime)
-  return games.slice(0, MAX_GAMES)
+  return games.slice(0, limit)
 }
 
 // ---- Lichess (games export API) ----
@@ -101,14 +105,14 @@ interface LichessPlayer {
   aiLevel?: number
 }
 
-async function fetchLichess(username: string): Promise<ImportedGame[]> {
+async function fetchLichess(username: string, limit: number): Promise<ImportedGame[]> {
   // perfType narrows to standard-chess pools SERVER-side; without it the
   // max=N cap could be eaten entirely by variant games (Crazyhouse, 960, …)
   // and a player of variants would import zero games.
   const standardPerfs = 'ultraBullet,bullet,blitz,rapid,classical,correspondence'
   const url =
     `https://lichess.org/api/games/user/${encodeURIComponent(username)}` +
-    `?max=${MAX_GAMES}&perfType=${standardPerfs}&pgnInJson=true&clocks=false&evals=false&opening=false`
+    `?max=${limit}&perfType=${standardPerfs}&pgnInJson=true&clocks=false&evals=false&opening=false`
   const res = await getResponse(url, 'application/x-ndjson')
   const text = await res.text()
 
@@ -167,14 +171,20 @@ async function fetchLichess(username: string): Promise<ImportedGame[]> {
     })
   }
   games.sort((a, b) => b.endTime - a.endTime)
-  return games.slice(0, MAX_GAMES)
+  return games.slice(0, limit)
 }
 
-/** Recent standard-chess games for a username on the given site, newest first. */
-export async function fetchRecentGames(source: ImportSource, usernameRaw: string): Promise<ImportedGame[]> {
+/** Up to `limit` recent standard-chess games for a username on the given
+    site, newest first. Fewer than `limit` back means there are no more. */
+export async function fetchRecentGames(
+  source: ImportSource,
+  usernameRaw: string,
+  limit = IMPORT_PAGE,
+): Promise<ImportedGame[]> {
   const username = usernameRaw.trim()
   if (!validUsername(username)) {
     throw new Error('That does not look like a valid username.')
   }
-  return source === 'lichess' ? fetchLichess(username) : fetchChessCom(username)
+  const n = Math.max(1, Math.min(IMPORT_MAX, Math.trunc(limit)))
+  return source === 'lichess' ? fetchLichess(username, n) : fetchChessCom(username, n)
 }

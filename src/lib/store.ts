@@ -6,7 +6,8 @@ import type { Color, Focus, GameOverview, MoveResult, ParsedMove, QuizExplanatio
 
 const INDEX_KEY = 'decodepgn.games.index.v1'
 const GAME_PREFIX = 'decodepgn.game.v1.'
-const MAX_GAMES = 30 // LRU cap (quota-evict fallback below handles overflow)
+/** LRU cap on games kept in this browser (quota-evict fallback below handles overflow) */
+export const MAX_LOCAL_GAMES = 30
 
 /** One try in a guess-the-move position. */
 export interface QuizAttempt {
@@ -228,14 +229,14 @@ export function saveGame(game: SavedGame): SavedGame {
   // move-to-front LRU index + evict beyond the cap
   const index = readIndex().filter((k) => k !== game.key)
   index.unshift(game.key)
-  for (const k of index.slice(MAX_GAMES)) {
+  for (const k of index.slice(MAX_LOCAL_GAMES)) {
     try {
       localStorage.removeItem(GAME_PREFIX + k)
     } catch {
       /* ignore */
     }
   }
-  writeIndex(index.slice(0, MAX_GAMES))
+  writeIndex(index.slice(0, MAX_LOCAL_GAMES))
   // the stamped save (stable addedAt etc.) — callers mirror THIS to the
   // cloud, so the cloud copy never loses the anchor a bare caller object lacks
   return game

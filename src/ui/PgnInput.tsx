@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react'
-import { parsePgn, SAMPLE_PGN } from '../game'
+import { useMemo, useRef, useState } from 'react'
+import { commonPlayer, parsePgn, SAMPLE_PGN, sideOf, splitPgnGames } from '../game'
 import type { Focus } from '../shared/types'
-import type { PgnInputProps } from './contract'
+import type { ImportOutcome, PgnInputProps } from './contract'
+import Icon from './Icon'
 
 export default function PgnInput({
   onSubmit,
+  onImportMany,
   onOpenSettings,
   error,
   busy,
@@ -18,6 +20,17 @@ export default function PgnInput({
   const [shortWarn, setShortWarn] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  // A PGN file often holds a whole database (a chess.com / Lichess export).
+  // Several games switch the card into a batch import: every game is added
+  // and queued, and the side to study defaults to the player found in all of
+  // them — whoever exported their own games.
+  const games = useMemo(() => splitPgnGames(pgn), [pgn])
+  const multi = games.length > 1
+  const player = useMemo(() => (multi ? commonPlayer(games) : null), [multi, games])
+  const [byPlayer, setByPlayer] = useState(true)
+  const usePlayer = multi && !!player && byPlayer
+  const [importing, setImporting] = useState<{ done: number; total: number } | null>(null)
+  const [outcome, setOutcome] = useState<ImportOutcome | null>(null)
 
   // A finished game's movetext ends with a result token (or checkmate); a
   // paste that stops mid-game without one was almost certainly cut short.
@@ -29,6 +42,28 @@ export default function PgnInput({
     if (taRef.current) taRef.current.value = t
     setPgn(t)
     setShortWarn(null)
+    setOutcome(null)
+  }
+
+  const importAll = async () => {
+    if (importing) return
+    const text = taRef.current?.value ?? pgn
+    const list = splitPgnGames(text)
+    const who = usePlayer ? player : null
+    const items = list.map((g) => ({ pgn: g, focus: (who ? sideOf(g, who) : null) ?? color }))
+    setOutcome(null)
+    setImporting({ done: 0, total: items.length })
+    try {
+      const out = await onImportMany(items, (done, total) => setImporting({ done, total }))
+      setOutcome(out)
+      // the games are in the library now — clear the box for the next file
+      if (out.queued > 0 && taRef.current) {
+        taRef.current.value = ''
+        setPgn('')
+      }
+    } finally {
+      setImporting(null)
+    }
   }
 
   const submit = () => {
@@ -37,6 +72,10 @@ export default function PgnInput({
     // can hold only the first chunk of what the field visibly contains.
     const text = (taRef.current?.value ?? pgn).trim()
     if (text !== pgn) setPgn(text)
+    if (splitPgnGames(text).length > 1) {
+      void importAll()
+      return
+    }
     try {
       const parsed = parsePgn(text)
       const n = parsed.moves.length
@@ -77,6 +116,7 @@ export default function PgnInput({
         onChange={(e) => {
           setPgn(e.target.value)
           setShortWarn(null)
+          setOutcome(null)
         }}
       />
 
@@ -103,34 +143,62 @@ export default function PgnInput({
         </button>
       </div>
 
-      <h2>2. Which side do you want to study?</h2>
-      <div className="color-select">
-        <label className={color === 'w' ? 'active' : ''}>
+      {multi ? (
+        <p className="pgn-multi note small">
+          <strong>{games.length} games</strong> in this PGN — they are all added to your library
+          and analysed one after another.
+        </p>
+      ) : null}
+
+      <h2>2. Which side do you want to study{multi ? ' in each game' : ''}?</h2>
+      <div className={'color-select' + (multi && player ? ' with-player' : '')}>
+        {multi && player ? (
+          <label className={usePlayer ? 'active' : ''} title={`Study ${player}'s moves in every game`}>
+            <input
+              type="radio"
+              name="focus"
+              checked={usePlayer}
+              onChange={() => setByPlayer(true)}
+            />
+            <Icon name="pawn" size={16} />
+            <span className="side-player">{player}</span>
+          </label>
+        ) : null}
+        <label className={!usePlayer && color === 'w' ? 'active' : ''}>
           <input
             type="radio"
             name="focus"
-            checked={color === 'w'}
-            onChange={() => setColor('w')}
+            checked={!usePlayer && color === 'w'}
+            onChange={() => {
+              setColor('w')
+              setByPlayer(false)
+            }}
           />
           <img className="side-ico" src="/piece/staunty/wK.svg" alt="" />
           White
         </label>
-        <label className={color === 'b' ? 'active' : ''}>
+        <label className={!usePlayer && color === 'b' ? 'active' : ''}>
           <input
             type="radio"
             name="focus"
-            checked={color === 'b'}
-            onChange={() => setColor('b')}
+            checked={!usePlayer && color === 'b'}
+            onChange={() => {
+              setColor('b')
+              setByPlayer(false)
+            }}
           />
           <img className="side-ico" src="/piece/staunty/bK.svg" alt="" />
           Black
         </label>
-        <label className={color === 'both' ? 'active' : ''}>
+        <label className={!usePlayer && color === 'both' ? 'active' : ''}>
           <input
             type="radio"
             name="focus"
-            checked={color === 'both'}
-            onChange={() => setColor('both')}
+            checked={!usePlayer && color === 'both'}
+            onChange={() => {
+              setColor('both')
+              setByPlayer(false)
+            }}
           />
           <img className="side-ico" src="/piece/staunty/wK.svg" alt="" />
           <img className="side-ico" src="/piece/staunty/bK.svg" alt="" />
@@ -138,11 +206,26 @@ export default function PgnInput({
         </label>
       </div>
 
-      {error ? <div className="error">{error}</div> : null}
-      {shortWarn ? <div className="error">{shortWarn}</div> : null}
+      {error && !multi ? <div className="error">{error}</div> : null}
+      {shortWarn && !multi ? <div className="error">{shortWarn}</div> : null}
+      {outcome ? (
+        <div className={outcome.error ? 'error' : 'note import-note'} role="status">
+          {outcome.message}
+        </div>
+      ) : null}
 
-      <button className="btn primary big" disabled={busy || !pgn.trim()} onClick={submit}>
-        {busy ? 'Working…' : '3. Analyse the game'}
+      <button
+        className="btn primary big"
+        disabled={busy || !!importing || !pgn.trim()}
+        onClick={submit}
+      >
+        {importing
+          ? `Adding games… ${importing.done}/${importing.total}`
+          : busy
+            ? 'Working…'
+            : multi
+              ? `3. Analyse all ${games.length} games`
+              : '3. Analyse the game'}
       </button>
 
       <p className="muted small">

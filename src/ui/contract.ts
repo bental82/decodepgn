@@ -17,8 +17,33 @@ import type { QuizPosition, SavedQuiz } from '../lib/store'
 
 export type Orientation = 'w' | 'b'
 
+/** One game handed to a batch import: its PGN and the side to study. */
+export interface ImportItem {
+  pgn: string
+  focus: Focus
+}
+
+/** What a batch import did — the message is shown next to the button. */
+export interface ImportOutcome {
+  /** games queued for analysis */
+  queued: number
+  /** keys of the queued games */
+  keys: string[]
+  message: string
+  /** nothing was queued and something went wrong — styled as an error */
+  error?: boolean
+}
+
+/** Add several games to the library and queue their analysis. */
+export type ImportGamesFn = (
+  items: ImportItem[],
+  onProgress?: (done: number, total: number) => void,
+) => Promise<ImportOutcome>
+
 export interface PgnInputProps {
   onSubmit: (pgn: string, focus: Focus) => void
+  /** a pasted / uploaded PGN holding several games */
+  onImportMany: ImportGamesFn
   onOpenSettings: () => void
   error?: string | null
   busy?: boolean

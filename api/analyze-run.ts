@@ -1,8 +1,9 @@
 // Vercel serverless function: /api/analyze-run — server-side analysis jobs.
 //
-//   POST {key, force?, includeLite?, repairEmpty?, game?}  → queue a job, kick
-//     a worker, respond immediately. `game` is a SavedGame shell so a
-//     brand-new game that has no cloud row yet can be enqueued.
+//   POST {key, force?, includeLite?, repairEmpty?, bulk?, game?}  → queue a
+//     job, kick a worker, respond immediately. `game` is a SavedGame shell so
+//     a brand-new game that has no cloud row yet can be enqueued; `bulk`
+//     marks a batch import (it waits behind games opened directly).
 //   POST {work: true}  → the worker: claims jobs and processes batches until
 //     near the time limit, then chains a fresh invocation of itself.
 //   POST {grade: {fen, san}}  → quiz grading: the deep eval of one candidate
@@ -142,6 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       force?: boolean
       includeLite?: boolean
       repairEmpty?: boolean
+      bulk?: boolean
       game?: unknown
     }
 
@@ -160,7 +162,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const job = await runner.enqueueJob(
       key,
-      { force: body.force === true, includeLite: body.includeLite === true, repairEmpty: body.repairEmpty === true },
+      {
+        force: body.force === true,
+        includeLite: body.includeLite === true,
+        repairEmpty: body.repairEmpty === true,
+        bulk: body.bulk === true,
+      },
       body.game,
     )
     // A short wait here on purpose: the tap is a user waiting on a phone, and

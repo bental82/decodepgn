@@ -62,6 +62,8 @@ export interface ServerJob {
   progress?: { done: number; total: number }
   heartbeat?: number
   error?: string
+  /** queued by a batch import (runs behind games opened directly) */
+  bulk?: boolean
 }
 
 /**
@@ -76,7 +78,7 @@ export interface ServerJob {
  */
 export async function serverEnqueue(
   key: string,
-  opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean },
+  opts: { force?: boolean; includeLite?: boolean; repairEmpty?: boolean; bulk?: boolean },
   game?: SavedGame | null,
 ): Promise<ServerJob | null> {
   const d = await fetchJson('/api/analyze-run', {
